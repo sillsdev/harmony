@@ -1,0 +1,12 @@
+<Project>
+    <PropertyGroup>
+        <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+        <Nullable>enable</Nullable>
+        <WarningsAsErrors>Nullable</WarningsAsErrors>
+        <UseArtifactsOutput>true</UseArtifactsOutput>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.10.48" PrivateAssets="all"/>
+    </ItemGroup>
+</Project>

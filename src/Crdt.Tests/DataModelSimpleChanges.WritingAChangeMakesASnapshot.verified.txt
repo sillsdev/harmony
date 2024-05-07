@@ -1,0 +1,53 @@
+﻿[
+  {
+    $type: Commit,
+    Snapshots: [
+      {
+        $type: ObjectSnapshot,
+        Id: Guid_1,
+        TypeName: Word,
+        Entity: {
+          $type: Word,
+          Text: test-value,
+          Id: Guid_2
+        },
+        EntityId: Guid_2,
+        EntityIsDeleted: false,
+        CommitId: Guid_3,
+        IsRoot: true
+      }
+    ],
+    ChangeEntities: [
+      {
+        $type: ChangeEntity<IChange>,
+        CommitId: Guid_3,
+        EntityId: Guid_2,
+        Change: {
+          $type: SetWordTextChange,
+          Text: test-value,
+          EntityId: Guid_2,
+          EntityType: Word
+        }
+      }
+    ],
+    CompareKey: {
+      $type: ValueTuple<DateTimeOffset, long,
+      Item1: DateTimeOffset_1,
+      Item3: Guid_3
+    },
+    Id: Guid_3,
+    HybridDateTime: {
+      $type: HybridDateTime,
+      DateTime: DateTimeOffset_1
+    },
+    DateTime: DateTimeOffset_1,
+    Hash: Hash_1,
+    ParentHash: Hash_Empty,
+    ClientId: Guid_4
+  },
+  {
+    $type: Word,
+    Text: test-value,
+    Id: Guid_2
+  }
+]

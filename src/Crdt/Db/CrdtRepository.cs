@@ -72,10 +72,10 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
 
     public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, Commit[] pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
     {
-        var snapshots = await CurrentSnapshots().ToDictionaryAsync(s => s.EntityId);
+        var snapshots = await CurrentSnapshots().Include(s => s.Commit).ToDictionaryAsync(s => s.EntityId);
 
         if (snapshots.Count == 0) return (snapshots, []);
-        var lastCommit = snapshots.Values.Select(s => s.Commit).MaxBy(c => (c.DateTime, c.Id));
+        var lastCommit = snapshots.Values.Select(s => s.Commit).MaxBy(c => c.CompareKey);
         ArgumentNullException.ThrowIfNull(lastCommit);
         var newCommits = await CurrentCommits()
             .Include(c => c.ChangeEntities)

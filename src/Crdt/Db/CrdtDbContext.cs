@@ -29,10 +29,11 @@ public class CrdtDbContext(
         commitEntity.ComplexProperty(c => c.HybridDateTime,
             hybridEntity =>
             {
-                hybridEntity.Property(h => (DateTimeOffset?)h.DateTime)
+                hybridEntity.Property(h => h.DateTime)
                     .HasConversion(
-                        d => d!.Value.ToUniversalTime().DateTime,
-                        d => new DateTimeOffset(d, TimeSpan.Zero))
+                        d => d.UtcDateTime,
+                        //need to use ticks here because the DateTime is stored as UTC, but the db records it as unspecified
+                        d => new DateTimeOffset(d.Ticks, TimeSpan.Zero))
                     .HasColumnName("DateTime");
                 hybridEntity.Property(h => h.Counter).HasColumnName("Counter");
             });

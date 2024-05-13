@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using Crdt.Changes;
+using Crdt.Linq2db;
 using Crdt.Sample.Changes;
 using Crdt.Sample.Models;
 using Microsoft.EntityFrameworkCore;
@@ -13,8 +14,8 @@ public static class CrdtSampleKernel
         string dbPath,
         bool enableProjectedTables = true)
     {
-        services.AddCrdtData(
-            builder =>
+        services.AddCrdtLinq2db(
+            (_, builder) =>
             {
                 builder.UseSqlite($"Data Source={dbPath}");
                 builder.EnableDetailedErrors();

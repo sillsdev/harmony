@@ -60,4 +60,32 @@ public class DbContextTests: DataModelTestBase
         actualCommit = await DbContext.Commits.ToLinqToDB().SingleOrDefaultAsyncLinqToDB(c => c.Id == commitId);
         actualCommit!.HybridDateTime.DateTime.Should().Be(expectedDateTime, "LinqToDB");
     }
+
+    [Theory]
+    [InlineData(TimeSpan.TicksPerHour)]
+    [InlineData(TimeSpan.TicksPerMinute)]
+    [InlineData(TimeSpan.TicksPerSecond)]
+    [InlineData(TimeSpan.TicksPerMillisecond)]
+    [InlineData(TimeSpan.TicksPerMicrosecond)]
+    [InlineData(1)]
+    public async Task CanFilterCommitsByDateTime(double scale)
+    {
+        var baseDateTime = new DateTimeOffset(2000, 1, 1, 1, 11, 11, TimeSpan.Zero);
+        for (int i = 0; i < 50; i++)
+        {
+            var offset = new TimeSpan((long)(i * scale));
+            DbContext.Commits.Add(new Commit
+            {
+                ClientId = Guid.NewGuid(),
+                HybridDateTime = new HybridDateTime(baseDateTime.Add(offset), 0)
+            });
+        }
+
+        await DbContext.SaveChangesAsync();
+        var commits = await DbContext.Commits
+            .Where(c => c.HybridDateTime.DateTime > baseDateTime.Add(new TimeSpan((long)(25 * scale))))
+            .OrderBy(c => c.HybridDateTime.DateTime)
+            .ToArrayAsyncEF();
+        commits.Should().HaveCount(24);
+    }
 }

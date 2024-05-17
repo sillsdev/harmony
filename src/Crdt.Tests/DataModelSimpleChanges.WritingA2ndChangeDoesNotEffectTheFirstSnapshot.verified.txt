@@ -1,12 +1,41 @@
 ﻿[
   {
     $type: Commit,
+    Snapshots: [
+      {
+        $type: ObjectSnapshot,
+        Id: Guid_1,
+        TypeName: Word,
+        Entity: {
+          $type: Word,
+          Text: change1,
+          Id: Guid_2
+        },
+        EntityId: Guid_2,
+        EntityIsDeleted: false,
+        CommitId: Guid_3,
+        IsRoot: true
+      }
+    ],
+    ChangeEntities: [
+      {
+        $type: ChangeEntity<IChange>,
+        CommitId: Guid_3,
+        EntityId: Guid_2,
+        Change: {
+          $type: SetWordTextChange,
+          Text: change1,
+          EntityId: Guid_2,
+          EntityType: Word
+        }
+      }
+    ],
     CompareKey: {
       $type: ValueTuple<DateTimeOffset, long,
       Item1: DateTimeOffset_1,
-      Item3: Guid_1
+      Item3: Guid_3
     },
-    Id: Guid_1,
+    Id: Guid_3,
     HybridDateTime: {
       $type: HybridDateTime,
       DateTime: DateTimeOffset_1
@@ -14,22 +43,10 @@
     DateTime: DateTimeOffset_1,
     Hash: Hash_1,
     ParentHash: Hash_Empty,
-    ClientId: Guid_2,
-    ChangeEntities: [
-      {
-        $type: ChangeEntity,
-        Id: Guid_3,
-        CommitId: Guid_1,
-        EntityId: Guid_4,
-        Change: {
-          $type: SetWordTextChange,
-          Text: change1,
-          Id: Guid_3,
-          EntityId: Guid_4,
-          EntityType: Word
-        }
-      }
-    ],
+    ClientId: Guid_4
+  },
+  {
+    $type: Commit,
     Snapshots: [
       {
         $type: ObjectSnapshot,
@@ -37,18 +54,28 @@
         TypeName: Word,
         Entity: {
           $type: Word,
-          Text: change1,
-          Id: Guid_4
+          Text: change2,
+          Id: Guid_2
         },
-        EntityId: Guid_4,
+        EntityId: Guid_2,
         EntityIsDeleted: false,
-        CommitId: Guid_1,
-        IsRoot: true
+        CommitId: Guid_6,
+        IsRoot: false
       }
-    ]
-  },
-  {
-    $type: Commit,
+    ],
+    ChangeEntities: [
+      {
+        $type: ChangeEntity<IChange>,
+        CommitId: Guid_6,
+        EntityId: Guid_2,
+        Change: {
+          $type: SetWordTextChange,
+          Text: change2,
+          EntityId: Guid_2,
+          EntityType: Word
+        }
+      }
+    ],
     CompareKey: {
       $type: ValueTuple<DateTimeOffset, long,
       Item1: DateTimeOffset_2,
@@ -62,42 +89,11 @@
     DateTime: DateTimeOffset_2,
     Hash: Hash_2,
     ParentHash: Hash_1,
-    ClientId: Guid_2,
-    ChangeEntities: [
-      {
-        $type: ChangeEntity,
-        Id: Guid_7,
-        CommitId: Guid_6,
-        EntityId: Guid_4,
-        Change: {
-          $type: SetWordTextChange,
-          Text: change2,
-          Id: Guid_7,
-          EntityId: Guid_4,
-          EntityType: Word
-        }
-      }
-    ],
-    Snapshots: [
-      {
-        $type: ObjectSnapshot,
-        Id: Guid_8,
-        TypeName: Word,
-        Entity: {
-          $type: Word,
-          Text: change2,
-          Id: Guid_4
-        },
-        EntityId: Guid_4,
-        EntityIsDeleted: false,
-        CommitId: Guid_6,
-        IsRoot: false
-      }
-    ]
+    ClientId: Guid_4
   },
   {
     $type: Word,
     Text: change2,
-    Id: Guid_4
+    Id: Guid_2
   }
 ]

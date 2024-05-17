@@ -32,7 +32,7 @@ public class DataModelTestBase : IAsyncLifetime
         currentDate = dateTime;
     }
     private static int _instanceCount = 0;
-    private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, _instanceCount++, 0));
+    private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0).AddHours(_instanceCount++));
     private DateTimeOffset NextDate() => currentDate = currentDate.AddDays(1);
 
     public async ValueTask<Commit> WriteNextChange(IChange change, bool add = true)

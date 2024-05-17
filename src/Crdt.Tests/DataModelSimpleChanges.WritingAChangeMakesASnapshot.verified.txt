@@ -43,6 +43,9 @@
     DateTime: DateTimeOffset_1,
     Hash: Hash_1,
     ParentHash: Hash_Empty,
+    Metadata: {
+      $type: CommitMetadata
+    },
     ClientId: Guid_4
   },
   {

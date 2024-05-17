@@ -4,7 +4,7 @@
       Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
       ClientId (Guid) Required
       Hash (string) Required
-      Metadata (Dictionary<string, string>) Required
+      Metadata (CommitMetadata) Required
         Annotations: 
           Relational:ColumnType: jsonb
       ParentHash (string) Required

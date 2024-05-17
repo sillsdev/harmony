@@ -52,6 +52,7 @@ public class DbContextTests: DataModelTestBase
             .Value(c => c.ClientId, Guid.NewGuid())
             .Value(c => c.HybridDateTime.DateTime, expectedDateTime)
             .Value(c => c.HybridDateTime.Counter, 0)
+            .Value(c => c.Metadata, new CommitMetadata())
             .Value(c => c.Hash, "")
             .Value(c => c.ParentHash, "")
             .InsertAsync();

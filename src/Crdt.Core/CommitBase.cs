@@ -32,6 +32,7 @@ public class CommitBase
     public DateTimeOffset DateTime => HybridDateTime.DateTime;
     public string Hash { get; private set; }
     public string ParentHash { get; private set; }
+    public CommitMetadata Metadata { get; init; } = new();
 
     public void SetParentHash(string parentHash)
     {

@@ -43,6 +43,9 @@
     DateTime: DateTimeOffset_1,
     Hash: Hash_1,
     ParentHash: Hash_Empty,
+    Metadata: {
+      $type: CommitMetadata
+    },
     ClientId: Guid_4
   },
   {
@@ -89,6 +92,9 @@
     DateTime: DateTimeOffset_2,
     Hash: Hash_2,
     ParentHash: Hash_1,
+    Metadata: {
+      $type: CommitMetadata
+    },
     ClientId: Guid_4
   },
   {

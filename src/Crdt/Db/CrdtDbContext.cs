@@ -37,6 +37,12 @@ public class CrdtDbContext(
                     .HasColumnName("DateTime");
                 hybridEntity.Property(h => h.Counter).HasColumnName("Counter");
             });
+        commitEntity.Property(c => c.Metadata)
+            .HasColumnType("jsonb")
+            .HasConversion(
+                m => JsonSerializer.Serialize(m, (JsonSerializerOptions?)null),
+                json => JsonSerializer.Deserialize<CommitMetadata>(json, (JsonSerializerOptions?)null) ?? new()
+            );
         commitEntity.HasMany(c => c.ChangeEntities)
             .WithOne()
             .HasForeignKey(c => c.CommitId);

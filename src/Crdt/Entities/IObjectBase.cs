@@ -31,8 +31,3 @@ public interface IObjectBase<TThis> : IObjectBase where TThis : IPolyType
     string IObjectBase.TypeName => TThis.TypeName;
     static string IPolyType.TypeName => typeof(TThis).Name;
 }
-
-public interface INewableObject<out T> : IObjectBase
-{
-    static abstract T New(Guid id, Commit commit);
-}

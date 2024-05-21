@@ -52,26 +52,4 @@ public abstract class Change<T> : IChange where T : IObjectBase
 
     [JsonIgnore]
     public Type EntityType => typeof(T);
-
-}
-
-public abstract class SingleObjectChange<T> : Change<T> where T : IObjectBase, INewableObject<T>
-{
-    protected SingleObjectChange(Guid entityId) : base(entityId)
-    {
-    }
-
-    public override ValueTask ApplyChange(T entity, ChangeContext context)
-    {
-        ApplyChange(entity);
-        return ValueTask.CompletedTask;
-    }
-
-    public override IObjectBase NewEntity(Commit commit)
-    {
-        var entity = T.New(EntityId, commit);
-        return entity;
-    }
-
-    public abstract void ApplyChange(T value);
 }

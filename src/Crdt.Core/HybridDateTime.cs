@@ -1,6 +1,12 @@
 ﻿
 namespace Crdt.Core;
 
+/// <summary>
+/// Hybrid date time represents a hybrid logical clock that combines a datetime and a counter.
+/// <a href="https://martinfowler.com/articles/patterns-of-distributed-systems/hybrid-clock.html">read more here</a>
+/// It's use is primarily to avoid conflicts due to a users clock getting reset, we still want their changes to come
+/// after the most recent change they made.
+/// </summary>
 public record HybridDateTime : IComparable<HybridDateTime>
 {
     private HybridDateTime()

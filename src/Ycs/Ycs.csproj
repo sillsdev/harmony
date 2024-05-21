@@ -8,6 +8,7 @@
     <PackageTags>Yjs, Ycs, CRDT, offline, shared editing, concurrency, collaboration</PackageTags>
     <AssemblyVersion>0.0.1.0</AssemblyVersion>
     <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">

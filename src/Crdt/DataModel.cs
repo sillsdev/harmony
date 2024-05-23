@@ -41,14 +41,14 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
         return commit;
     }
 
-    public async Task<Commit> AddChanges(Guid clientId, IEnumerable<IChange> change)
+    public async Task<Commit> AddChanges(Guid clientId, IEnumerable<IChange> changes)
     {
         var commitId = Guid.NewGuid();
         var commit = new Commit(commitId)
         {
             ClientId = clientId,
             HybridDateTime = timeProvider.GetDateTime(),
-            ChangeEntities = [..change.Select((c, i) => c.ToChangeEntity(i))]
+            ChangeEntities = [..changes.Select((c, i) => c.ToChangeEntity(i))]
         };
         await Add(commit);
         return commit;

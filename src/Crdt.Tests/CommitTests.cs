@@ -108,13 +108,20 @@ public class CommitTests
         var serializerOptions = new ServiceCollection()
             .AddCrdtDataSample(":memory:")
             .BuildServiceProvider().GetRequiredService<JsonSerializerOptions>();
+        IChange change = new SetWordTextChange(Guid.NewGuid(), "hello");
         var commit = new Commit
         {
             ClientId = Guid.NewGuid(),
             HybridDateTime = HybridDateTime.ForTestingNow,
             ChangeEntities =
             {
-                ((IChange)new SetWordTextChange(Guid.NewGuid(), "hello")).ToChangeEntity(0)
+                new ChangeEntity<IChange>
+                {
+                    Change = change,
+                    Index = 0,
+                    CommitId = change.CommitId,
+                    EntityId = change.EntityId
+                }
             }
         };
         commit.SetParentHash(Convert.ToHexString(XxHash64.Hash(Guid.NewGuid().ToByteArray())));

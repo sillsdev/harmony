@@ -7,16 +7,6 @@ namespace Crdt.Changes;
 [JsonPolymorphic]
 public interface IChange
 {
-    public ChangeEntity<IChange> ToChangeEntity(int index)
-    {
-        return new ChangeEntity<IChange>
-        {
-            Change = this,
-            Index = index,
-            CommitId = CommitId,
-            EntityId = EntityId
-        };
-    }
     [JsonIgnore]
     Guid CommitId { get; set; }
 

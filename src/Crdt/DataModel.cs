@@ -35,7 +35,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
         {
             ClientId = clientId,
             HybridDateTime = timeProvider.GetDateTime(),
-            ChangeEntities = {change.ToChangeEntity(0)}
+            ChangeEntities = {ToChangeEntity(change, 0)}
         };
         await Add(commit);
         return commit;
@@ -48,10 +48,18 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
         {
             ClientId = clientId,
             HybridDateTime = timeProvider.GetDateTime(),
-            ChangeEntities = [..changes.Select((c, i) => c.ToChangeEntity(i))]
+            ChangeEntities = [..changes.Select(ToChangeEntity)]
         };
         await Add(commit);
         return commit;
+    }
+
+    private static ChangeEntity<IChange> ToChangeEntity(IChange change, int index)
+    {
+        return new ChangeEntity<IChange>()
+        {
+            Change = change, CommitId = change.CommitId, EntityId = change.EntityId, Index = index
+        };
     }
 
     async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits)

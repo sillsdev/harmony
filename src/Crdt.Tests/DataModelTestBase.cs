@@ -63,13 +63,19 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(clientId, dateTime, [change], add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId, DateTimeOffset dateTime, IEnumerable<IChange> change, bool add = true)
+    protected async ValueTask<Commit> WriteChange(Guid clientId, DateTimeOffset dateTime, IEnumerable<IChange> changes, bool add = true)
     {
         var commit = new Commit
         {
             ClientId = clientId,
             HybridDateTime = new HybridDateTime(dateTime, 0),
-            ChangeEntities = change.Select((c, i) => c.ToChangeEntity(i)).ToList()
+            ChangeEntities = changes.Select((change, index) => new ChangeEntity<IChange>
+            {
+                Change = change,
+                Index = index,
+                CommitId = change.CommitId,
+                EntityId = change.EntityId
+            }).ToList()
         };
         if (add) await DataModel.Add(commit);
         return commit;

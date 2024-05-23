@@ -16,7 +16,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
     /// </summary>
     private readonly bool _autoValidate = true;
 
-    public async Task Add(Commit commit)
+    internal async Task Add(Commit commit)
     {
         if (await crdtRepository.HasCommit(commit.Id)) return;
 
@@ -74,7 +74,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
         return ValueTask.FromResult(true);
     }
 
-    public async Task AddRange(IEnumerable<Commit> commits, bool forceValidate = false)
+    internal async Task AddRange(IEnumerable<Commit> commits, bool forceValidate = false)
     {
         var (oldestChange, newCommits) = await crdtRepository.FilterExistingCommits(commits.ToArray());
         //no changes added

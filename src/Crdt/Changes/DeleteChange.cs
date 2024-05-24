@@ -2,7 +2,7 @@
 
 namespace Crdt.Changes;
 
-public class DeleteChange<T>(Guid entityId) : Change<T>(entityId), IPolyType
+public class DeleteChange<T>(Guid entityId) : EditChange<T>(entityId), IPolyType
     where T : IPolyType, IObjectBase
 {
     public static string TypeName => "delete:" + T.TypeName;
@@ -11,10 +11,5 @@ public class DeleteChange<T>(Guid entityId) : Change<T>(entityId), IPolyType
     {
         entity.DeletedAt = context.Commit.DateTime;
         return ValueTask.CompletedTask;
-    }
-
-    public override IObjectBase NewEntity(Commit commit)
-    {
-        throw new NotImplementedException();
     }
 }

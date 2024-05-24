@@ -7,7 +7,7 @@ public interface IOrderableCrdt
     public double Order { get; set; }
 }
 
-public class SetOrderChange<T> : Change<T>, IPolyType
+public class SetOrderChange<T> : EditChange<T>, IPolyType
     where T : IPolyType, IObjectBase, IOrderableCrdt
 {
     public static IChange Between(Guid entityId, T left, T right)
@@ -32,11 +32,6 @@ public class SetOrderChange<T> : Change<T>, IPolyType
 
     public double Order { get; init; }
     public static string TypeName => "setOrder:" + T.TypeName;
-
-    public override IObjectBase NewEntity(Commit commit)
-    {
-        throw new NotImplementedException();
-    }
 
     public override ValueTask ApplyChange(T entity, ChangeContext context)
     {

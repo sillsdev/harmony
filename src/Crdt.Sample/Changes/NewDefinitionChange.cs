@@ -5,7 +5,7 @@ using Crdt.Sample.Models;
 
 namespace Crdt.Sample.Changes;
 
-public class NewDefinitionChange(Guid entityId) : Change<Definition>(entityId), ISelfNamedType<NewDefinitionChange>
+public class NewDefinitionChange(Guid entityId) : CreateChange<Definition>(entityId), ISelfNamedType<NewDefinitionChange>
 {
     public required string Text { get; init; }
     public string? OneWordDefinition { get; init; }
@@ -13,7 +13,7 @@ public class NewDefinitionChange(Guid entityId) : Change<Definition>(entityId), 
     public required double Order { get; set; }
     public required Guid WordId { get; init; }
 
-    public override IObjectBase NewEntity(Commit commit)
+    public override async ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context)
     {
         return new Definition
         {
@@ -22,19 +22,8 @@ public class NewDefinitionChange(Guid entityId) : Change<Definition>(entityId), 
             Order = Order,
             OneWordDefinition = OneWordDefinition,
             PartOfSpeech = PartOfSpeech,
-            WordId = WordId
+            WordId = WordId,
+            DeletedAt = await context.IsObjectDeleted(WordId) ? commit.DateTime : null
         };
-    }
-
-    public override async ValueTask ApplyChange(Definition definition, ChangeContext context)
-    {
-        definition.Text = Text;
-        definition.OneWordDefinition = OneWordDefinition;
-        definition.PartOfSpeech = PartOfSpeech;
-        definition.Order = Order;
-        if (await context.IsObjectDeleted(WordId))
-        {
-            definition.DeletedAt = context.Commit.DateTime;
-        }
     }
 }

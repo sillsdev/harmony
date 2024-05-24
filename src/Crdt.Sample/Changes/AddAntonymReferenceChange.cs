@@ -6,14 +6,9 @@ using Crdt.Sample.Models;
 namespace Crdt.Sample.Changes;
 
 public class AddAntonymReferenceChange(Guid entityId, Guid antonymId)
-    : Change<Word>(entityId), ISelfNamedType<AddAntonymReferenceChange>
+    : EditChange<Word>(entityId), ISelfNamedType<AddAntonymReferenceChange>
 {
     public Guid AntonymId { get; set; } = antonymId;
-
-    public override IObjectBase NewEntity(Commit commit)
-    {
-        throw new NotImplementedException();
-    }
 
     public override async ValueTask ApplyChange(Word entity, ChangeContext context)
     {

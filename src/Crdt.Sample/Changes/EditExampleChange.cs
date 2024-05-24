@@ -7,7 +7,7 @@ using Ycs;
 
 namespace Crdt.Sample.Changes;
 
-public class EditExampleChange : Change<Example>, ISelfNamedType<EditExampleChange>
+public class EditExampleChange : EditChange<Example>, ISelfNamedType<EditExampleChange>
 {
     public static EditExampleChange EditExample(Example example, Action<YText> change)
     {
@@ -23,11 +23,6 @@ public class EditExampleChange : Change<Example>, ISelfNamedType<EditExampleChan
     public EditExampleChange(Guid entityId, string updateBlob) : base(entityId)
     {
         UpdateBlob = updateBlob;
-    }
-
-    public override IObjectBase NewEntity(Commit commit)
-    {
-        throw new System.NotImplementedException();
     }
 
     public string UpdateBlob { get; set; }

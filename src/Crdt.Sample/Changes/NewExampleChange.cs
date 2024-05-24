@@ -7,7 +7,7 @@ using Ycs;
 
 namespace Crdt.Sample.Changes;
 
-public class NewExampleChange : Change<Example>, ISelfNamedType<NewExampleChange>
+public class NewExampleChange : CreateChange<Example>, ISelfNamedType<NewExampleChange>
 {
     public static NewExampleChange FromString(Guid definitionId, string example, Guid? exampleId = default)
     {
@@ -35,22 +35,14 @@ public class NewExampleChange : Change<Example>, ISelfNamedType<NewExampleChange
     {
     }
 
-    public override IObjectBase NewEntity(Commit commit)
+    public override async ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context)
     {
         return new Example
         {
             Id = EntityId,
             DefinitionId = DefinitionId,
-            YTextBlob = UpdateBlob
+            YTextBlob = UpdateBlob,
+            DeletedAt = await context.IsObjectDeleted(DefinitionId)? commit.DateTime : null
         };
-    }
-
-    public override async ValueTask ApplyChange(Example entity, ChangeContext context)
-    {
-        entity.YTextBlob = UpdateBlob;
-        if (await context.IsObjectDeleted(DefinitionId))
-        {
-            entity.DeletedAt = context.Commit.DateTime;
-        }
     }
 }

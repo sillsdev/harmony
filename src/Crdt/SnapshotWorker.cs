@@ -78,7 +78,7 @@ public class SnapshotWorker
                 }
                 else
                 {
-                    entity = commitChange.Change.NewEntity(commit);
+                    entity = await commitChange.Change.NewEntity(commit, changeContext);
                     wasDeleted = false;
                 }
 

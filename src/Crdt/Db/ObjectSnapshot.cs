@@ -32,6 +32,21 @@ public record SimpleSnapshot(
 
 public class ObjectSnapshot
 {
+    public static ObjectSnapshot ForTesting(Commit commit)
+    {
+        return new ObjectSnapshot
+        {
+            Commit = commit,
+            Entity = null!,
+            Id = Guid.Empty,
+            References = [],
+            CommitId = commit.Id,
+            EntityId = Guid.Empty,
+            IsRoot = false,
+            TypeName = "Test",
+            EntityIsDeleted = false
+        };
+    }
     //determines column name used in projected object tables, changing this will require a migration
     public const string ShadowRefName = "SnapshotId";
     [JsonConstructor]

@@ -26,8 +26,10 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
     public async Task<(Commit? oldestChange, Commit[] newCommits)> FilterExistingCommits(ICollection<Commit> commits)
     {
         Commit? oldestChange = null;
-        var commitIdsToExclude = await _dbContext.Commits.Where(c => commits.Select(c => c.Id).Contains(c.Id))
-            .Select(c => c.Id).ToArrayAsync();
+        var commitIdsToExclude = await _dbContext.Commits
+            .Where(c => commits.Select(c => c.Id).Contains(c.Id))
+            .Select(c => c.Id)
+            .ToArrayAsync();
         var newCommits = commits.ExceptBy(commitIdsToExclude, c => c.Id).Select(commit =>
         {
             if (oldestChange is null || commit.CompareKey.CompareTo(oldestChange.CompareKey) < 0) oldestChange = commit;
@@ -40,13 +42,7 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
     {
         //use the oldest commit added to clear any snapshots that are based on a now incomplete history
         await _dbContext.Snapshots
-            .Where(s => s.Commit.HybridDateTime.DateTime > oldestChange.DateTime
-                        || (s.Commit.HybridDateTime.DateTime == oldestChange.DateTime &&
-                            s.Commit.HybridDateTime.Counter > oldestChange.HybridDateTime.Counter)
-                        || (s.Commit.HybridDateTime.DateTime == oldestChange.DateTime &&
-                            s.Commit.HybridDateTime.Counter == oldestChange.HybridDateTime.Counter &&
-                            s.CommitId > oldestChange.Id)
-            )
+            .WhereAfter(oldestChange)
             .ExecuteDeleteAsync();
     }
 
@@ -64,9 +60,10 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
     {
         return _dbContext.Snapshots.GroupBy(s => s.EntityId,
             (entityId, snapshots) => snapshots
-                .OrderByDescending(s => s.Commit.HybridDateTime.DateTime)
-                .ThenBy(s => s.Commit.HybridDateTime.Counter)
-                .ThenBy(s => s.CommitId)
+                    //unfortunately this can not be extracted into a helper because the whole thing is part of an expression
+                .OrderByDescending(c => c.Commit.HybridDateTime.DateTime)
+                .ThenByDescending(c => c.Commit.HybridDateTime.Counter)
+                .ThenByDescending(c => c.Commit.Id)
                 .First(s => currentTime == null || s.Commit.HybridDateTime.DateTime <= currentTime).Id);
     }
 
@@ -79,8 +76,7 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
         ArgumentNullException.ThrowIfNull(lastCommit);
         var newCommits = await CurrentCommits()
             .Include(c => c.ChangeEntities)
-            .Where(c => lastCommit.HybridDateTime.DateTime < c.HybridDateTime.DateTime
-                        || (lastCommit.HybridDateTime.DateTime == c.HybridDateTime.DateTime && lastCommit.HybridDateTime.Counter < c.HybridDateTime.Counter))
+            .WhereAfter(lastCommit)
             .ToArrayAsync();
         return (snapshots, newCommits);
     }
@@ -92,16 +88,10 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
 
     public async Task<Commit?> FindPreviousCommit(Commit commit)
     {
-        if (!string.IsNullOrWhiteSpace(commit.ParentHash)) return await FindCommitByHash(commit.ParentHash);
-        return await _dbContext.Commits.Where(c => c.HybridDateTime.DateTime < commit.HybridDateTime.DateTime
-                                                   || c.HybridDateTime.DateTime == commit.HybridDateTime.DateTime &&
-                                                   c.HybridDateTime.Counter < commit.HybridDateTime.Counter
-                                                   || c.HybridDateTime.DateTime == commit.HybridDateTime.DateTime &&
-                                                   c.HybridDateTime.Counter == commit.HybridDateTime.Counter &&
-                                                   c.Id < commit.Id)
-            .OrderByDescending(c => c.HybridDateTime.DateTime)
-            .ThenByDescending(c => c.HybridDateTime.Counter)
-            .ThenByDescending(c => c.Id)
+        //can't trust the parentHash actually, so we can't do this.
+        // if (!string.IsNullOrWhiteSpace(commit.ParentHash)) return await FindCommitByHash(commit.ParentHash);
+        return await _dbContext.Commits.WhereBefore(commit)
+            .DefaultOrderDescending()
             .FirstOrDefaultAsync();
     }
 
@@ -110,12 +100,7 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
         var dbContextCommits = _dbContext.Commits.Include(c => c.ChangeEntities);
         if (commit is null) return await dbContextCommits.DefaultOrder().ToArrayAsync();
         return await dbContextCommits
-            .Where(c => c.HybridDateTime.DateTime > commit.HybridDateTime.DateTime
-                        || (c.HybridDateTime.DateTime == commit.HybridDateTime.DateTime &&
-                            c.HybridDateTime.Counter > commit.HybridDateTime.Counter)
-                        || (c.HybridDateTime.DateTime == commit.HybridDateTime.DateTime &&
-                            c.HybridDateTime.Counter == commit.HybridDateTime.Counter &&
-                            c.Id > commit.Id))
+            .WhereAfter(commit)
             .DefaultOrder()
             .ToArrayAsync();
     }
@@ -251,8 +236,7 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
     public HybridDateTime? GetLatestDateTime()
     {
         return _dbContext.Commits
-            .OrderBy(c => c.HybridDateTime.DateTime)
-            .ThenByDescending(c => c.HybridDateTime.Counter)
+            .DefaultOrderDescending()
             .AsNoTracking()
             .Select(c => c.HybridDateTime)
             .FirstOrDefault();

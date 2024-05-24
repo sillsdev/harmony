@@ -48,4 +48,26 @@ public static class QueryHelpers
             .ThenBy(c => c.HybridDateTime.Counter)
             .ThenBy(c => c.Id);
     }
+
+    public static IQueryable<T> DefaultOrderDescending<T>(this IQueryable<T> queryable) where T: CommitBase
+    {
+        return queryable
+            .OrderByDescending(c => c.HybridDateTime.DateTime)
+            .ThenByDescending(c => c.HybridDateTime.Counter)
+            .ThenByDescending(c => c.Id);
+    }
+
+    public static IQueryable<T> WhereAfter<T>(this IQueryable<T> queryable, T after) where T : CommitBase
+    {
+        return queryable.Where(c => after.HybridDateTime.DateTime < c.HybridDateTime.DateTime
+        || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter < c.HybridDateTime.Counter)
+        || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter == c.HybridDateTime.Counter && after.Id < c.Id));
+    }
+
+    public static IQueryable<T> WhereBefore<T>(this IQueryable<T> queryable, T after) where T : CommitBase
+    {
+        return queryable.Where(c => c.HybridDateTime.DateTime < after.HybridDateTime.DateTime
+        || (c.HybridDateTime.DateTime == after.HybridDateTime.DateTime && c.HybridDateTime.Counter < after.HybridDateTime.Counter)
+        || (c.HybridDateTime.DateTime == after.HybridDateTime.DateTime && c.HybridDateTime.Counter == after.HybridDateTime.Counter && c.Id < after.Id));
+    }
 }

@@ -1,6 +1,7 @@
 ﻿using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Argon;
+using Crdt.Core;
 using Crdt.Db;
 using Crdt.Sample;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,7 +35,7 @@ public class ModuleInit
             (target, memberValue) =>
             {
                 if (memberValue is null) return null;
-                if (memberValue == "") return "Hash_Empty";
+                if (memberValue == CommitBase.NullParentHash) return "Hash_Empty";
                 HashList.Value ??= [];
 
                 var list = HashList.Value;

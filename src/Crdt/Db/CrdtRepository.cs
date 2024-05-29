@@ -227,10 +227,10 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
         await _dbContext.SaveChangesAsync();
     }
 
-    public async Task AddCommits(IEnumerable<Commit> commits)
+    public async Task AddCommits(IEnumerable<Commit> commits, bool save = true)
     {
         _dbContext.Commits.AddRange(commits);
-        await _dbContext.SaveChangesAsync();
+        if (save) await _dbContext.SaveChangesAsync();
     }
 
     public HybridDateTime? GetLatestDateTime()

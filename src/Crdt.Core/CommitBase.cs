@@ -6,6 +6,7 @@ namespace Crdt.Core;
 
 public class CommitBase
 {
+    public const string NullParentHash = "0000";
     [JsonConstructor]
     protected CommitBase(Guid id, string hash, string parentHash, HybridDateTime hybridDateTime)
     {
@@ -18,8 +19,8 @@ public class CommitBase
     public CommitBase(Guid id)
     {
         Id = id;
-        Hash = GenerateHash("");
-        ParentHash = "";
+        Hash = GenerateHash(NullParentHash);
+        ParentHash = NullParentHash;
     }
 
     public CommitBase() : this(Guid.NewGuid())
@@ -30,7 +31,10 @@ public class CommitBase
     public Guid Id { get; }
     public required HybridDateTime HybridDateTime { get; init; }
     public DateTimeOffset DateTime => HybridDateTime.DateTime;
+    [JsonIgnore]
     public string Hash { get; private set; }
+
+    [JsonIgnore]
     public string ParentHash { get; private set; }
     public CommitMetadata Metadata { get; init; } = new();
 

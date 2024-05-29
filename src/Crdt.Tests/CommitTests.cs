@@ -127,6 +127,6 @@ public class CommitTests
         commit.SetParentHash(Convert.ToHexString(XxHash64.Hash(Guid.NewGuid().ToByteArray())));
         var json = JsonSerializer.Serialize(commit, serializerOptions);
         var commit2 = JsonSerializer.Deserialize<Commit>(json, serializerOptions);
-        commit2.Should().BeEquivalentTo(commit);
+        commit2.Should().BeEquivalentTo(commit, options => options.Excluding(c => c.Hash).Excluding(c => c.ParentHash));
     }
 }

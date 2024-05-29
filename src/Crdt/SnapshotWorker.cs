@@ -1,5 +1,6 @@
 using System.Linq.Expressions;
 using Crdt.Changes;
+using Crdt.Core;
 using Crdt.Db;
 using Crdt.Entities;
 using Microsoft.EntityFrameworkCore;
@@ -39,21 +40,21 @@ public class SnapshotWorker
         _crdtRepository = crdtRepository;
     }
 
-    public async Task UpdateSnapshots(Commit oldestAddedCommit)
+    public async Task UpdateSnapshots(Commit oldestAddedCommit, Commit[] newCommits)
     {
         var previousCommit = await _crdtRepository.FindPreviousCommit(oldestAddedCommit);
         var commits = await _crdtRepository.GetCommitsAfter(previousCommit);
-        await ApplyCommitChanges(commits, true, previousCommit?.Hash);
+        await ApplyCommitChanges(commits.UnionBy(newCommits, c => c.Id), true, previousCommit?.Hash ?? CommitBase.NullParentHash);
 
         //intermediate snapshots should be added first, as the last snapshot added for an entity will be used in the projected tables
         await _crdtRepository.AddIfNew(_newIntermediateSnapshots);
         await _crdtRepository.AddSnapshots(_pendingSnapshots.Values);
     }
 
-    public async ValueTask ApplyCommitChanges(ICollection<Commit> commits, bool updateCommitHash, string? previousCommitHash)
+    private async ValueTask ApplyCommitChanges(IEnumerable<Commit> commits, bool updateCommitHash, string? previousCommitHash)
     {
         var commitIndex = 0;
-        foreach (var commit in commits)
+        foreach (var commit in commits.DefaultOrder())
         {
             if (updateCommitHash && previousCommitHash is not null)
             {

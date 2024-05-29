@@ -22,7 +22,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
 
         await using var transaction = await crdtRepository.BeginTransactionAsync();
         await crdtRepository.AddCommit(commit);
-        await UpdateSnapshots(commit);
+        await UpdateSnapshots(commit, [commit]);
         if (_autoValidate) await ValidateCommits();
         await transaction.CommitAsync();
     }
@@ -81,18 +81,19 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
         if (oldestChange is null || newCommits is []) return;
 
         await using var transaction = await crdtRepository.BeginTransactionAsync();
-        await crdtRepository.AddCommits(newCommits);
-        await UpdateSnapshots(oldestChange);
+        //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
+        await crdtRepository.AddCommits(newCommits, false);
+        await UpdateSnapshots(oldestChange, newCommits);
         if (_autoValidate || forceValidate) await ValidateCommits();
         await transaction.CommitAsync();
     }
 
-    private async Task UpdateSnapshots(Commit oldestAddedCommit)
+    private async Task UpdateSnapshots(Commit oldestAddedCommit, Commit[] newCommits)
     {
         await crdtRepository.DeleteStaleSnapshots(oldestAddedCommit);
         var modelSnapshot = await GetProjectSnapshot(true);
         var snapshotWorker = new SnapshotWorker(modelSnapshot.Snapshots, crdtRepository);
-        await snapshotWorker.UpdateSnapshots(oldestAddedCommit);
+        await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
     }
 
     public async Task ValidateCommits()
@@ -100,7 +101,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
         Commit? parentCommit = null;
         await foreach (var commit in crdtRepository.CurrentCommits().AsAsyncEnumerable())
         {
-            var parentHash = parentCommit?.Hash ?? "";
+            var parentHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
             var expectedHash = commit.GenerateHash(parentHash);
             if (commit.Hash == expectedHash && commit.ParentHash == parentHash)
             {

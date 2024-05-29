@@ -49,6 +49,14 @@ public static class QueryHelpers
             .ThenBy(c => c.Id);
     }
 
+    public static IEnumerable<T> DefaultOrder<T>(this IEnumerable<T> queryable) where T: CommitBase
+    {
+        return queryable
+            .OrderBy(c => c.HybridDateTime.DateTime)
+            .ThenBy(c => c.HybridDateTime.Counter)
+            .ThenBy(c => c.Id);
+    }
+
     public static IQueryable<T> DefaultOrderDescending<T>(this IQueryable<T> queryable) where T: CommitBase
     {
         return queryable

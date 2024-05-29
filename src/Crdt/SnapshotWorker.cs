@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Linq.Expressions;
 using Crdt.Changes;
 using Crdt.Core;
@@ -68,8 +69,6 @@ public class SnapshotWorker
             {
                 IObjectBase entity;
                 var snapshot = await GetSnapshot(commitChange.EntityId);
-                var hasBeenApplied = snapshot is not null && (snapshot.CommitId == commit.Id ||
-                                                              snapshot.Commit.HybridDateTime > commit.HybridDateTime);
                 var changeContext = new ChangeContext(commit, this, _crdtRepository);
                 bool wasDeleted;
                 if (snapshot is not null)
@@ -90,9 +89,6 @@ public class SnapshotWorker
                 {
                     await MarkDeleted(entity.Id, commit);
                 }
-                //this snapshot has already been applied, we don't need to add it again
-                //but we did need to run apply again because we may need to mark other entities as deleted
-                if (hasBeenApplied) continue;
 
                 //to get the state in a point in time we would have to find a snapshot before that time, then apply any commits that came after that snapshot but still before the point in time.
                 //we would probably want the most recent snapshot to always follow current, so we might need to track the number of changes a given snapshot represents so we can

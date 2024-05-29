@@ -54,6 +54,7 @@ public class SnapshotWorker
 
     private async ValueTask ApplyCommitChanges(IEnumerable<Commit> commits, bool updateCommitHash, string? previousCommitHash)
     {
+        var intermediateSnapshots = new Dictionary<Guid, ObjectSnapshot>();
         var commitIndex = 0;
         foreach (var commit in commits.DefaultOrder())
         {
@@ -68,12 +69,12 @@ public class SnapshotWorker
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
                 IObjectBase entity;
-                var snapshot = await GetSnapshot(commitChange.EntityId);
+                var prevSnapshot = await GetSnapshot(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, this, _crdtRepository);
                 bool wasDeleted;
-                if (snapshot is not null)
+                if (prevSnapshot is not null)
                 {
-                    entity = snapshot.Entity.Copy();
+                    entity = prevSnapshot.Entity.Copy();
                     wasDeleted = entity.DeletedAt.HasValue;
                 }
                 else
@@ -99,15 +100,23 @@ public class SnapshotWorker
                 //but but to not snapshot every change we could do this instead
                 // s0 -> s1 -> sNew
 
-                //for now just skip every other change
-                if (snapshot is not null && (snapshot.IsRoot || commitIndex % 2 == 0))
+                //when both snapshots are for the same commit we don't want to keep the previous, therefore the new snapshot should be root
+                var isRoot = prevSnapshot is null || (prevSnapshot.IsRoot && prevSnapshot.CommitId == commit.Id);
+                var newSnapshot = new ObjectSnapshot(entity, commit, isRoot);
+                //if both snapshots are for the same commit then we don't want to keep the previous snapshot
+                if (prevSnapshot is null || prevSnapshot.CommitId == commit.Id)
                 {
-                    _newIntermediateSnapshots.Add(snapshot);
+                    //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
+                }
+                else if (commitIndex % 2 == 0 || prevSnapshot.IsRoot)
+                {
+                    intermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
                 }
 
-                var newSnapshot = new ObjectSnapshot(entity, commit, snapshot is null);
                 AddSnapshot(newSnapshot);
             }
+            _newIntermediateSnapshots.AddRange(intermediateSnapshots.Values);
+            intermediateSnapshots.Clear();
         }
     }
 
@@ -169,7 +178,7 @@ public class SnapshotWorker
         return null;
     }
 
-    public void AddSnapshot(ObjectSnapshot snapshot)
+    private void AddSnapshot(ObjectSnapshot snapshot)
     {
         //if there was already a pending snapshot there's no need to store it as both may point to the same commit
         _pendingSnapshots[snapshot.Entity.Id] = snapshot;

@@ -22,7 +22,6 @@ public static class CrdtKernel
         Action<IServiceProvider, DbContextOptionsBuilder> configureOptions,
         Action<CrdtConfig> configureCrdt)
     {
-        services.AddMemoryCache();
         services.AddOptions<CrdtConfig>().Configure(configureCrdt);
         services.AddSingleton(sp => new JsonSerializerOptions(JsonSerializerDefaults.General)
         {

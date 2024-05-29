@@ -53,6 +53,7 @@ internal static class SyncHelper
             await localModel.AddRangeFromSync(missingFromLocal);
         }
 
+        // Now the localModel has all the changes from all remotes, so all remotes will get the changes from the localModel as well as all other remotes
         for (var i = 0; i < remotes.Length; i++)
         {
             var remote = remotes[i];

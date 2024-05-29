@@ -21,7 +21,6 @@ public class SnapshotWorker
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots, CrdtRepository crdtRepository)
     {
         _pendingSnapshots = snapshots;
-        var oldestSnapshot = snapshots.Values.MinBy(s => s.Commit.CompareKey);
         _crdtRepository = crdtRepository;
     }
 

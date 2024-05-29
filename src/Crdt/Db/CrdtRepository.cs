@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Crdt.Db;
 
-public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig, DateTimeOffset? currentTime = null)
+public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig, DateTimeOffset? ignoreChangesAfter = null)
 {
     public Task<IDbContextTransaction> BeginTransactionAsync()
     {
@@ -48,7 +48,9 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
 
     public IQueryable<Commit> CurrentCommits()
     {
-        return _dbContext.Commits.DefaultOrder().Where(c => currentTime == null || c.HybridDateTime.DateTime <= currentTime);
+        var query = _dbContext.Commits.DefaultOrder();
+        if (ignoreChangesAfter is not null) query = query.Where(c => c.HybridDateTime.DateTime <= ignoreChangesAfter);
+        return query;
     }
 
     public IQueryable<ObjectSnapshot> CurrentSnapshots()
@@ -64,7 +66,7 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
                 .OrderByDescending(c => c.Commit.HybridDateTime.DateTime)
                 .ThenByDescending(c => c.Commit.HybridDateTime.Counter)
                 .ThenByDescending(c => c.Commit.Id)
-                .First(s => currentTime == null || s.Commit.HybridDateTime.DateTime <= currentTime).Id);
+                .First(s => ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter).Id);
     }
 
     public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, Commit[] pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
@@ -114,7 +116,7 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
     {
         return await _dbContext.Snapshots.Include(s => s.Commit)
             .DefaultOrder()
-            .LastAsync(s => s.EntityId == objectId && (currentTime == null || s.Commit.DateTime <= currentTime));
+            .LastAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
     }
 
     public async Task<IObjectBase> GetObjectBySnapshotId(Guid snapshotId)
@@ -131,7 +133,7 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
     {
         var snapshot = await _dbContext.Snapshots
             .DefaultOrder()
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (currentTime == null || s.Commit.DateTime <= currentTime));
+            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
         return snapshot?.Entity.Is<T>();
     }
 
@@ -149,9 +151,10 @@ public class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtC
 
     public async Task<SyncState> GetCurrentSyncState()
     {
-        return await _dbContext.Commits
-            .Where(c => currentTime == null || c.HybridDateTime.DateTime <= currentTime)
-            .GetSyncState();
+        var queryable = _dbContext.Commits.AsQueryable();
+        if (ignoreChangesAfter is not null)
+            queryable = queryable.Where(c => c.HybridDateTime.DateTime <= ignoreChangesAfter);
+        return await queryable.GetSyncState();
     }
 
     public async Task<ChangesResult<Commit>> GetChanges(SyncState remoteState)

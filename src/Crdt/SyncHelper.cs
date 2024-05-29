@@ -3,7 +3,7 @@ using Crdt.Core;
 
 namespace Crdt;
 
-public static class SyncHelper
+internal static class SyncHelper
 {
     /// <summary>
     /// simple sync example, each ISyncable could be over the wire or in memory

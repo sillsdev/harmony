@@ -16,5 +16,8 @@ public class ModelSnapshot
     public DateTimeOffset? LastChange { get; }
     public Guid? LastCommitId { get; }
     public string? LastCommitHash { get; }
+    /// <summary>
+    /// key is the entity id
+    /// </summary>
     public Dictionary<Guid, SimpleSnapshot> Snapshots { get; }
 }

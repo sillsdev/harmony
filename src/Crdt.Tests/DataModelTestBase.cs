@@ -4,8 +4,10 @@ using Crdt.Db;
 using Crdt.Sample;
 using Crdt.Sample.Changes;
 using Crdt.Sample.Models;
+using Crdt.Tests.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Crdt.Tests;
 
@@ -15,11 +17,13 @@ public class DataModelTestBase : IAsyncLifetime
     protected readonly Guid _localClientId = Guid.NewGuid();
     public readonly DataModel DataModel;
     public readonly CrdtDbContext DbContext;
+    protected readonly MockTimeProvider MockTimeProvider = new();
 
     public DataModelTestBase()
     {
         _services = new ServiceCollection()
             .AddCrdtDataSample(":memory:")
+            .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider))
             .BuildServiceProvider();
         DbContext = _services.GetRequiredService<CrdtDbContext>();
         DbContext.Database.OpenConnection();
@@ -40,9 +44,9 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(_localClientId, NextDate(), change, add);
     }
 
-    public async ValueTask<Commit> WriteNextChange(IEnumerable<IChange> changes, bool add = true)
+    public async ValueTask<Commit> WriteNextChange(IEnumerable<IChange> changes)
     {
-        return await WriteChange(_localClientId, NextDate(), changes, add);
+        return await WriteChange(_localClientId, NextDate(), changes);
     }
 
     public async ValueTask<Commit> WriteChangeAfter(Commit after, IChange change)
@@ -63,22 +67,28 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(clientId, dateTime, [change], add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId, DateTimeOffset dateTime, IEnumerable<IChange> changes, bool add = true)
+    protected async ValueTask<Commit> WriteChange(Guid clientId,
+        DateTimeOffset dateTime,
+        IEnumerable<IChange> changes,
+        bool add = true)
     {
-        var commit = new Commit
-        {
-            ClientId = clientId,
-            HybridDateTime = new HybridDateTime(dateTime, 0),
-            ChangeEntities = changes.Select((change, index) => new ChangeEntity<IChange>
+        if (!add)
+            return new Commit
             {
-                Change = change,
-                Index = index,
-                CommitId = change.CommitId,
-                EntityId = change.EntityId
-            }).ToList()
-        };
-        if (add) await DataModel.Add(commit);
-        return commit;
+                ClientId = clientId,
+                HybridDateTime = new HybridDateTime(dateTime, 0),
+                ChangeEntities = changes.Select((change, index) => new ChangeEntity<IChange>
+                {
+                    Change = change, Index = index, CommitId = change.CommitId, EntityId = change.EntityId
+                }).ToList()
+            };
+        MockTimeProvider.SetNextDateTime(dateTime);
+        return await DataModel.AddChanges(clientId, changes);
+    }
+
+    protected async Task AddCommitsViaSync(IEnumerable<Commit> commits)
+    {
+        await ((ISyncable)DataModel).AddRangeFromSync(commits);
     }
 
     public IChange SetWord(Guid entityId, string value)

@@ -27,7 +27,7 @@ public class SnapshotTests : DataModelTestBase
                 add: false));
         }
 
-        await DataModel.AddRange(commits);
+        await AddCommitsViaSync(commits);
 
         var snapshots = await DbContext.Snapshots.ToArrayAsync();
         snapshots.Should().HaveCountGreaterThan(1);
@@ -47,7 +47,7 @@ public class SnapshotTests : DataModelTestBase
                 add: false));
         }
 
-        await DataModel.AddRange(commits);
+        await AddCommitsViaSync(commits);
 
         var latestSnapshot = await DataModel.GetLatestSnapshotByObjectId(entityId);
         var snapshots = await DbContext.Snapshots.ToArrayAsync();

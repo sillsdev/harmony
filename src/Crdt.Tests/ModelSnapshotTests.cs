@@ -51,8 +51,8 @@ public class ModelSnapshotTests : DataModelTestBase
             addNew.Add(await WriteNextChange(SetWord(Guid.NewGuid(), $"add {i}"), false).AsTask());
         }
 
-        //adding all in one AddRange means there's sparse snapshots
-        await DataModel.AddRange(changes.Concat(addNew));
+        //adding all via sync means there's sparse snapshots
+        await AddCommitsViaSync(changes.Concat(addNew));
         //there will only be a snapshot for every other commit, but there's change count * 2 commits, plus a first and last change
         DbContext.Snapshots.Should().HaveCount(2 + changeCount);
 
@@ -76,7 +76,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var entityId = Guid.NewGuid();
         await WriteNextChange(SetWord(entityId, "first"));
         //adding all in one AddRange means there's sparse snapshots
-        await DataModel.AddRange(Enumerable.Range(0, changeCount)
+        await AddCommitsViaSync(Enumerable.Range(0, changeCount)
             .Select(i => WriteNextChange(SetWord(entityId, $"change {i}"), false).Result));
 
         var latestSnapshot = await DataModel.GetLatestSnapshotByObjectId(entityId);

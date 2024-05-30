@@ -77,7 +77,7 @@ public class DataModelSimpleChanges : DataModelTestBase
     public async Task WritingNoChangesWorks()
     {
         await WriteNextChange(SetWord(_entity1Id, "test-value"));
-        await DataModel.AddRange(Array.Empty<Commit>());
+        await AddCommitsViaSync(Array.Empty<Commit>());
 
         var snapshot = DbContext.Snapshots.Should().ContainSingle().Subject;
         snapshot.Entity.Is<Word>().Text.Should().Be("test-value");
@@ -131,12 +131,11 @@ public class DataModelSimpleChanges : DataModelTestBase
     {
         await WriteNextChange(SetWord(_entity1Id, "first"));
         var second = await WriteNextChange(SetWord(_entity1Id, "second"));
-        //add range has some additional logic that depends on proper commit ordering
-        await DataModel.AddRange(new[]
-        {
+        //add vis sync has some additional logic that depends on proper commit ordering
+        await AddCommitsViaSync([
             await WriteChangeBefore(second, new SetWordNoteChange(_entity1Id, "a word note"), false),
             await WriteNextChange(SetWord(_entity1Id, "third"), false)
-        });
+        ]);
         var word = await DataModel.GetLatest<Word>(_entity1Id);
         word!.Text.Should().Be("third");
         word.Note.Should().Be("a word note");

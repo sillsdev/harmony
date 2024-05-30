@@ -4,7 +4,7 @@ using Crdt.Entities;
 
 namespace Crdt.Helpers;
 
-public static class DerivedTypeHelper
+internal static class DerivedTypeHelper
 {
     //call static method via compiler reflection on type JsonPolymorphismOptions
     [UnsafeAccessor(UnsafeAccessorKind.StaticMethod)]

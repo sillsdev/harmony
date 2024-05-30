@@ -9,12 +9,24 @@ namespace Crdt;
 
 public record SyncResults(Commit[] MissingFromLocal, Commit[] MissingFromRemote, bool IsSynced);
 
-public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions serializerOptions, IHybridDateTimeProvider timeProvider) : ISyncable
+public class DataModel : ISyncable
 {
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
     private readonly bool _autoValidate = true;
+
+    private readonly CrdtRepository _crdtRepository;
+    private readonly JsonSerializerOptions _serializerOptions;
+    private readonly IHybridDateTimeProvider _timeProvider;
+
+    //constructor must be internal because CrdtRepository is internal
+    internal DataModel(CrdtRepository crdtRepository, JsonSerializerOptions serializerOptions, IHybridDateTimeProvider timeProvider)
+    {
+        _crdtRepository = crdtRepository;
+        _serializerOptions = serializerOptions;
+        _timeProvider = timeProvider;
+    }
 
 
     /// <summary>
@@ -41,7 +53,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
         var commit = new Commit(commitId)
         {
             ClientId = clientId,
-            HybridDateTime = timeProvider.GetDateTime(),
+            HybridDateTime = _timeProvider.GetDateTime(),
             ChangeEntities = {ToChangeEntity(change, 0)}
         };
         await Add(commit);
@@ -55,7 +67,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
         var commit = new Commit(commitId)
         {
             ClientId = clientId,
-            HybridDateTime = timeProvider.GetDateTime(),
+            HybridDateTime = _timeProvider.GetDateTime(),
             ChangeEntities = [..changes.Select(ToChangeEntity)]
         };
         await Add(commit);
@@ -64,10 +76,10 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
 
     private async Task Add(Commit commit)
     {
-        if (await crdtRepository.HasCommit(commit.Id)) return;
+        if (await _crdtRepository.HasCommit(commit.Id)) return;
 
-        await using var transaction = await crdtRepository.BeginTransactionAsync();
-        await crdtRepository.AddCommit(commit);
+        await using var transaction = await _crdtRepository.BeginTransactionAsync();
+        await _crdtRepository.AddCommit(commit);
         await UpdateSnapshots(commit, [commit]);
         if (_autoValidate) await ValidateCommits();
         await transaction.CommitAsync();
@@ -84,14 +96,14 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
     async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits)
     {
         commits = commits.ToArray();
-        timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
-        var (oldestChange, newCommits) = await crdtRepository.FilterExistingCommits(commits.ToArray());
+        _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
+        var (oldestChange, newCommits) = await _crdtRepository.FilterExistingCommits(commits.ToArray());
         //no changes added
         if (oldestChange is null || newCommits is []) return;
 
-        await using var transaction = await crdtRepository.BeginTransactionAsync();
+        await using var transaction = await _crdtRepository.BeginTransactionAsync();
         //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
-        await crdtRepository.AddCommits(newCommits, false);
+        await _crdtRepository.AddCommits(newCommits, false);
         await UpdateSnapshots(oldestChange, newCommits);
         await ValidateCommits();
         await transaction.CommitAsync();
@@ -104,16 +116,16 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
 
     private async Task UpdateSnapshots(Commit oldestAddedCommit, Commit[] newCommits)
     {
-        await crdtRepository.DeleteStaleSnapshots(oldestAddedCommit);
+        await _crdtRepository.DeleteStaleSnapshots(oldestAddedCommit);
         var modelSnapshot = await GetProjectSnapshot(true);
-        var snapshotWorker = new SnapshotWorker(modelSnapshot.Snapshots, crdtRepository);
+        var snapshotWorker = new SnapshotWorker(modelSnapshot.Snapshots, _crdtRepository);
         await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
     }
 
     private async Task ValidateCommits()
     {
         Commit? parentCommit = null;
-        await foreach (var commit in crdtRepository.CurrentCommits().AsAsyncEnumerable())
+        await foreach (var commit in _crdtRepository.CurrentCommits().AsAsyncEnumerable())
         {
             var parentHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
             var expectedHash = commit.GenerateHash(parentHash);
@@ -123,7 +135,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
                 continue;
             }
 
-            var actualParentCommit = await crdtRepository.FindCommitByHash(commit.ParentHash);
+            var actualParentCommit = await _crdtRepository.FindCommitByHash(commit.ParentHash);
 
             throw new CommitValidationException(
                 $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit} and actual parent {actualParentCommit}");
@@ -138,12 +150,12 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
     {
-        return await crdtRepository.GetCurrentSnapshotByObjectId(entityId);
+        return await _crdtRepository.GetCurrentSnapshotByObjectId(entityId);
     }
 
     public async Task<T?> GetLatest<T>(Guid objectId) where T : class, IObjectBase
     {
-        return await crdtRepository.GetCurrent<T>(objectId);
+        return await _crdtRepository.GetCurrent<T>(objectId);
     }
 
     public async Task<ModelSnapshot> GetProjectSnapshot(bool includeDeleted = false)
@@ -153,7 +165,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
 
     public IQueryable<T> GetLatestObjects<T>() where T : class, IObjectBase
     {
-        var q = crdtRepository.GetCurrentObjects<T>();
+        var q = _crdtRepository.GetCurrentObjects<T>();
         if (q is IQueryable<IOrderableCrdt>)
         {
             q = q.OrderBy(o => EF.Property<double>(o, nameof(IOrderableCrdt.Order))).ThenBy(o => o.Id);
@@ -163,12 +175,12 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
 
     public async Task<IObjectBase> GetBySnapshotId(Guid snapshotId)
     {
-        return await crdtRepository.GetObjectBySnapshotId(snapshotId);
+        return await _crdtRepository.GetObjectBySnapshotId(snapshotId);
     }
 
     private async Task<SimpleSnapshot[]> GetEntitySnapshots(bool includeDeleted = false)
     {
-        var queryable = crdtRepository.CurrentSnapshots();
+        var queryable = _crdtRepository.CurrentSnapshots();
         if (!includeDeleted) queryable = queryable.Where(s => !s.EntityIsDeleted);
         var snapshots = await queryable.Select(s =>
             new SimpleSnapshot(s.Id,
@@ -184,7 +196,7 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
 
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAt(DateTimeOffset dateTime)
     {
-        var repository = crdtRepository.GetScopedRepository(dateTime);
+        var repository = _crdtRepository.GetScopedRepository(dateTime);
         var (snapshots, pendingCommits) = await repository.GetCurrentSnapshotsAndPendingCommits();
 
         if (pendingCommits.Length != 0)
@@ -197,21 +209,21 @@ public class DataModel(CrdtRepository crdtRepository, JsonSerializerOptions seri
 
     public async Task<SyncState> GetSyncState()
     {
-        return await crdtRepository.GetCurrentSyncState();
+        return await _crdtRepository.GetCurrentSyncState();
     }
 
     public async Task<ChangesResult<Commit>> GetChanges(SyncState remoteState)
     {
-        return await crdtRepository.GetChanges(remoteState);
+        return await _crdtRepository.GetChanges(remoteState);
     }
 
     public async Task<SyncResults> SyncWith(ISyncable remoteModel)
     {
-        return await SyncHelper.SyncWith(this, remoteModel, serializerOptions);
+        return await SyncHelper.SyncWith(this, remoteModel, _serializerOptions);
     }
 
     public async Task SyncMany(ISyncable[] remotes)
     {
-        await SyncHelper.SyncMany(this, remotes, serializerOptions);
+        await SyncHelper.SyncMany(this, remotes, _serializerOptions);
     }
 }

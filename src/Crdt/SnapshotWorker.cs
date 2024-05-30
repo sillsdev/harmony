@@ -11,7 +11,7 @@ namespace Crdt;
 /// <summary>
 /// helper service to update snapshots and apply commits to them, has mutable state, don't reuse
 /// </summary>
-public class SnapshotWorker
+internal class SnapshotWorker
 {
     private readonly IReadOnlyDictionary<Guid, SimpleSnapshot>? _snapshots;
     private readonly CrdtRepository _crdtRepository;
@@ -24,7 +24,7 @@ public class SnapshotWorker
         _crdtRepository = crdtRepository;
     }
 
-    public static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(Dictionary<Guid, ObjectSnapshot> snapshots,
+    internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(Dictionary<Guid, ObjectSnapshot> snapshots,
         CrdtRepository crdtRepository,
         ICollection<Commit> commits)
     {
@@ -34,7 +34,7 @@ public class SnapshotWorker
         return snapshots;
     }
 
-    public SnapshotWorker(IReadOnlyDictionary<Guid, SimpleSnapshot> snapshots, CrdtRepository crdtRepository)
+    internal SnapshotWorker(IReadOnlyDictionary<Guid, SimpleSnapshot> snapshots, CrdtRepository crdtRepository)
     {
         _snapshots = snapshots;
         _crdtRepository = crdtRepository;
@@ -69,7 +69,7 @@ public class SnapshotWorker
             {
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
-                var changeContext = new ChangeContext(commit, this, _crdtRepository);
+                var changeContext = new ChangeContext(commit, this);
                 bool wasDeleted;
                 if (prevSnapshot is not null)
                 {

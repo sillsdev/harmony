@@ -45,7 +45,12 @@ public static class CrdtKernel
             },
             ServiceLifetime.Scoped);
         services.AddScoped<CrdtRepository>();
-        services.AddScoped<DataModel>();
+        //must use factory method because DataModel constructor is internal
+        services.AddScoped<DataModel>(provider => new DataModel(
+            provider.GetRequiredService<CrdtRepository>(),
+            provider.GetRequiredService<JsonSerializerOptions>(),
+            provider.GetRequiredService<IHybridDateTimeProvider>()
+        ));
         return services;
     }
 

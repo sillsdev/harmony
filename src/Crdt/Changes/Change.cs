@@ -21,7 +21,7 @@ public interface IChange
 }
 
 /// <summary>
-/// a change that can be applied to an entity, recommend inheriting from CreateChange or EditChange
+/// a change that can be applied to an entity, recommend inheriting from <see cref="CreateChange{T}"/> or <see cref="EditChange{T}"/>
 /// </summary>
 /// <typeparam name="T">Object type modified by this change</typeparam>
 public abstract class Change<T> : IChange where T : IObjectBase

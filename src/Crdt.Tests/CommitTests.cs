@@ -10,13 +10,15 @@ namespace Crdt.Tests;
 
 public class CommitTests
 {
+    private HybridDateTime Now() => new(DateTimeOffset.UtcNow, 0);
+
     [Fact]
     public void CanHashWithoutParent()
     {
         var commit1 = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         commit1.Hash.Should().NotBeEmpty();
     }
@@ -27,7 +29,7 @@ public class CommitTests
         var commit1 = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         var commit1Copy = new Commit(commit1.Id)
         {
@@ -43,12 +45,12 @@ public class CommitTests
         var parentCommit = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         var commit1 = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         var commit1Copy = new Commit(commit1.Id)
         {
@@ -66,12 +68,12 @@ public class CommitTests
         var commit1 = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         var commit2 = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         var initialCommit2Hash = commit2.Hash;
         commit2.SetParentHash(commit1.Hash);
@@ -84,17 +86,17 @@ public class CommitTests
         var commit1 = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         var commit2 = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         var commit3 = new Commit()
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow
+            HybridDateTime = Now()
         };
         commit2.SetParentHash(commit1.Hash);
         var initialCommit2Hash = commit2.Hash;
@@ -112,7 +114,7 @@ public class CommitTests
         var commit = new Commit
         {
             ClientId = Guid.NewGuid(),
-            HybridDateTime = HybridDateTime.ForTestingNow,
+            HybridDateTime = Now(),
             ChangeEntities =
             {
                 new ChangeEntity<IChange>

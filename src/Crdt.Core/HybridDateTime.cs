@@ -14,11 +14,14 @@ public record HybridDateTime : IComparable<HybridDateTime>
     }
     public HybridDateTime(DateTimeOffset dateTime, long counter)
     {
+        if (counter < 0)
+            throw new ArgumentOutOfRangeException(nameof(counter),
+                counter,
+                "counter must be greater than or equal to 0");
         DateTime = dateTime;
         Counter = counter;
     }
 
-    public static HybridDateTime ForTestingNow => new(DateTimeOffset.UtcNow, 0);
     public DateTimeOffset DateTime { get; init; }
     public long Counter { get; init; }
 

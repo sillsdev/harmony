@@ -4,7 +4,7 @@ using Crdt.Entities;
 
 namespace Crdt.Changes;
 
-[JsonPolymorphic]
+[JsonPolymorphic(TypeDiscriminatorPropertyName = CrdtConstants.ChangeDiscriminatorProperty)]
 public interface IChange
 {
     [JsonIgnore]
@@ -23,7 +23,7 @@ public interface IChange
 /// <summary>
 /// a change that can be applied to an entity, recommend inheriting from CreateChange or EditChange
 /// </summary>
-/// <typeparam name="T"></typeparam>
+/// <typeparam name="T">Object type modified by this change</typeparam>
 public abstract class Change<T> : IChange where T : IObjectBase
 {
     protected Change(Guid entityId)

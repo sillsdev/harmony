@@ -4,11 +4,15 @@ using System.Text.Json.Serialization;
 
 namespace Crdt.Core;
 
-public class CommitBase
+/// <summary>
+/// most basic commit, does not contain any change data, that's stored in <see cref="CommitBase{TChange}"/>
+/// this class is not meant to be inherited from directly, use <see cref="ServerCommit"/> or <see cref="Crdt.Commit"/> instead
+/// </summary>
+public abstract class CommitBase
 {
     public const string NullParentHash = "0000";
     [JsonConstructor]
-    protected CommitBase(Guid id, string hash, string parentHash, HybridDateTime hybridDateTime)
+    protected internal CommitBase(Guid id, string hash, string parentHash, HybridDateTime hybridDateTime)
     {
         Id = id;
         Hash = hash;
@@ -16,15 +20,11 @@ public class CommitBase
         HybridDateTime = hybridDateTime;
     }
 
-    public CommitBase(Guid id)
+    internal CommitBase(Guid id)
     {
         Id = id;
         Hash = GenerateHash(NullParentHash);
         ParentHash = NullParentHash;
-    }
-
-    public CommitBase() : this(Guid.NewGuid())
-    {
     }
 
     public (DateTimeOffset, long, Guid) CompareKey => (HybridDateTime.DateTime, HybridDateTime.Counter, Id);
@@ -62,17 +62,14 @@ public class CommitBase
     }
 }
 
-public class CommitBase<TChange> : CommitBase
+/// <inheritdoc cref="CommitBase"/>
+public abstract class CommitBase<TChange> : CommitBase
 {
-    protected CommitBase(Guid id, string hash, string parentHash, HybridDateTime hybridDateTime) : base(id, hash, parentHash, hybridDateTime)
+    internal CommitBase(Guid id, string hash, string parentHash, HybridDateTime hybridDateTime) : base(id, hash, parentHash, hybridDateTime)
     {
     }
 
-    public CommitBase(Guid id) : base(id)
-    {
-    }
-
-    public CommitBase()
+    internal CommitBase(Guid id) : base(id)
     {
     }
 

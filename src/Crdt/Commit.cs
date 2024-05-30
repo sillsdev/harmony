@@ -15,13 +15,13 @@ public class Commit : CommitBase<IChange>
     {
     }
 
-
-    public Commit(Guid id) : base(id)
+    internal Commit(Guid id) : base(id)
     {
     }
 
-    public Commit()
+    internal Commit() : this(Guid.NewGuid())
     {
+
     }
 
     [JsonIgnore]

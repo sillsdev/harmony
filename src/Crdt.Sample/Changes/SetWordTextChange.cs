@@ -7,7 +7,7 @@ namespace Crdt.Sample.Changes;
 
 /// <summary>
 /// set text is used in many tests as a simple change that either creates a word, or updates the text of a word.
-/// because of this it implementes both NewEntity and ApplyChange, it's recommend to use a CreateChange for new entities and EditChange for updates.
+/// because of this it implements both NewEntity and ApplyChange, it's recommended to use a CreateChange for new entities and EditChange for updates.
 /// </summary>
 public class SetWordTextChange(Guid entityId, string text) : Change<Word>(entityId), ISelfNamedType<SetWordTextChange>
 {

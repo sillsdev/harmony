@@ -1,5 +1,6 @@
 ﻿using Crdt.Core;
 using Crdt.Db;
+using Crdt.Tests.Mocks;
 
 namespace Crdt.Tests.Db;
 
@@ -9,7 +10,7 @@ public class QueryHelperTests
     private Guid id2 = Guid.NewGuid();
     private Guid id3 = Guid.NewGuid();
 
-    private HybridDateTime Time(int hour, int counter) => new(new DateTime(2022, 1, 1, hour, 0, 0), counter);
+    private HybridDateTime Time(int hour, int counter) => MockTimeProvider.Time(hour, counter);
 
     private Commit Commit(Guid id, HybridDateTime hybridDateTime) =>
         new(id) { ClientId = Guid.Empty, HybridDateTime = hybridDateTime };

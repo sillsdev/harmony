@@ -2,6 +2,7 @@
 using Crdt.Db;
 using Crdt.Sample;
 using Crdt.Sample.Models;
+using Crdt.Tests.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -48,7 +49,7 @@ public class RepositoryTests : IAsyncLifetime
         return Enumerable.Range(0, count).Select(_ => Guid.NewGuid()).Order().ToArray();
     }
 
-    private HybridDateTime Time(int hour, int counter) => new(new DateTime(2022, 1, 1, hour, 0, 0), counter);
+    private HybridDateTime Time(int hour, int counter) => MockTimeProvider.Time(hour, counter);
 
     [Fact]
     public void GetLatestDateTime_Works()

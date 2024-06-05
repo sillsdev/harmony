@@ -1,0 +1,177 @@
+﻿[
+  {
+    $type: Commit,
+    CompareKey: {
+      $type: ValueTuple<DateTimeOffset, long,
+      Item1: DateTimeOffset_1,
+      Item3: Guid_1
+    },
+    Id: Guid_1,
+    HybridDateTime: {
+      $type: HybridDateTime,
+      DateTime: DateTimeOffset_1
+    },
+    DateTime: DateTimeOffset_1,
+    Hash: Hash_1,
+    ParentHash: Hash_Empty,
+    ClientId: Guid_2,
+    ChangeEntities: [
+      {
+        $type: ChangeEntity,
+        Id: Guid_3,
+        CommitId: Guid_1,
+        EntityId: Guid_4,
+        Change: {
+          $type: SimpleChange,
+          Values: {
+            $type: Dictionary<string, object>,
+            Value: entity1
+          },
+          Id: Guid_3,
+          EntityId: Guid_4,
+          EntityType: Entry
+        }
+      }
+    ],
+    Snapshots: [
+      {
+        $type: ObjectSnapshot,
+        Id: Guid_5,
+        TypeName: Entry,
+        Entity: {
+          $type: Entry,
+          Id: Guid_4,
+          Value: entity1,
+          YText: [],
+          YTextBlob: AAAAAAAAAQAAAAAAAA==
+        },
+        EntityId: Guid_4,
+        EntityIsDeleted: false,
+        CommitId: Guid_1,
+        IsRoot: true
+      }
+    ]
+  },
+  {
+    $type: Commit,
+    CompareKey: {
+      $type: ValueTuple<DateTimeOffset, long,
+      Item1: DateTimeOffset_2,
+      Item3: Guid_6
+    },
+    Id: Guid_6,
+    HybridDateTime: {
+      $type: HybridDateTime,
+      DateTime: DateTimeOffset_2
+    },
+    DateTime: DateTimeOffset_2,
+    Hash: Hash_2,
+    ParentHash: Hash_1,
+    ClientId: Guid_2,
+    ChangeEntities: [
+      {
+        $type: ChangeEntity,
+        Id: Guid_7,
+        CommitId: Guid_6,
+        EntityId: Guid_8,
+        Change: {
+          $type: SimpleChange,
+          Values: {
+            $type: Dictionary<string, object>,
+            Value: entity2
+          },
+          Id: Guid_7,
+          EntityId: Guid_8,
+          EntityType: Entry
+        }
+      }
+    ],
+    Snapshots: [
+      {
+        $type: ObjectSnapshot,
+        Id: Guid_9,
+        TypeName: Entry,
+        Entity: {
+          $type: Entry,
+          Id: Guid_8,
+          Value: entity2,
+          YText: [],
+          YTextBlob: AAAAAAAAAQAAAAAAAA==
+        },
+        EntityId: Guid_8,
+        EntityIsDeleted: false,
+        CommitId: Guid_6,
+        IsRoot: true
+      }
+    ]
+  },
+  {
+    $type: Commit,
+    CompareKey: {
+      $type: ValueTuple<DateTimeOffset, long,
+      Item1: DateTimeOffset_3,
+      Item3: Guid_10
+    },
+    Id: Guid_10,
+    HybridDateTime: {
+      $type: HybridDateTime,
+      DateTime: DateTimeOffset_3
+    },
+    DateTime: DateTimeOffset_3,
+    Hash: Hash_3,
+    ParentHash: Hash_2,
+    ClientId: Guid_2,
+    ChangeEntities: [
+      {
+        $type: ChangeEntity,
+        Id: Guid_11,
+        CommitId: Guid_10,
+        EntityId: Guid_4,
+        Change: {
+          $type: AddReferenceChange,
+          ReferenceId: Guid_8,
+          Id: Guid_11,
+          EntityId: Guid_4,
+          EntityType: Entry
+        }
+      }
+    ],
+    Snapshots: [
+      {
+        $type: ObjectSnapshot,
+        Id: Guid_12,
+        TypeName: Entry,
+        Entity: {
+          $type: Entry,
+          Id: Guid_4,
+          EntryReference: Guid_8,
+          Value: entity1,
+          YText: [],
+          YTextBlob: AAAAAAAAAQAAAAAAAA==
+        },
+        References: [
+          Guid_8
+        ],
+        EntityId: Guid_4,
+        EntityIsDeleted: false,
+        CommitId: Guid_10,
+        IsRoot: false
+      }
+    ]
+  },
+  {
+    $type: Entry,
+    Id: Guid_4,
+    EntryReference: Guid_8,
+    Value: entity1,
+    YText: [],
+    YTextBlob: AAAAAAAAAQAAAAAAAA==
+  },
+  {
+    $type: Entry,
+    Id: Guid_8,
+    Value: entity2,
+    YText: [],
+    YTextBlob: AAAAAAAAAQAAAAAAAA==
+  }
+]

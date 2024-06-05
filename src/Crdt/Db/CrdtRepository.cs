@@ -137,15 +137,14 @@ internal class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crd
         return snapshot?.Entity.Is<T>();
     }
 
-    public IQueryable<T> GetCurrentObjects<T>(Expression<Func<ObjectSnapshot, bool>>? predicate = null) where T : class, IObjectBase
+    public IQueryable<T> GetCurrentObjects<T>() where T : class, IObjectBase
     {
-        if (crdtConfig.Value.EnableProjectedTables && predicate is null)
+        if (crdtConfig.Value.EnableProjectedTables)
         {
-            return _dbContext.Set<T>().Where(e => CurrentSnapshotIds().Contains(EF.Property<Guid>(e, ObjectSnapshot.ShadowRefName)));
+            return _dbContext.Set<T>();
         }
         var typeName = DerivedTypeHelper.GetEntityDiscriminator<T>();
         var queryable = CurrentSnapshots().Where(s => s.TypeName == typeName && !s.EntityIsDeleted);
-        if (predicate is not null) queryable = queryable.Where(predicate);
         return queryable.Select(s => (T)s.Entity);
     }
 

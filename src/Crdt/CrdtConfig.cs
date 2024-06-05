@@ -9,7 +9,11 @@ namespace Crdt;
 
 public class CrdtConfig
 {
-    public bool EnableProjectedTables { get; set; } = false;
+    /// <summary>
+    /// recommended to increase query performance, as getting objects can just query the table for that object.
+    /// it does however increase database size as now objects are stored both in snapshots and in their projected tables
+    /// </summary>
+    public bool EnableProjectedTables { get; set; } = true;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
 

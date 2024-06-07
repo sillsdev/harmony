@@ -76,7 +76,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return commit;
     } 
 
-    private readonly List<Commit> _deferredCommits = [];
+    private List<Commit> _deferredCommits = [];
     private async Task Add(Commit commit, bool deferSnapshotUpdates)
     {
         if (await _crdtRepository.HasCommit(commit.Id)) return;
@@ -85,6 +85,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         await _crdtRepository.AddCommit(commit);
         if (!deferSnapshotUpdates)
         {
+            //if there are deferred commits, update snapshots with them first
+            if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
             await UpdateSnapshots(commit, [commit]);
             if (_autoValidate) await ValidateCommits();
         }
@@ -98,12 +100,18 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_deferredCommits is []) return;
-        var commits = _deferredCommits.ToArray();
+        await UpdateSnapshotsByDeferredCommits();
+    }
+
+    private async Task UpdateSnapshotsByDeferredCommits()
+    {
+        var commits = Interlocked.Exchange(ref _deferredCommits, []);
         var oldestChange = commits.MinBy(c => c.CompareKey);
         if (oldestChange is null) return;
-        await UpdateSnapshots(oldestChange, commits);
+        await UpdateSnapshots(oldestChange, commits.ToArray());
         if (_autoValidate) await ValidateCommits();
     }
+
 
     private static ChangeEntity<IChange> ToChangeEntity(IChange change, int index)
     {
@@ -122,6 +130,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         if (oldestChange is null || newCommits is []) return;
 
         await using var transaction = await _crdtRepository.BeginTransactionAsync();
+        //if there are deferred commits, update snapshots with them first
+        if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
         //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
         await _crdtRepository.AddCommits(newCommits, false);
         await UpdateSnapshots(oldestChange, newCommits);

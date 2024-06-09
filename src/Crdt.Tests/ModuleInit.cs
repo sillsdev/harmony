@@ -16,7 +16,7 @@ public class ModuleInit
         var services = new ServiceCollection()
             .AddCrdtDataSample(":memory:")
             .BuildServiceProvider();
-        var model = services.GetRequiredService<CrdtDbContext>().Model;
+        var model = services.GetRequiredService<SampleDbContext>().Model;
         VerifyEntityFramework.Initialize(model);
         VerifierSettings.AddExtraSettings(s =>
         {

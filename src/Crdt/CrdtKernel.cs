@@ -11,30 +11,31 @@ namespace Crdt;
 
 public static class CrdtKernel
 {
-    public static IServiceCollection AddCrdtData(this IServiceCollection services,
-        Action<DbContextOptionsBuilder> configureOptions,
-        Action<CrdtConfig> configureCrdt)
-    {
-        return AddCrdtData(services, (_, builder) => configureOptions(builder), configureCrdt);
-    }
 
     public static IServiceCollection AddCrdtData(this IServiceCollection services,
         Action<IServiceProvider, DbContextOptionsBuilder> configureOptions,
         Action<CrdtConfig> configureCrdt)
     {
+        services.AddDbContext<CrdtDbContext>((provider, builder) =>
+        {
+            configureOptions(provider, builder);
+            builder
+                .EnableDetailedErrors()
+                .EnableSensitiveDataLogging();
+        });
+        return AddCrdtData<CrdtDbContext>(services, configureCrdt);
+    }
+    
+    public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
+        Action<CrdtConfig> configureCrdt) where TContext : class, ICrdtDbContext
+    {
         services.AddOptions<CrdtConfig>().Configure(configureCrdt);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
-        services.AddDbContext<CrdtDbContext>((provider, builder) =>
-            {
-                configureOptions(provider, builder);
-                builder
-                    .AddInterceptors(provider.GetServices<IInterceptor>().ToArray())
-                    .EnableDetailedErrors()
-                    .EnableSensitiveDataLogging();
-            },
-            ServiceLifetime.Scoped);
+        //must use factory, otherwise one context will be created for this registration, and one for the application.
+        //we want to have one context per application
+        services.AddScoped<ICrdtDbContext>(p => p.GetRequiredService<TContext>());
         services.AddScoped<CrdtRepository>();
         //must use factory method because DataModel constructor is internal
         services.AddScoped<DataModel>(provider => new DataModel(

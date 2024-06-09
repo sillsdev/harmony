@@ -23,16 +23,7 @@ public static class CrdtKernel
         Action<CrdtConfig> configureCrdt)
     {
         services.AddOptions<CrdtConfig>().Configure(configureCrdt);
-        services.AddSingleton(sp => new JsonSerializerOptions(JsonSerializerDefaults.General)
-        {
-            TypeInfoResolver = new DefaultJsonTypeInfoResolver
-            {
-                Modifiers =
-                {
-                    sp.GetRequiredService<IOptions<CrdtConfig>>().Value.MakeJsonTypeModifier()
-                }
-            }
-        });
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
         services.AddDbContext<CrdtDbContext>((provider, builder) =>

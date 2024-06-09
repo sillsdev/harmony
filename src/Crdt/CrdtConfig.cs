@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Serialization.Metadata;
+﻿using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Crdt.Changes;
 using Crdt.Db;
 using Crdt.Entities;
@@ -12,6 +13,16 @@ public class CrdtConfig
     public bool EnableProjectedTables { get; set; } = false;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
+    public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
+    private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
+
+    public CrdtConfig()
+    {
+        _lazyJsonSerializerOptions = new Lazy<JsonSerializerOptions>(() => new JsonSerializerOptions(JsonSerializerDefaults.General)
+        {
+            TypeInfoResolver = MakeJsonTypeResolver()
+        });
+    }
 
     public Action<JsonTypeInfo> MakeJsonTypeModifier()
     {
@@ -28,6 +39,8 @@ public class CrdtConfig
 
     private void JsonTypeModifier(JsonTypeInfo typeInfo)
     {
+        ChangeTypeListBuilder.Freeze();
+        ObjectTypeListBuilder.Freeze();
         if (typeInfo.Type == typeof(IChange))
         {
             foreach (var type in ChangeTypeListBuilder.Types)
@@ -48,10 +61,22 @@ public class CrdtConfig
 
 public class ChangeTypeListBuilder
 {
+    private bool _frozen;
+
+    public void Freeze()
+    {
+        _frozen = true;
+    }
+
+    private void CheckFrozen()
+    {
+        if (_frozen) throw new InvalidOperationException("ObjectTypeListBuilder is frozen");
+    }
     internal List<JsonDerivedType> Types { get; } = [];
 
     public ChangeTypeListBuilder Add<TDerived>() where TDerived : IChange, IPolyType
     {
+        CheckFrozen();
         if (Types.Any(t => t.DerivedType == typeof(TDerived))) return this;
         Types.Add(new JsonDerivedType(typeof(TDerived), TDerived.TypeName));
         return this;
@@ -60,26 +85,33 @@ public class ChangeTypeListBuilder
 
 public class ObjectTypeListBuilder
 {
+    private bool _frozen;
+    public void Freeze()
+    {
+        _frozen = true;
+    }
+
+    private void CheckFrozen()
+    {
+        if (_frozen) throw new InvalidOperationException("ObjectTypeListBuilder is frozen");
+    }
+
     internal List<JsonDerivedType> Types { get; } = [];
 
     internal List<Action<ModelBuilder, CrdtConfig>> ModelConfigurations { get; } = [];
-    public List<Action<ModelConfigurationBuilder>> ModelConventions { get; } = [];
-
-    public ObjectTypeListBuilder AddDbModelConvention(Action<ModelConfigurationBuilder> modelConvention)
-    {
-        ModelConventions.Add(modelConvention);
-        return this;
-    }
 
     public ObjectTypeListBuilder AddDbModelConfig(Action<ModelBuilder> modelConfiguration)
     {
+        CheckFrozen();
         ModelConfigurations.Add((builder, _) => modelConfiguration(builder));
         return this;
     }
 
+  
     public ObjectTypeListBuilder Add<TDerived>(Action<EntityTypeBuilder<TDerived>>? configureDb = null)
         where TDerived : class, IObjectBase
     {
+        CheckFrozen();
         if (Types.Any(t => t.DerivedType == typeof(TDerived))) throw new InvalidOperationException($"Type {typeof(TDerived)} already added");
         Types.Add(new JsonDerivedType(typeof(TDerived), TDerived.TypeName));
         ModelConfigurations.Add((builder, config) =>

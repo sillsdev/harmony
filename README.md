@@ -10,7 +10,7 @@ dotnet add package SIL.Harmony
 
 It's expected that you use Harmony with the .Net IoC container ([IoC intro](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection)) and with EF Core. If you're not familier with that you can take a look at the [Host](https://learn.microsoft.com/en-us/dotnet/core/extensions/generic-host?tabs=hostbuilder) docs. If you're using ASP.NET Core you already have this setup for you.
 
-Prerequsits:
+#### Prerequsits:
 * Setup EF Core in your application ([Getting started docs](https://learn.microsoft.com/en-us/ef/core/get-started/overview/first-app?tabs=netcore-cli))
 * Setup a Host, the default host setup for ASP.NET Core will work, or a [generic host](https://learn.microsoft.com/en-us/dotnet/core/extensions/generic-host?tabs=hostbuilder) for desktop apps, depending on your app. Alterativly you could create a [`ServiceCollection`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.dependencyinjection.servicecollection?view=net-8.0).
 
@@ -94,7 +94,7 @@ This is a fairly simple change, it can either create a new Word entry, or if the
 > This change can either create, or update an object. Most changes will probably be either an update, or a create. In those cases you should inherit from `EditChange<T>` or `CreateChange<T>`.
 
 > [!TIP]
-> [Sample changes](src/Crdt.Sample/Changes) contain a number of reference changes which are good examples for a couple different change types. There are also a built in [`DeleteChange<T>`](https://github.com/hahn-kev/harmony/blob/external-db-context/src/Crdt/Changes/DeleteChange.cs)
+> The [Sample](src/Crdt.Sample/Changes) project contain a number of reference changes which are good examples for a couple different change types. There are also a built in [`DeleteChange<T>`](https://github.com/hahn-kev/harmony/blob/external-db-context/src/Crdt/Changes/DeleteChange.cs)
 
 Once you have created your change types, you need to tell Harmony about them. Again update the config callback passed into `AddCrdtData`
 ```C#
@@ -131,3 +131,47 @@ Console.WriteLine(word.Text);
 
 > [!WARNING]
 > If you were to regenerate the `ClientId` for each change or on application start, then you will eventually have poor sync performance as the sync process checks if there's new changes to sync per `ClientId`
+
+## Usage
+
+### Queries
+`DataModel` is the primary class for both making changes and getting data. We just showed an example of making changes, so we'll start with querying data.
+
+Query Word objects starting with the letter "A"
+```C#
+DataModel dataModel; //get from IoC, probably via DI
+var wordsStartingWithA = await dataModel.GetLatestObjects<Word>()
+    .Where(w => w.Text.StartsWith("a"))
+    .ToArrayAsync();
+```
+Harmony uses EF Core queries under the covers, you can read more about them [here](https://learn.microsoft.com/en-us/ef/core/querying/).
+
+### Submitting Changes
+Changes are the only way to modify CRDT data. Here's another example of a change
+```C#
+DataModel dataModel;
+Guid clientId; //get a stable Guid representing the application instance
+var definitionId = Guid.NewGuid();
+Guid wordId; //get the word Id this definition is related to.
+await dataModel.AddChange(clientId, new NewDefinitionChange(definitionId)
+        {
+            WordId = wordId,
+            Text = "Hello",
+            PartOfSpeech = partOfSpeech,
+            Order = order
+        });
+```
+
+> [!WARNING]
+> You can modify data returned by EF Core, and issue updates and inserts yourself, however that data will be lost, and will not sync properly. Do not directly modify the tables produced by Harmony otherwise you risk losing data.
+
+### Syncing data
+Syncing is primarily done using the `DataModel` class, however the implementation of the server side is left up to you. You can find the Lexbox implemtnation [here](https://github.com/sillsdev/languageforge-lexbox/blob/develop/backend/LexBoxApi/Services/CrdtSyncRoutes.cs). The sync works by having 2 instances of the ISyncable interface. The local  one is implemented by `DataModel` however the remote implementation depends on your server side, the FW Liate implementation can be found [here](https://github.com/sillsdev/languageforge-lexbox/blob/eefe404ab90593a2a36185f705babe0bdbcfd0d6/backend/LocalWebApp/CrdtHttpSyncService.cs#L63), you will need to scope the instance to the project and it will need to deal with authentication also.
+
+once you have a remote representation of the `ISyncable` interface you just call it like this
+```C#
+DataModel dataModel;
+ISyncable remoteModel;
+await dataModel.SyncWith(remoteModel);
+```
+it's pretty simple, all the heavy lifting is done by the interface which is fairly simple to implement.

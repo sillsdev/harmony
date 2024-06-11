@@ -7,9 +7,7 @@ namespace Crdt.Core;
 public class ServerCommit : CommitBase<ServerJsonChange>
 {
     [JsonConstructor]
-    protected ServerCommit(Guid id, string hash, string parentHash, HybridDateTime hybridDateTime) : base(id,
-        hash,
-        parentHash,
+    protected ServerCommit(Guid id, HybridDateTime hybridDateTime) : base(id,
         hybridDateTime)
     {
     }

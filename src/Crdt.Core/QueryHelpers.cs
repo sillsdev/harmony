@@ -32,9 +32,11 @@ public static class QueryHelpers
                 var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(otherTimestamp);
                 //todo even slower we want to also filter out changes that are already in the other history
                 //client has newer history than the other history
-                newHistory.AddRange(await commits.Include(c => c.ChangeEntities).DefaultOrder()
+                newHistory.AddRange((await commits.Include(c => c.ChangeEntities).DefaultOrder()
                     .Where(c => c.ClientId == clientId && c.HybridDateTime.DateTime > otherDt)
-                    .ToArrayAsync());
+                    .ToArrayAsync())
+                    //fixes an issue where the query would include commits that are already in the other history
+                    .Where(c => c.DateTime.ToUnixTimeMilliseconds() > otherTimestamp));
             }
         }
 

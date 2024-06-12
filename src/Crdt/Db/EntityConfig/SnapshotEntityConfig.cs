@@ -27,6 +27,6 @@ public class SnapshotEntityConfig(JsonSerializerOptions jsonSerializerOptions) :
     private IObjectBase DeserializeObject(string json)
     {
         return JsonSerializer.Deserialize<IObjectBase>(json, jsonSerializerOptions) ??
-               throw new SerializationException("Could not deserialize Entry: " + json);
+               throw new SerializationException($"Could not deserialize Entry: {json}");
     }
 }

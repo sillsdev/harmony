@@ -63,6 +63,9 @@ public class ChangeTypeListBuilder
 {
     private bool _frozen;
 
+    /// <summary>
+    /// we call freeze when the builder is used to create a json serializer options, as it is not possible to add new types after that.
+    /// </summary>
     public void Freeze()
     {
         _frozen = true;
@@ -70,7 +73,7 @@ public class ChangeTypeListBuilder
 
     private void CheckFrozen()
     {
-        if (_frozen) throw new InvalidOperationException("ObjectTypeListBuilder is frozen");
+        if (_frozen) throw new InvalidOperationException($"{nameof(ChangeTypeListBuilder)} is frozen");
     }
     internal List<JsonDerivedType> Types { get; } = [];
 
@@ -86,6 +89,10 @@ public class ChangeTypeListBuilder
 public class ObjectTypeListBuilder
 {
     private bool _frozen;
+
+    /// <summary>
+    /// we call freeze when the builder is used to create a json serializer options, as it is not possible to add new types after that.
+    /// </summary>
     public void Freeze()
     {
         _frozen = true;
@@ -93,7 +100,7 @@ public class ObjectTypeListBuilder
 
     private void CheckFrozen()
     {
-        if (_frozen) throw new InvalidOperationException("ObjectTypeListBuilder is frozen");
+        if (_frozen) throw new InvalidOperationException($"{nameof(ObjectTypeListBuilder)} is frozen");
     }
 
     internal List<JsonDerivedType> Types { get; } = [];

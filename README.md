@@ -14,7 +14,7 @@ It's expected that you use Harmony with the .Net IoC container ([IoC intro](http
 * Setup EF Core in your application ([Getting started docs](https://learn.microsoft.com/en-us/ef/core/get-started/overview/first-app?tabs=netcore-cli))
 * Setup a Host, the default host setup for ASP.NET Core will work, or a [generic host](https://learn.microsoft.com/en-us/dotnet/core/extensions/generic-host?tabs=hostbuilder) for desktop apps, depending on your app. Alterativly you could create a [`ServiceCollection`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.dependencyinjection.servicecollection?view=net-8.0).
 
-### Configure Db context
+### Configure DbContext
 EF Core needs to be told about the entities used by Harmony, for now these are just [`Commit`](src/Crdt/Commit.cs), [`Snapshot`](src/Crdt/Db/ObjectSnapshot.cs), and [`ChangeEntitiy`](Crdt.Core/ChangeEntity.cs)
 ```C#
 public class AppDbContext: DbContext {
@@ -40,15 +40,15 @@ builder.Service.AddCrdtData<AppDbContext>(config => {});
 > the config callback passed into `AddCrdtData` is currently empty, we'll come back to that later.
 
 > [!TIP]
-> Pay attention to the generic type when calling `AddCrdtData`, this will be the type of your applications DB Context.
+> Pay attention to the generic type when calling `AddCrdtData`, this will be the type of your application's DbContext.
 
 ### Define CRDT objects
-now that you have the services setup, you need to define a CRDT object. Take a look the following examples
-* [`Word`](src/Crdt.Sample/Models/Word.cs) notice this contains a reference to an Antonym Word.
-* [`Definition`](src/Crdt.Sample/Models/Definition.cs) references the Word it belongs to, notice that if the Word Reference is removed, the Definition deletes itself.
+Now that you have the services setup, you need to define a CRDT object. Take a look the following examples
+* [`Word`](src/Crdt.Sample/Models/Word.cs) contains a reference to an Antonym Word.
+* [`Definition`](src/Crdt.Sample/Models/Definition.cs) references the Word it belongs to. Notice that if the Word Reference is removed, the Definition deletes itself.
 * [`Example`](src/Crdt.Sample/Models/Example.cs) this one is special because it uses a YDoc to store the example text in a [Yjs](https://github.com/yjs/yjs) compatible format. This allows the example sentence to be edited by multiple users and have those changes merged using the yjs CRDT algorithm.
 
-Once you have created your CRDT object, you need to tell Harmony about it. Update the config callback passed into `AddCrdtData`
+Once you have created your CRDT objects, you need to tell Harmony about them. Update the config callback passed into `AddCrdtData`
 ```C#
 services.AddCrdtData<SampleDbContext>(config =>
 {
@@ -61,7 +61,7 @@ services.AddCrdtData<SampleDbContext>(config =>
 ```
 
 ### Define CRDT Changes
-Now that we've defined our objects, we need to define our changes which will record user intent when making changes to objects. How detailed and specific you make your changes will directly impact how changes get merged between clients and how often users 'lose' changes that they made.
+Now that you've defined your objects, you need to define your changes. These record user intent when making changes to objects. How detailed and specific you make your changes will directly impact how changes get merged between clients and how often users 'lose' changes that they made.
 
 Example [`SetWordTextChange`](src/Crdt.Sample/Changes/SetWordTextChange.cs)
 ```C#
@@ -89,7 +89,7 @@ public class SetWordTextChange(Guid entityId, string text) : Change<Word>(entity
 This is a fairly simple change, it can either create a new Word entry, or if the `entityId` passed in matches an object that has previously been created, then it will just set the `Text` field on the Word entry matching the Id.
 
 > [!NOTE]
-> Changes will be serilized and stored forever. Try to keep the amount of data stored as small as possible.
+> Changes will be serialized and stored forever. Try to keep the amount of data stored as small as possible.
 >
 > This change can either create, or update an object. Most changes will probably be either an update, or a create. In those cases you should inherit from `EditChange<T>` or `CreateChange<T>`.
 
@@ -109,9 +109,9 @@ services.AddCrdtData<SampleDbContext>(config =>
 });
 ```
 
-### Use changes to author changes to CRDT objects
+### Use change objects to author changes to CRDT objects
 
-either via DI, or directly from the IoC container get an instance of [`DataModel`](src/Crdt/DataModel.cs) and call `AddChange`
+Either via DI, or directly from the IoC container get an instance of [`DataModel`](src/Crdt/DataModel.cs) and call `AddChange`
 ```C#
 Guid clientId = ... get a stable Guid representing the application instance
 Guid objectId = Guid.NewGuid();
@@ -123,19 +123,19 @@ var word = await dataModel.GetLatest<Word>(objectId);
 Console.WriteLine(word.Text);
 ```
 > [!IMPORTANT]
-> the `ClientId` should be consistent for a project per computer/device. It is used to determine what changes should be synced between clients with the assumption each client produces changes sequentially. So if the app is on 2 different computers both with the same project, each one should have a unique client Id, if they had the same Id, then they would not sync changes properly.
+> The `ClientId` should be consistent for a project per computer/device. It is used to determine what changes should be synced between clients with the assumption that each client produces changes sequentially. So if a project is on 2 different computers, each copy should have a unique client Id. If they had the same Id, then they would not sync changes properly.
 > 
-> How the `ClientId` is stored is left up to the application, in FW Lite we created a table to store the ClientId, it's generated automatically when the project is downloaded or created the first time and it should never change after that.
+> How the `ClientId` is stored is left up to the application. In FW Lite we created a table to store the ClientId. It's generated automatically when the project is downloaded or created the first time and it should never change after that.
 >
-> In case of a WebApp there could be one ClientId to just represent the server, however if users can author apps offline and sync them later, then each browser should get it's own ClientId
+> In case of an online web app there could be one ClientId to represent the server. However, if users can author changes offline and sync them later, then each browser would need it's own ClientId.
 
 > [!WARNING]
-> If you were to regenerate the `ClientId` for each change or on application start, then you will eventually have poor sync performance as the sync process checks if there's new changes to sync per `ClientId`
+> If you were to regenerate the `ClientId` for each change or on application start, that would eventually result in poor sync performance, as the sync process checks for new changes to sync per `ClientId`.
 
 ## Usage
 
 ### Queries
-`DataModel` is the primary class for both making changes and getting data. We just showed an example of making changes, so we'll start with querying data.
+`DataModel` is the primary class for both making changes and getting data. Above you saw an example of making changes, now we'll start querying data.
 
 Query Word objects starting with the letter "A"
 ```C#
@@ -163,15 +163,15 @@ await dataModel.AddChange(clientId, new NewDefinitionChange(definitionId)
 ```
 
 > [!WARNING]
-> You can modify data returned by EF Core, and issue updates and inserts yourself, however that data will be lost, and will not sync properly. Do not directly modify the tables produced by Harmony otherwise you risk losing data.
+> You can modify data returned by EF Core, and issue updates and inserts yourself, but that data will be lost, and will not sync properly. Do not directly modify the tables produced by Harmony otherwise you risk losing data.
 
 ### Syncing data
-Syncing is primarily done using the `DataModel` class, however the implementation of the server side is left up to you. You can find the Lexbox implemtnation [here](https://github.com/sillsdev/languageforge-lexbox/blob/develop/backend/LexBoxApi/Services/CrdtSyncRoutes.cs). The sync works by having 2 instances of the ISyncable interface. The local  one is implemented by `DataModel` however the remote implementation depends on your server side, the FW Liate implementation can be found [here](https://github.com/sillsdev/languageforge-lexbox/blob/eefe404ab90593a2a36185f705babe0bdbcfd0d6/backend/LocalWebApp/CrdtHttpSyncService.cs#L63), you will need to scope the instance to the project and it will need to deal with authentication also.
+Syncing is primarily done using the `DataModel` class, however the implementation of the server side is left up to you. You can find the Lexbox implemtnation [here](https://github.com/sillsdev/languageforge-lexbox/blob/develop/backend/LexBoxApi/Services/CrdtSyncRoutes.cs). The sync works by having 2 instances of the ISyncable interface. The local one is implemented by `DataModel` and the remote implementation depends on your server side. The FW Lite implementation can be found [here](https://github.com/sillsdev/languageforge-lexbox/blob/eefe404ab90593a2a36185f705babe0bdbcfd0d6/backend/LocalWebApp/CrdtHttpSyncService.cs#L63). You will need to scope the instance to the project as well as deal with authentication.
 
-once you have a remote representation of the `ISyncable` interface you just call it like this
+Once you have a remote representation of the `ISyncable` interface you just call it like this
 ```C#
 DataModel dataModel;
 ISyncable remoteModel;
 await dataModel.SyncWith(remoteModel);
 ```
-it's pretty simple, all the heavy lifting is done by the interface which is fairly simple to implement.
+It's that easy. All the heavy lifting is done by the interface which is fairly simple to implement.

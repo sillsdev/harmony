@@ -17,6 +17,8 @@
         IsRoot: true
       }
     ],
+    Hash: Hash_1,
+    ParentHash: Hash_Empty,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
@@ -41,8 +43,6 @@
       DateTime: DateTimeOffset_1
     },
     DateTime: DateTimeOffset_1,
-    Hash: Hash_1,
-    ParentHash: Hash_Empty,
     Metadata: {
       $type: CommitMetadata
     },

@@ -19,19 +19,19 @@ public static class QueryHelpers
         var localSyncState = await commits.GetSyncState();
         foreach (var (clientId, localTimestamp) in localSyncState.ClientHeads)
         {
+            //client is new to the other history
             if (!remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp))
             {
                 //todo slow, it would be better if we could query on client id and get latest changes per client
-                //client is new to the other history
                 newHistory.AddRange(await commits.Include(c => c.ChangeEntities).DefaultOrder()
                     .Where(c => c.ClientId == clientId)
                     .ToArrayAsync());
             }
+            //client has newer history than the other history
             else if (localTimestamp > otherTimestamp)
             {
                 var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(otherTimestamp);
-                //todo even slower we want to also filter out changes that are already in the other history
-                //client has newer history than the other history
+                //todo even slower because we need to filter out changes that are already in the other history
                 newHistory.AddRange((await commits.Include(c => c.ChangeEntities).DefaultOrder()
                     .Where(c => c.ClientId == clientId && c.HybridDateTime.DateTime > otherDt)
                     .ToArrayAsync())

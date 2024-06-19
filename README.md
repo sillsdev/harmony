@@ -10,9 +10,9 @@ dotnet add package SIL.Harmony
 
 It's expected that you use Harmony with the .Net IoC container ([IoC intro](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection)) and with EF Core. If you're not familier with that you can take a look at the [Host](https://learn.microsoft.com/en-us/dotnet/core/extensions/generic-host?tabs=hostbuilder) docs. If you're using ASP.NET Core you already have this setup for you.
 
-#### Prerequsits:
+#### Prerequisites:
 * Setup EF Core in your application ([Getting started docs](https://learn.microsoft.com/en-us/ef/core/get-started/overview/first-app?tabs=netcore-cli))
-* Setup a Host, the default host setup for ASP.NET Core will work, or a [generic host](https://learn.microsoft.com/en-us/dotnet/core/extensions/generic-host?tabs=hostbuilder) for desktop apps, depending on your app. Alterativly you could create a [`ServiceCollection`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.dependencyinjection.servicecollection?view=net-8.0).
+* Setup a Host, the default host setup for ASP.NET Core will work, or a [generic host](https://learn.microsoft.com/en-us/dotnet/core/extensions/generic-host?tabs=hostbuilder) for desktop apps, depending on your app. Alternatively you could create a [`ServiceCollection`](https://learn.microsoft.com/en-us/dotnet/api/microsoft.extensions.dependencyinjection.servicecollection?view=net-8.0).
 
 ### Configure DbContext
 EF Core needs to be told about the entities used by Harmony, for now these are just [`Commit`](src/Crdt/Commit.cs), [`Snapshot`](src/Crdt/Db/ObjectSnapshot.cs), and [`ChangeEntitiy`](Crdt.Core/ChangeEntity.cs)
@@ -166,7 +166,7 @@ await dataModel.AddChange(clientId, new NewDefinitionChange(definitionId)
 > You can modify data returned by EF Core, and issue updates and inserts yourself, but that data will be lost, and will not sync properly. Do not directly modify the tables produced by Harmony otherwise you risk losing data.
 
 ### Syncing data
-Syncing is primarily done using the `DataModel` class, however the implementation of the server side is left up to you. You can find the Lexbox implemtnation [here](https://github.com/sillsdev/languageforge-lexbox/blob/develop/backend/LexBoxApi/Services/CrdtSyncRoutes.cs). The sync works by having 2 instances of the ISyncable interface. The local one is implemented by `DataModel` and the remote implementation depends on your server side. The FW Lite implementation can be found [here](https://github.com/sillsdev/languageforge-lexbox/blob/eefe404ab90593a2a36185f705babe0bdbcfd0d6/backend/LocalWebApp/CrdtHttpSyncService.cs#L63). You will need to scope the instance to the project as well as deal with authentication.
+Syncing is primarily done using the `DataModel` class, however the implementation of the server side is left up to you. You can find the Lexbox implementation [here](https://github.com/sillsdev/languageforge-lexbox/blob/develop/backend/LexBoxApi/Services/CrdtSyncRoutes.cs). The sync works by having 2 instances of the ISyncable interface. The local one is implemented by `DataModel` and the remote implementation depends on your server side. The FW Lite implementation can be found [here](https://github.com/sillsdev/languageforge-lexbox/blob/eefe404ab90593a2a36185f705babe0bdbcfd0d6/backend/LocalWebApp/CrdtHttpSyncService.cs#L63). You will need to scope the instance to the project as well as deal with authentication.
 
 Once you have a remote representation of the `ISyncable` interface you just call it like this
 ```C#

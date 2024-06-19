@@ -9,7 +9,7 @@ namespace Crdt;
 
 public record SyncResults(Commit[] MissingFromLocal, Commit[] MissingFromRemote, bool IsSynced);
 
-public class DataModel : ISyncable
+public class DataModel : ISyncable, IAsyncDisposable
 {
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.
@@ -61,7 +61,8 @@ public class DataModel : ISyncable
         Guid clientId,
         IEnumerable<IChange> changes,
         Guid commitId = default,
-        CommitMetadata? commitMetadata = null)
+        CommitMetadata? commitMetadata = null,
+        bool deferCommit = false)
     {
         commitId = commitId == default ? Guid.NewGuid() : commitId;
         var commit = new Commit(commitId)
@@ -71,20 +72,46 @@ public class DataModel : ISyncable
             ChangeEntities = [..changes.Select(ToChangeEntity)],
             Metadata = commitMetadata ?? new()
         };
-        await Add(commit);
+        await Add(commit, deferCommit);
         return commit;
-    }
+    } 
 
-    private async Task Add(Commit commit)
+    private List<Commit> _deferredCommits = [];
+    private async Task Add(Commit commit, bool deferSnapshotUpdates)
     {
         if (await _crdtRepository.HasCommit(commit.Id)) return;
 
         await using var transaction = await _crdtRepository.BeginTransactionAsync();
         await _crdtRepository.AddCommit(commit);
-        await UpdateSnapshots(commit, [commit]);
-        if (_autoValidate) await ValidateCommits();
+        if (!deferSnapshotUpdates)
+        {
+            //if there are deferred commits, update snapshots with them first
+            if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
+            await UpdateSnapshots(commit, [commit]);
+            if (_autoValidate) await ValidateCommits();
+        }
+        else
+        {
+            _deferredCommits.Add(commit);
+        }
         await transaction.CommitAsync();
     }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_deferredCommits is []) return;
+        await UpdateSnapshotsByDeferredCommits();
+    }
+
+    private async Task UpdateSnapshotsByDeferredCommits()
+    {
+        var commits = Interlocked.Exchange(ref _deferredCommits, []);
+        var oldestChange = commits.MinBy(c => c.CompareKey);
+        if (oldestChange is null) return;
+        await UpdateSnapshots(oldestChange, commits.ToArray());
+        if (_autoValidate) await ValidateCommits();
+    }
+
 
     private static ChangeEntity<IChange> ToChangeEntity(IChange change, int index)
     {
@@ -103,6 +130,8 @@ public class DataModel : ISyncable
         if (oldestChange is null || newCommits is []) return;
 
         await using var transaction = await _crdtRepository.BeginTransactionAsync();
+        //if there are deferred commits, update snapshots with them first
+        if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
         //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
         await _crdtRepository.AddCommits(newCommits, false);
         await UpdateSnapshots(oldestChange, newCommits);

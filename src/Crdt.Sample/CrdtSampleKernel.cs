@@ -3,7 +3,6 @@ using Crdt.Changes;
 using Crdt.Linq2db;
 using Crdt.Sample.Changes;
 using Crdt.Sample.Models;
-using LinqToDB.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,7 +12,6 @@ public static class CrdtSampleKernel
 {
     public static IServiceCollection AddCrdtDataSample(this IServiceCollection services, string dbPath)
     {
-        LinqToDBForEFTools.Initialize();
         services.AddDbContext<SampleDbContext>((provider, builder) =>
         {
             builder.UseLinqToDbCrdt(provider);

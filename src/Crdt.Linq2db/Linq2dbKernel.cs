@@ -1,4 +1,5 @@
 ﻿using Crdt.Core;
+using Crdt.Db;
 using LinqToDB;
 using LinqToDB.AspNet.Logging;
 using LinqToDB.EntityFrameworkCore;
@@ -11,25 +12,9 @@ namespace Crdt.Linq2db;
 
 public static class Linq2dbKernel
 {
-    public static IServiceCollection AddCrdtLinq2db(this IServiceCollection services,
-        Action<IServiceProvider, DbContextOptionsBuilder> configureOptions,
-        Action<CrdtConfig> configureCrdt)
-    {
-        LinqToDBForEFTools.Initialize();
-
-        services.AddCrdtData(
-            (provider, builder) =>
-            {
-                configureOptions.Invoke(provider, builder);
-                builder.UseLinqToDbCrdt(provider);
-            },
-            configureCrdt
-        );
-        return services;
-    }
-
     public static DbContextOptionsBuilder UseLinqToDbCrdt(this DbContextOptionsBuilder builder, IServiceProvider provider)
     {
+        LinqToDBForEFTools.Initialize();
         return builder.UseLinqToDB(optionsBuilder =>
         {
             var mappingSchema = optionsBuilder.DbContextOptions.GetLinqToDBOptions()?.ConnectionOptions

@@ -10,7 +10,7 @@ using Microsoft.Extensions.Options;
 
 namespace Crdt.Db;
 
-internal class CrdtRepository(CrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig, DateTimeOffset? ignoreChangesAfter = null)
+internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig, DateTimeOffset? ignoreChangesAfter = null)
 {
     public Task<IDbContextTransaction> BeginTransactionAsync()
     {

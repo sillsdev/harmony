@@ -16,7 +16,7 @@ public class DataModelTestBase : IAsyncLifetime
     protected readonly ServiceProvider _services;
     protected readonly Guid _localClientId = Guid.NewGuid();
     public readonly DataModel DataModel;
-    public readonly CrdtDbContext DbContext;
+    public readonly SampleDbContext DbContext;
     protected readonly MockTimeProvider MockTimeProvider = new();
 
     public DataModelTestBase()
@@ -25,7 +25,7 @@ public class DataModelTestBase : IAsyncLifetime
             .AddCrdtDataSample(":memory:")
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider))
             .BuildServiceProvider();
-        DbContext = _services.GetRequiredService<CrdtDbContext>();
+        DbContext = _services.GetRequiredService<SampleDbContext>();
         DbContext.Database.OpenConnection();
         DbContext.Database.EnsureCreated();
         DataModel = _services.GetRequiredService<DataModel>();

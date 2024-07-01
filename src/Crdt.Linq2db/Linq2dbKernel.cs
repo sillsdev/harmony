@@ -1,4 +1,5 @@
 ﻿using Crdt.Core;
+using Crdt.Db;
 using LinqToDB;
 using LinqToDB.AspNet.Logging;
 using LinqToDB.EntityFrameworkCore;
@@ -11,42 +12,32 @@ namespace Crdt.Linq2db;
 
 public static class Linq2dbKernel
 {
-    public static IServiceCollection AddCrdtLinq2db(this IServiceCollection services,
-        Action<IServiceProvider, DbContextOptionsBuilder> configureOptions,
-        Action<CrdtConfig> configureCrdt)
+    public static DbContextOptionsBuilder UseLinqToDbCrdt(this DbContextOptionsBuilder builder, IServiceProvider provider)
     {
         LinqToDBForEFTools.Initialize();
-
-        services.AddCrdtData(
-            (provider, builder) =>
+        return builder.UseLinqToDB(optionsBuilder =>
+        {
+            var mappingSchema = optionsBuilder.DbContextOptions.GetLinqToDBOptions()?.ConnectionOptions
+                .MappingSchema;
+            if (mappingSchema is null)
             {
-                configureOptions.Invoke(provider, builder);
-                builder.UseLinqToDB(optionsBuilder =>
-                {
-                    var mappingSchema = optionsBuilder.DbContextOptions.GetLinqToDBOptions()?.ConnectionOptions
-                        .MappingSchema;
-                    if (mappingSchema is null)
-                    {
-                        mappingSchema = new MappingSchema();
-                        optionsBuilder.AddMappingSchema(mappingSchema);
-                    }
+                mappingSchema = new MappingSchema();
+                optionsBuilder.AddMappingSchema(mappingSchema);
+            }
 
-                    new FluentMappingBuilder(mappingSchema).HasAttribute<Commit>(new ColumnAttribute("DateTime",
-                            nameof(Commit.HybridDateTime) + "." + nameof(HybridDateTime.DateTime)))
-                        .HasAttribute<Commit>(new ColumnAttribute(nameof(HybridDateTime.Counter),
-                            nameof(Commit.HybridDateTime) + "." + nameof(HybridDateTime.Counter)))
-                        .Entity<Commit>()
-                        //need to use ticks here because the DateTime is stored as UTC, but the db records it as unspecified
-                        .Property(commit => commit.HybridDateTime.DateTime).HasConversionFunc(dt => dt.UtcDateTime, dt => new DateTimeOffset(dt.Ticks, TimeSpan.Zero))
-                        .Build();
+            new FluentMappingBuilder(mappingSchema).HasAttribute<Commit>(new ColumnAttribute("DateTime",
+                    nameof(Commit.HybridDateTime) + "." + nameof(HybridDateTime.DateTime)))
+                .HasAttribute<Commit>(new ColumnAttribute(nameof(HybridDateTime.Counter),
+                    nameof(Commit.HybridDateTime) + "." + nameof(HybridDateTime.Counter)))
+                .Entity<Commit>()
+                //need to use ticks here because the DateTime is stored as UTC, but the db records it as unspecified
+                .Property(commit => commit.HybridDateTime.DateTime).HasConversionFunc(dt => dt.UtcDateTime,
+                    dt => new DateTimeOffset(dt.Ticks, TimeSpan.Zero))
+                .Build();
 
-                    var loggerFactory = provider.GetService<ILoggerFactory>();
-                    if (loggerFactory is not null)
-                        optionsBuilder.AddCustomOptions(dataOptions => dataOptions.UseLoggerFactory(loggerFactory));
-                });
-            },
-            configureCrdt
-        );
-        return services;
+            var loggerFactory = provider.GetService<ILoggerFactory>();
+            if (loggerFactory is not null)
+                optionsBuilder.AddCustomOptions(dataOptions => dataOptions.UseLoggerFactory(loggerFactory));
+        });
     }
 }

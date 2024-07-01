@@ -12,7 +12,7 @@ public class RepositoryTests : IAsyncLifetime
 {
     private readonly ServiceProvider _services;
     private CrdtRepository _repository;
-    private CrdtDbContext _crdtDbContext;
+    private SampleDbContext _crdtDbContext;
 
     public RepositoryTests()
     {
@@ -21,7 +21,7 @@ public class RepositoryTests : IAsyncLifetime
             .BuildServiceProvider();
 
         _repository = _services.GetRequiredService<CrdtRepository>();
-        _crdtDbContext = _services.GetRequiredService<CrdtDbContext>();
+        _crdtDbContext = _services.GetRequiredService<SampleDbContext>();
     }
 
     public async Task InitializeAsync()

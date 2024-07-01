@@ -1,9 +1,6 @@
 ﻿using System.Text.Json;
-using System.Text.Json.Serialization.Metadata;
 using Crdt.Core;
 using Crdt.Db;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
@@ -11,23 +8,6 @@ namespace Crdt;
 
 public static class CrdtKernel
 {
-
-
-    [Obsolete($"use {nameof(AddCrdtData)} passing in the DbContext type instead instead")]
-    public static IServiceCollection AddCrdtData(this IServiceCollection services,
-        Action<IServiceProvider, DbContextOptionsBuilder> configureOptions,
-        Action<CrdtConfig> configureCrdt)
-    {
-        services.AddDbContext<CrdtDbContext>((provider, builder) =>
-        {
-            configureOptions(provider, builder);
-            builder
-                .EnableDetailedErrors()
-                .EnableSensitiveDataLogging();
-        });
-        return AddCrdtData<CrdtDbContext>(services, configureCrdt);
-    }
-
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
         Action<CrdtConfig> configureCrdt) where TContext: ICrdtDbContext
     {

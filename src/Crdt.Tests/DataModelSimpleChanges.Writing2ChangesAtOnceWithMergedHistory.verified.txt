@@ -17,6 +17,8 @@
         IsRoot: true
       }
     ],
+    Hash: Hash_1,
+    ParentHash: Hash_Empty,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
@@ -41,8 +43,6 @@
       DateTime: DateTimeOffset_1
     },
     DateTime: DateTimeOffset_1,
-    Hash: Hash_1,
-    ParentHash: Hash_Empty,
     Metadata: {
       $type: CommitMetadata
     },
@@ -67,6 +67,8 @@
         IsRoot: false
       }
     ],
+    Hash: Hash_2,
+    ParentHash: Hash_1,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
@@ -91,8 +93,6 @@
       DateTime: DateTimeOffset_2
     },
     DateTime: DateTimeOffset_2,
-    Hash: Hash_2,
-    ParentHash: Hash_1,
     Metadata: {
       $type: CommitMetadata
     },
@@ -116,6 +116,8 @@
         IsRoot: false
       }
     ],
+    Hash: Hash_3,
+    ParentHash: Hash_2,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
@@ -140,8 +142,6 @@
       DateTime: DateTimeOffset_3
     },
     DateTime: DateTimeOffset_3,
-    Hash: Hash_3,
-    ParentHash: Hash_2,
     Metadata: {
       $type: CommitMetadata
     },
@@ -166,6 +166,8 @@
         IsRoot: false
       }
     ],
+    Hash: Hash_4,
+    ParentHash: Hash_3,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
@@ -190,8 +192,6 @@
       DateTime: DateTimeOffset_4
     },
     DateTime: DateTimeOffset_4,
-    Hash: Hash_4,
-    ParentHash: Hash_3,
     Metadata: {
       $type: CommitMetadata
     },

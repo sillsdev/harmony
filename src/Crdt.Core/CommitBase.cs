@@ -1,4 +1,5 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.ComponentModel.DataAnnotations;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Hashing;
 using System.Text.Json.Serialization;
 
@@ -12,37 +13,23 @@ public abstract class CommitBase
 {
     public const string NullParentHash = "0000";
     [JsonConstructor]
-    protected internal CommitBase(Guid id, string hash, string parentHash, HybridDateTime hybridDateTime)
+    protected internal CommitBase(Guid id, HybridDateTime hybridDateTime)
     {
         Id = id;
-        Hash = hash;
-        ParentHash = parentHash;
         HybridDateTime = hybridDateTime;
     }
 
     internal CommitBase(Guid id)
     {
         Id = id;
-        Hash = GenerateHash(NullParentHash);
-        ParentHash = NullParentHash;
     }
 
     public (DateTimeOffset, long, Guid) CompareKey => (HybridDateTime.DateTime, HybridDateTime.Counter, Id);
     public Guid Id { get; }
     public required HybridDateTime HybridDateTime { get; init; }
     public DateTimeOffset DateTime => HybridDateTime.DateTime;
-    [JsonIgnore]
-    public string Hash { get; private set; }
-
-    [JsonIgnore]
-    public string ParentHash { get; private set; }
     public CommitMetadata Metadata { get; init; } = new();
 
-    public void SetParentHash(string parentHash)
-    {
-        Hash = GenerateHash(parentHash);
-        ParentHash = parentHash;
-    }
 
     public string GenerateHash(string parentHash)
     {
@@ -65,7 +52,7 @@ public abstract class CommitBase
 /// <inheritdoc cref="CommitBase"/>
 public abstract class CommitBase<TChange> : CommitBase
 {
-    internal CommitBase(Guid id, string hash, string parentHash, HybridDateTime hybridDateTime) : base(id, hash, parentHash, hybridDateTime)
+    internal CommitBase(Guid id, HybridDateTime hybridDateTime) : base(id, hybridDateTime)
     {
     }
 

@@ -8,9 +8,8 @@ namespace Crdt.Db;
 
 public interface ICrdtDbContext
 {
-    DbSet<Commit> Commits { get; }
-    DbSet<ChangeEntity<IChange>> ChangeEntities { get; }
-    DbSet<ObjectSnapshot> Snapshots { get; }
+    DbSet<Commit> Commits => Set<Commit>();
+    DbSet<ObjectSnapshot> Snapshots => Set<ObjectSnapshot>();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     ValueTask<object?> FindAsync(Type entityType, params object?[]? keyValues);
     DbSet<TEntity> Set<TEntity>() where TEntity : class;

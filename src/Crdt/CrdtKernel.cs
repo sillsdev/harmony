@@ -12,6 +12,8 @@ namespace Crdt;
 public static class CrdtKernel
 {
 
+
+    [Obsolete($"use {nameof(AddCrdtData)} passing in the DbContext type instead instead")]
     public static IServiceCollection AddCrdtData(this IServiceCollection services,
         Action<IServiceProvider, DbContextOptionsBuilder> configureOptions,
         Action<CrdtConfig> configureCrdt)
@@ -25,9 +27,9 @@ public static class CrdtKernel
         });
         return AddCrdtData<CrdtDbContext>(services, configureCrdt);
     }
-    
+
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
-        Action<CrdtConfig> configureCrdt) where TContext : class, ICrdtDbContext
+        Action<CrdtConfig> configureCrdt) where TContext: ICrdtDbContext
     {
         services.AddOptions<CrdtConfig>().Configure(configureCrdt);
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);

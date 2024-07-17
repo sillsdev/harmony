@@ -121,7 +121,7 @@ jobs:
           path: src/artifacts/package/release/*nupkg
 
       - name: Publish package to NuGet.org
-        if: ${{ github.event_name == 'push' && github.ref.startswith('refs/tags') }}
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
         shell: bash
         run: |
           echo Would run the following:

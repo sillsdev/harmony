@@ -2,12 +2,11 @@ name: Build NuGet packages
 
 on:
   push:
-    # Note: main is NOT included here
-    branches: [ develop ]
+    branches: [ develop, main ]
     tags:
       - v*
   pull_request:
-    branches: [ develop ]
+    branches: [ develop, main ]
 
 jobs:
   build:

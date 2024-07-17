@@ -120,6 +120,13 @@ jobs:
           name: nuget-packages
           path: src/artifacts/package/release/*nupkg
 
+      - name: Publish package to GitHub
+        if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads'))
+        shell: bash
+        run: |
+          echo Would run the following:
+          echo dotnet nuget push artifacts/*.nupkg -s https://nuget.pkg.github.com/sillsdev/index.json -k 'GITHUB_TOKEN goes here' --skip-duplicate
+
       - name: Publish package to NuGet.org
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
         shell: bash

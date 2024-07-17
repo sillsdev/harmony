@@ -1,11 +1,4 @@
 name: Build NuGet packages
-on:
-  push:
-    branches:
-      - main
-  pull_request: 
-    branches:
-      - main
 
 on:
   push:

@@ -4,8 +4,6 @@
 //  </copyright>
 // ------------------------------------------------------------------------------
 
-using System.IO;
-
 namespace Ycs
 {
     /// <seealso cref="IntDiffEncoder"/>

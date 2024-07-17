@@ -4,8 +4,6 @@
 //  </copyright>
 // ------------------------------------------------------------------------------
 
-using System;
-
 namespace Ycs
 {
     /// <seealso cref="IDecoder{T}"/>

@@ -1,0 +1,16 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <RootNamespace>SIL.Harmony.Linq2db</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\SIL.Harmony\SIL.Harmony.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <PackageReference Include="linq2db.AspNet" Version="5.4.1" />
+      <PackageReference Include="linq2db.EntityFrameworkCore" Version="8.1.0" />
+    </ItemGroup>
+
+</Project>

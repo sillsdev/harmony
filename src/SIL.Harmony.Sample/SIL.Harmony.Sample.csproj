@@ -1,0 +1,13 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <RootNamespace>SIL.Harmony.Sample</RootNamespace>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\SIL.Harmony.Linq2db\SIL.Harmony.Linq2db.csproj" />
+      <ProjectReference Include="..\SIL.Harmony\SIL.Harmony.csproj" />
+      <ProjectReference Include="..\Ycs\Ycs.csproj" />
+    </ItemGroup>
+
+</Project>

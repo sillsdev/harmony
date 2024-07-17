@@ -1,8 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
-using System.Diagnostics.CodeAnalysis;
-using System.IO.Hashing;
+﻿using System.IO.Hashing;
 using System.Text.Json.Serialization;
-using SIL;
 
 namespace SIL.Harmony.Core;
 

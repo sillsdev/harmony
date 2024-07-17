@@ -1,5 +1,4 @@
 ﻿using SIL.Harmony.Core;
-using SIL.Harmony.Tests;
 using LinqToDB;
 using LinqToDB.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;

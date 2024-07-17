@@ -4,9 +4,6 @@
 //  </copyright>
 // ------------------------------------------------------------------------------
 
-using System.Collections.Generic;
-using System.Linq;
-
 namespace Ycs
 {
     public class ChangesCollection

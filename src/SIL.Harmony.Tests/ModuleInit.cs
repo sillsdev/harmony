@@ -2,7 +2,6 @@
 using System.Runtime.CompilerServices;
 using Argon;
 using SIL.Harmony.Core;
-using SIL.Harmony.Db;
 using SIL.Harmony.Sample;
 using Microsoft.Extensions.DependencyInjection;
 

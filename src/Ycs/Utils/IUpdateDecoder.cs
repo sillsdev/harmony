@@ -4,9 +4,6 @@
 //  </copyright>
 // ------------------------------------------------------------------------------
 
-using System;
-using System.IO;
-
 namespace Ycs
 {
     internal interface IDSDecoder : IDisposable

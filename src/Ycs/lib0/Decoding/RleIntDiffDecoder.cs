@@ -5,7 +5,6 @@
 // ------------------------------------------------------------------------------
 
 using System.Diagnostics;
-using System.IO;
 
 namespace Ycs
 {

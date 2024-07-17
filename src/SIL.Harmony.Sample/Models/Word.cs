@@ -1,5 +1,4 @@
-﻿using SIL.Harmony.Core;
-using SIL.Harmony.Entities;
+﻿using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Sample.Models;
 

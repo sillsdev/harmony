@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Linq.Expressions;
 using SIL.Harmony.Core;
 using Microsoft.EntityFrameworkCore;

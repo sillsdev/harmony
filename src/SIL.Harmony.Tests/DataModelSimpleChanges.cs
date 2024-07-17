@@ -1,7 +1,5 @@
-using Argon;
 using SIL.Harmony;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Core;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;

@@ -1,6 +1,4 @@
 ﻿using SIL.Harmony.Core;
-using SIL.Harmony.Db;
-using LinqToDB;
 using LinqToDB.AspNet.Logging;
 using LinqToDB.EntityFrameworkCore;
 using LinqToDB.Mapping;

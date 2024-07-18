@@ -124,7 +124,7 @@ jobs:
         if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads'))
         shell: bash
         run: |
-          dotnet nuget push artifacts/*.nupkg -s https://nuget.pkg.github.com/sillsdev/index.json -k "$NUGET_API_KEY" --skip-duplicate
+          dotnet nuget push "src/artifacts/package/release/*.nupkg" -s https://nuget.pkg.github.com/sillsdev/index.json -k "$NUGET_API_KEY" --skip-duplicate
         env:
           NUGET_API_KEY: ${{ secrets.GITHUB_TOKEN }}
 

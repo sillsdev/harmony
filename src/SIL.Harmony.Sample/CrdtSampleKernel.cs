@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.Data.Common;
+using System.Diagnostics;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Linq2db;
 using SIL.Harmony.Sample.Changes;
@@ -12,10 +13,20 @@ public static class CrdtSampleKernel
 {
     public static IServiceCollection AddCrdtDataSample(this IServiceCollection services, string dbPath)
     {
+        return services.AddCrdtDataSample(builder => builder.UseSqlite($"Data Source={dbPath}"));
+    }
+    public static IServiceCollection AddCrdtDataSample(this IServiceCollection services, DbConnection connection)
+    {
+        return services.AddCrdtDataSample(builder => builder.UseSqlite(connection, true));
+    }
+
+    public static IServiceCollection AddCrdtDataSample(this IServiceCollection services,
+        Action<DbContextOptionsBuilder> optionsBuilder) 
+    {
         services.AddDbContext<SampleDbContext>((provider, builder) =>
         {
             builder.UseLinqToDbCrdt(provider);
-            builder.UseSqlite($"Data Source={dbPath}");
+            optionsBuilder(builder);
             builder.EnableDetailedErrors();
             builder.EnableSensitiveDataLogging();
 #if DEBUG

@@ -54,7 +54,38 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 
     public IQueryable<ObjectSnapshot> CurrentSnapshots()
     {
-        return _dbContext.Snapshots.Where(snapshot => CurrentSnapshotIds().Contains(snapshot.Id));
+        //todo this does not respect ignoreChangesAfter
+        return _dbContext.Snapshots.FromSql(
+$"""
+WITH LatestSnapshots AS (SELECT first_value(s1.Id) OVER (
+    PARTITION BY "s1"."EntityId"
+    ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
+    ) AS "LatestSnapshotId"
+                         FROM "Snapshots" AS "s1"
+                                  INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
+                         GROUP BY "s1"."EntityId")
+SELECT *
+FROM "Snapshots" AS "s"
+         INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"
+""");
+    }
+
+    public IAsyncEnumerable<SimpleSnapshot> CurrenSimpleSnapshots(bool includeDeleted = false)
+    {
+        var queryable = CurrentSnapshots();
+        if (!includeDeleted) queryable = queryable.Where(s => !s.EntityIsDeleted);
+        var snapshots = queryable.Select(s =>
+            new SimpleSnapshot(s.Id,
+                s.TypeName,
+                s.EntityId,
+                s.CommitId,
+                s.IsRoot,
+                s.Commit.HybridDateTime,
+                s.Commit.Hash,
+                s.EntityIsDeleted))
+            .AsNoTracking()
+            .AsAsyncEnumerable();
+        return snapshots;
     }
 
     private IQueryable<Guid> CurrentSnapshotIds()

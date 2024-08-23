@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Core;
 using SIL.Harmony.Sample;
@@ -7,6 +8,7 @@ using SIL.Harmony.Tests.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Tests;
 
@@ -16,27 +18,44 @@ public class DataModelTestBase : IAsyncLifetime
     protected readonly Guid _localClientId = Guid.NewGuid();
     public readonly DataModel DataModel;
     public readonly SampleDbContext DbContext;
+    internal readonly CrdtRepository CrdtRepository;
     protected readonly MockTimeProvider MockTimeProvider = new();
 
-    public DataModelTestBase()
+    public DataModelTestBase() : this(new SqliteConnection("Data Source=:memory:"))
+    {
+    }
+
+    public DataModelTestBase(SqliteConnection connection)
     {
         _services = new ServiceCollection()
-            .AddCrdtDataSample(":memory:")
+            .AddCrdtDataSample(connection)
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider))
             .BuildServiceProvider();
         DbContext = _services.GetRequiredService<SampleDbContext>();
         DbContext.Database.OpenConnection();
         DbContext.Database.EnsureCreated();
         DataModel = _services.GetRequiredService<DataModel>();
+        CrdtRepository = _services.GetRequiredService<CrdtRepository>();
+    }
+    
+    public DataModelTestBase ForkDatabase() 
+    {
+        var connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+        var existingConnection = DbContext.Database.GetDbConnection() as SqliteConnection;
+        if (existingConnection is null) throw new InvalidOperationException("Database is not SQLite");
+        existingConnection.BackupDatabase(connection);
+        return new DataModelTestBase(connection);
     }
 
     public void SetCurrentDate(DateTime dateTime)
     {
         currentDate = dateTime;
     }
+
     private static int _instanceCount = 0;
     private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0).AddHours(_instanceCount++));
-    private DateTimeOffset NextDate() => currentDate = currentDate.AddDays(1);
+    public DateTimeOffset NextDate() => currentDate = currentDate.AddDays(1);
 
     public async ValueTask<Commit> WriteNextChange(IChange change, bool add = true)
     {

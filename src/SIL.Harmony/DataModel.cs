@@ -190,7 +190,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<ModelSnapshot> GetProjectSnapshot(bool includeDeleted = false)
     {
-        return new ModelSnapshot(await GetEntitySnapshots(includeDeleted));
+        return new ModelSnapshot(await _crdtRepository.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
     }
 
     public IQueryable<T> GetLatestObjects<T>() where T : class, IObjectBase
@@ -206,22 +206,6 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<IObjectBase> GetBySnapshotId(Guid snapshotId)
     {
         return await _crdtRepository.GetObjectBySnapshotId(snapshotId);
-    }
-
-    private async Task<SimpleSnapshot[]> GetEntitySnapshots(bool includeDeleted = false)
-    {
-        var queryable = _crdtRepository.CurrentSnapshots();
-        if (!includeDeleted) queryable = queryable.Where(s => !s.EntityIsDeleted);
-        var snapshots = await queryable.Select(s =>
-            new SimpleSnapshot(s.Id,
-                s.TypeName,
-                s.EntityId,
-                s.CommitId,
-                s.IsRoot,
-                s.Commit.HybridDateTime,
-                s.Commit.Hash,
-                s.EntityIsDeleted)).AsNoTracking().ToArrayAsync();
-        return snapshots;
     }
 
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAt(DateTimeOffset dateTime)

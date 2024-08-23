@@ -11,8 +11,8 @@ namespace SIL.Harmony.Tests;
 public class RepositoryTests : IAsyncLifetime
 {
     private readonly ServiceProvider _services;
-    private CrdtRepository _repository;
-    private SampleDbContext _crdtDbContext;
+    private readonly CrdtRepository _repository;
+    private readonly SampleDbContext _crdtDbContext;
 
     public RepositoryTests()
     {

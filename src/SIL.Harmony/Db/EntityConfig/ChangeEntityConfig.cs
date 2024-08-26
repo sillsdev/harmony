@@ -11,6 +11,7 @@ public class ChangeEntityConfig(JsonSerializerOptions jsonSerializerOptions) : I
 {
     public void Configure(EntityTypeBuilder<ChangeEntity<IChange>> builder)
     {
+        builder.ToTable("ChangeEntities");
         builder.HasKey(c => new { c.CommitId, c.Index });
         builder.Property(c => c.Change)
             .HasColumnType("jsonb")

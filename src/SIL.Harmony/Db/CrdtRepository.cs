@@ -57,16 +57,18 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
         //todo this does not respect ignoreChangesAfter
         return _dbContext.Snapshots.FromSql(
 $"""
-WITH LatestSnapshots AS (SELECT first_value(s1.Id) OVER (
+WITH LatestSnapshots AS (SELECT first_value(s1.Id)
+    OVER (
     PARTITION BY "s1"."EntityId"
     ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
     ) AS "LatestSnapshotId"
                          FROM "Snapshots" AS "s1"
                                   INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
-                         GROUP BY "s1"."EntityId")
+                         WHERE "c"."DateTime" < {ignoreChangesAfter?.UtcDateTime} OR {ignoreChangesAfter} IS NULL)
 SELECT *
 FROM "Snapshots" AS "s"
          INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"
+GROUP BY s.EntityId
 """);
     }
 

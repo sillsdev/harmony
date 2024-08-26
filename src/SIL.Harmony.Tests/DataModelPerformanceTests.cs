@@ -38,7 +38,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTest
     [Fact]
     public async Task SimpleAddChangePerformanceTest()
     {
-        var dataModelTest = new DataModelTestBase(new SqliteConnection("Data Source=test.db"));
+        var dataModelTest = new DataModelTestBase();
         // warmup the code, this causes jit to run and keeps our actual test below consistent
         var word1Id = Guid.NewGuid();
         await dataModelTest.WriteNextChange(dataModelTest.SetWord(word1Id, "entity 0"));

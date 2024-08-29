@@ -6,6 +6,7 @@ using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Engines;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Running;
+using JetBrains.Profiler.SelfApi;
 using Microsoft.Data.Sqlite;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Core;
@@ -34,11 +35,33 @@ public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTest
             ratio.Should().BeInRange(0, 2, "performance should not get worse, benchmark " + benchmarkCase.DisplayInfo);
         }
     }
+    
+    //enable this to profile tests
+    private static readonly bool trace = Environment.GetEnvironmentVariable("DOTNET_TRACE") != "false";
+    private async Task StartTrace()
+    {
+        if (!trace) return;
+        await DotTrace.InitAsync();
+        // config that sets the save directory
+        var config = new DotTrace.Config();
+        var dirPath = Path.Combine(Path.GetTempPath(), "harmony-perf");
+        Directory.CreateDirectory(dirPath);
+        config.SaveToDir(dirPath);
+        DotTrace.Attach(config);
+        DotTrace.StartCollectingData();
+    }
+    
+    private void StopTrace()
+    {
+        if (!trace) return;
+        DotTrace.SaveData();
+        DotTrace.Detach();
+    }
 
     [Fact]
     public async Task SimpleAddChangePerformanceTest()
     {
-        var dataModelTest = new DataModelTestBase();
+        var dataModelTest = new DataModelTestBase(true);
         // warmup the code, this causes jit to run and keeps our actual test below consistent
         var word1Id = Guid.NewGuid();
         await dataModelTest.WriteNextChange(dataModelTest.SetWord(word1Id, "entity 0"));
@@ -71,11 +94,15 @@ public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTest
         }
 
         await dataModelTest.DbContext.SaveChangesAsync();
+        await dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity3"));
 
+
+        await StartTrace();
         start = Stopwatch.GetTimestamp();
         await dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity1"));
         // var snapshots = await dataModelTest.CrdtRepository.CurrenSimpleSnapshots().ToArrayAsync();
         var runtimeAddChange10000Snapshots = Stopwatch.GetElapsedTime(start);
+        StopTrace();
         runtimeAddChange10000Snapshots.Should()
             .BeCloseTo(runtimeAddChange1Snapshot, runtimeAddChange1Snapshot / 10);
         // snapshots.Should().HaveCount(1002);

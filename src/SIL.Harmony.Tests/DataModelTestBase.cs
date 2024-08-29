@@ -21,6 +21,12 @@ public class DataModelTestBase : IAsyncLifetime
     internal readonly CrdtRepository CrdtRepository;
     protected readonly MockTimeProvider MockTimeProvider = new();
 
+    public DataModelTestBase(bool saveToDisk) : this(saveToDisk
+        ? new SqliteConnection("Data Source=test.db")
+        : new SqliteConnection("Data Source=:memory:"))
+    {
+    }
+
     public DataModelTestBase() : this(new SqliteConnection("Data Source=:memory:"))
     {
     }

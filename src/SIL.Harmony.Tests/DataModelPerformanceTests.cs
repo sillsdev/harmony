@@ -60,7 +60,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTest
     
     private static async Task<TimeSpan> MeasureTime(Func<Task> action, int iterations = 10)
     {
-        TimeSpan total = TimeSpan.Zero;
+        var total = TimeSpan.Zero;
         for (var i = 0; i < iterations; i++)
         {
             var start = Stopwatch.GetTimestamp();
@@ -74,7 +74,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTest
     public async Task SimpleAddChangePerformanceTest()
     {
         //disable validation because it's slow
-        var dataModelTest = new DataModelTestBase(false, alwaysValidate: false);
+        var dataModelTest = new DataModelTestBase(alwaysValidate: false);
         // warmup the code, this causes jit to run and keeps our actual test below consistent
         await dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity 0"));
         var runtimeAddChange1Snapshot = await MeasureTime(() => dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity 1")).AsTask());
@@ -131,24 +131,21 @@ public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTest
     {
         public string Id => nameof(XUnitBenchmarkLogger);
         public int Priority => 0;
-        private StringBuilder? sb;
+        private StringBuilder? _sb;
 
         public void Write(LogKind logKind, string text)
         {
-            if (sb == null)
-            {
-                sb = new StringBuilder();
-            }
+            _sb ??= new StringBuilder();
 
-            sb.Append(text);
+            _sb.Append(text);
         }
 
         public void WriteLine()
         {
-            if (sb is not null)
+            if (_sb is not null)
             {
-                output.WriteLine(sb.ToString());
-                sb.Clear();
+                output.WriteLine(_sb.ToString());
+                _sb.Clear();
             }
             else
                 output.WriteLine(string.Empty);
@@ -156,10 +153,10 @@ public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTest
 
         public void WriteLine(LogKind logKind, string text)
         {
-            if (sb is not null)
+            if (_sb is not null)
             {
-                output.WriteLine(sb.Append(text).ToString());
-                sb.Clear();
+                output.WriteLine(_sb.Append(text).ToString());
+                _sb.Clear();
             }
             else
                 output.WriteLine(text);
@@ -167,15 +164,17 @@ public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTest
 
         public void Flush()
         {
-            if (sb is not null)
+            if (_sb is not null)
             {
-                output.WriteLine(sb.ToString());
-                sb.Clear();
+                output.WriteLine(_sb.ToString());
+                _sb.Clear();
             }
         }
     }
 }
 
+// disable warning about waiting for sync code, benchmarkdotnet does not support async code, and it doesn't deadlock when waiting.
+#pragma warning disable VSTHRD002
 [SimpleJob(RunStrategy.Throughput, warmupCount: 2)]
 public class DataModelPerformanceBenchmarks
 {
@@ -230,3 +229,4 @@ public class DataModelPerformanceBenchmarks
         _templateModel.DisposeAsync().GetAwaiter().GetResult();
     }
 }
+#pragma warning restore VSTHRD002

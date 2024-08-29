@@ -16,7 +16,7 @@ using Xunit.Abstractions;
 
 namespace SIL.Harmony.Tests;
 
-public class DataModelPerformanceTests(ITestOutputHelper output) : DataModelTestBase
+public class DataModelPerformanceTests(ITestOutputHelper output)
 {
     [Fact]
     public void AddingChangePerformance()

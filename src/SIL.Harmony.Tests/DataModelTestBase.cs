@@ -8,6 +8,7 @@ using SIL.Harmony.Tests.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Tests;
@@ -21,9 +22,9 @@ public class DataModelTestBase : IAsyncLifetime
     internal readonly CrdtRepository CrdtRepository;
     protected readonly MockTimeProvider MockTimeProvider = new();
 
-    public DataModelTestBase(bool saveToDisk) : this(saveToDisk
+    public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true) : this(saveToDisk
         ? new SqliteConnection("Data Source=test.db")
-        : new SqliteConnection("Data Source=:memory:"))
+        : new SqliteConnection("Data Source=:memory:"), alwaysValidate)
     {
     }
 
@@ -31,10 +32,12 @@ public class DataModelTestBase : IAsyncLifetime
     {
     }
 
-    public DataModelTestBase(SqliteConnection connection)
+    public DataModelTestBase(SqliteConnection connection, bool alwaysValidate = true)
     {
         _services = new ServiceCollection()
             .AddCrdtDataSample(connection)
+            .AddOptions<CrdtConfig>().Configure(config => config.AlwaysValidateCommits = alwaysValidate)
+            .Services
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider))
             .BuildServiceProvider();
         DbContext = _services.GetRequiredService<SampleDbContext>();
@@ -44,14 +47,16 @@ public class DataModelTestBase : IAsyncLifetime
         CrdtRepository = _services.GetRequiredService<CrdtRepository>();
     }
     
-    public DataModelTestBase ForkDatabase() 
+    public DataModelTestBase ForkDatabase(bool alwaysValidate = true)
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
         var existingConnection = DbContext.Database.GetDbConnection() as SqliteConnection;
         if (existingConnection is null) throw new InvalidOperationException("Database is not SQLite");
         existingConnection.BackupDatabase(connection);
-        return new DataModelTestBase(connection);
+        var newTestBase = new DataModelTestBase(connection, alwaysValidate);
+        newTestBase.SetCurrentDate(currentDate.DateTime);
+        return newTestBase;
     }
 
     public void SetCurrentDate(DateTime dateTime)

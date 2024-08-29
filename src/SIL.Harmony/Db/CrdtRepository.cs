@@ -40,6 +40,9 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
     public async Task DeleteStaleSnapshots(Commit oldestChange)
     {
         //use the oldest commit added to clear any snapshots that are based on a now incomplete history
+        //this is a performance optimization to avoid deleting snapshots where there are none to delete
+        var mostRecentCommit = await _dbContext.Snapshots.MaxAsync(s => (DateTimeOffset?)s.Commit.HybridDateTime.DateTime);
+        if (mostRecentCommit < oldestChange.HybridDateTime.DateTime) return;
         await _dbContext.Snapshots
             .WhereAfter(oldestChange)
             .ExecuteDeleteAsync();
@@ -141,14 +144,22 @@ GROUP BY s.EntityId
 
     public async Task<ObjectSnapshot?> FindSnapshot(Guid id)
     {
+        //try to find the snapshot in the local cache first
+        var entry = _dbContext.Snapshots.Local.FindEntry(id);
+        if (entry is not null)
+        {
+            //ensure the commit is loaded, won't load if already loaded
+            await entry.Reference(s => s.Commit).LoadAsync();
+            return entry.Entity;
+        }
         return await _dbContext.Snapshots.Include(s => s.Commit).SingleOrDefaultAsync(s => s.Id == id);
     }
 
-    public async Task<ObjectSnapshot> GetCurrentSnapshotByObjectId(Guid objectId)
+    public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId)
     {
         return await _dbContext.Snapshots.Include(s => s.Commit)
             .DefaultOrder()
-            .LastAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
+            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
     }
 
     public async Task<IObjectBase> GetObjectBySnapshotId(Guid snapshotId)

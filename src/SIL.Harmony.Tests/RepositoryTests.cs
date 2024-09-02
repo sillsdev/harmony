@@ -5,6 +5,8 @@ using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SIL.Harmony.Changes;
+using SIL.Harmony.Sample.Changes;
 
 namespace SIL.Harmony.Tests;
 
@@ -36,8 +38,23 @@ public class RepositoryTests : IAsyncLifetime
         await _services.DisposeAsync();
     }
 
-    private Commit Commit(Guid id, HybridDateTime hybridDateTime) =>
-        new(id) { ClientId = Guid.Empty, HybridDateTime = hybridDateTime };
+    private Commit Commit(Guid id, HybridDateTime hybridDateTime)
+    {
+        var entityId = Guid.NewGuid();
+        return new Commit(id)
+        {
+            ClientId = Guid.Empty, HybridDateTime = hybridDateTime, ChangeEntities =
+            [
+                new ChangeEntity<IChange>()
+                {
+                    Change = new SetWordTextChange(entityId, "test"),
+                    CommitId = id,
+                    EntityId = entityId,
+                    Index = 0
+                }
+            ]
+        };
+    }
 
     private ObjectSnapshot Snapshot(Guid entityId, Guid commitId, HybridDateTime time)
     {
@@ -256,5 +273,18 @@ public class RepositoryTests : IAsyncLifetime
             { Guid.Empty, commit2Time.DateTime.ToUnixTimeMilliseconds() }
         }));
         changes.MissingFromClient.Select(c => c.DateTime.ToUnixTimeMilliseconds()).Should().ContainSingle("because {0} is only before the last commit", commit2Time.DateTime.ToUnixTimeMilliseconds());
+    }
+
+    [Fact]
+    public async Task AddCommit_RoundTripsData()
+    {
+        var commit = Commit(Guid.NewGuid(), Time(1, 0));
+        await _repository.AddCommit(commit);
+        
+        var queriedCommit = _repository.CurrentCommits()
+            .AsNoTracking()//ensures that the commit which is tracked above is not returned
+            .Include(c => c.ChangeEntities)
+            .Should().ContainSingle().Subject;
+        queriedCommit.Should().NotBeSameAs(commit).And.BeEquivalentTo(commit);
     }
 }

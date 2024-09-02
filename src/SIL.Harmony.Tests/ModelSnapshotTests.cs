@@ -81,7 +81,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var computedModelSnapshots = await DataModel.GetSnapshotsAt(latestSnapshot.Commit.DateTime);
 
         var entitySnapshot = computedModelSnapshots.Should().ContainSingle().Subject.Value;
-        entitySnapshot.Should().BeEquivalentTo(latestSnapshot, options => options.Excluding(snapshot => snapshot.Id));
+        entitySnapshot.Should().BeEquivalentTo(latestSnapshot, options => options.Excluding(snapshot => snapshot.Id).Excluding(snapshot => snapshot.Commit));
         var latestSnapshotEntry = latestSnapshot.Entity.Is<Word>();
         var entitySnapshotEntry = entitySnapshot.Entity.Is<Word>();
         entitySnapshotEntry.Text.Should().Be(latestSnapshotEntry.Text);

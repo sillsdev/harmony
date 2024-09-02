@@ -157,12 +157,13 @@ public class RepositoryTests : IAsyncLifetime
     public async Task CurrentSnapshots_GroupsByEntityIdSortedByTime()
     {
         var entityId = Guid.NewGuid();
+        var expectedTime = Time(2, 0);
         await _repository.AddSnapshots([
             Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
-            Snapshot(entityId, Guid.NewGuid(), Time(2, 0)),
+            Snapshot(entityId, Guid.NewGuid(), expectedTime),
         ]);
-        var snapshots = await _repository.CurrentSnapshots().ToArrayAsync();
-        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.DateTime.Hour.Should().Be(2);
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(expectedTime);
     }
 
     [Fact]
@@ -173,7 +174,7 @@ public class RepositoryTests : IAsyncLifetime
             Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
             Snapshot(entityId, Guid.NewGuid(), Time(1, 1)),
         ]);
-        var snapshots = await _repository.CurrentSnapshots().ToArrayAsync();
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
         snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Counter.Should().Be(1);
     }
 
@@ -187,7 +188,7 @@ public class RepositoryTests : IAsyncLifetime
             Snapshot(entityId, ids[0], time),
             Snapshot(entityId, ids[1], time),
         ]);
-        var snapshots = await _repository.CurrentSnapshots().ToArrayAsync();
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
         snapshots.Should().ContainSingle().Which.Commit.Id.Should().Be(ids[1]);
     }
 
@@ -195,17 +196,19 @@ public class RepositoryTests : IAsyncLifetime
     public async Task CurrentSnapshots_FiltersByDate()
     {
         var entityId = Guid.NewGuid();
+        var commit1Time = Time(1, 0);
+        var commit2Time = Time(3, 0);
         await _repository.AddSnapshots([
-            Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
-            Snapshot(entityId, Guid.NewGuid(), Time(3, 0)),
+            Snapshot(entityId, Guid.NewGuid(), commit1Time),
+            Snapshot(entityId, Guid.NewGuid(), commit2Time),
         ]);
 
-        var snapshots = await _repository.CurrentSnapshots().ToArrayAsync();
-        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.DateTime.Hour.Should().Be(3);
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(commit2Time);
 
         var newCurrentTime = Time(2, 0).DateTime;
-        snapshots = await _repository.GetScopedRepository(newCurrentTime).CurrentSnapshots().ToArrayAsync();
-        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.DateTime.Hour.Should().Be(1);
+        snapshots = await _repository.GetScopedRepository(newCurrentTime).CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(commit1Time);
     }
 
     [Fact]

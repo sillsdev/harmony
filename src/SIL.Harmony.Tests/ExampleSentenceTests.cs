@@ -65,7 +65,8 @@ public class ExampleSentenceTests : DataModelTestBase
         example.Should().NotBeNull();
         await WriteNextChange(EditExampleChange.EditExample(example!, text => text.Insert(3, "What's up ")));
 
-        example = await DataModel.GetLatest<Example>(exampleId);
-        example!.YText.ToString().Should().Be("Yo What's up Bob");
+        var actualExample = await DataModel.GetLatest<Example>(exampleId);
+        actualExample.Should().NotBeSameAs(example);
+        actualExample!.YText.ToString().Should().Be("Yo What's up Bob");
     }
 }

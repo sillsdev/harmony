@@ -192,6 +192,22 @@ public class DataModelSimpleChanges : DataModelTestBase
         word.DeletedAt.Should().Be(deleteCommit.DateTime);
     }
 
+    [Fact]
+    public async Task ChangesToSnapshotsAreNotSaved()
+    {
+        await WriteNextChange(SetWord(_entity1Id, "test-value"));
+        var word = await DataModel.GetLatest<Word>(_entity1Id);
+        word!.Text.Should().Be("test-value");
+        
+        //change made outside the model, should not be saved when writing the next change
+        word.Note = "a note";
+        
+        var commit = await WriteNextChange(SetWord(_entity1Id, "after-change"));
+        var objectSnapshot = commit.Snapshots.Should().ContainSingle().Subject;
+        objectSnapshot.Entity.Is<Word>().Text.Should().Be("after-change");
+        objectSnapshot.Entity.Is<Word>().Note.Should().BeNull();
+    }
+
 
     // [Fact]
     // public async Task CanGetEntryLinq2Db()

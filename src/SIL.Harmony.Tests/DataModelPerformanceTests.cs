@@ -16,6 +16,7 @@ using Xunit.Abstractions;
 
 namespace SIL.Harmony.Tests;
 
+[Trait("Category", "Performance")]
 public class DataModelPerformanceTests(ITestOutputHelper output)
 {
     [Fact]

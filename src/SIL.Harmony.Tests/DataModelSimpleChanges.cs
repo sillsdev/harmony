@@ -34,6 +34,17 @@ public class DataModelSimpleChanges : DataModelTestBase
     }
 
     [Fact]
+    public async Task CanUpdateAWordAfterRestarting()
+    {
+        await WriteNextChange(SetWord(_entity1Id, "test-value"));
+        var instance2 = ForkDatabase();//creates new services, but copies database. Simulates restarting the application
+        await instance2.WriteNextChange(new SetWordNoteChange(_entity1Id, "a word note"));
+        var word = await instance2.DataModel.GetLatest<Word>(_entity1Id);
+        word!.Text.Should().Be("test-value");
+        word.Note.Should().Be("a word note");
+    }
+
+    [Fact]
     public async Task WritingA2ndChangeDoesNotEffectTheFirstSnapshot()
     {
         await WriteNextChange(SetWord(_entity1Id, "change1"));

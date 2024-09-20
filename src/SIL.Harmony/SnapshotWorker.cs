@@ -177,10 +177,10 @@ internal class SnapshotWorker
         if (_snapshotLookup.TryGetValue(entityId, out var snapshotId))
         {
             if (snapshotId is null) return null;
-            return await _crdtRepository.FindSnapshot(snapshotId.Value);
+            return await _crdtRepository.FindSnapshot(snapshotId.Value, true);
         }
 
-        snapshot = await _crdtRepository.GetCurrentSnapshotByObjectId(entityId);
+        snapshot = await _crdtRepository.GetCurrentSnapshotByObjectId(entityId, true);
         _snapshotLookup[entityId] = snapshot?.Id;
 
         return snapshot;

@@ -143,14 +143,17 @@ GROUP BY s.EntityId
             .ToArrayAsync();
     }
 
-    public async Task<ObjectSnapshot?> FindSnapshot(Guid id)
+    public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)
     {        
-        return await Snapshots.Include(s => s.Commit).SingleOrDefaultAsync(s => s.Id == id);
+        return await Snapshots
+            .AsTracking(tracking)
+            .Include(s => s.Commit)
+            .SingleOrDefaultAsync(s => s.Id == id);
     }
 
-    public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId)
+    public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId, bool tracking = false)
     {
-        return await Snapshots.Include(s => s.Commit)
+        return await Snapshots.AsTracking(tracking).Include(s => s.Commit)
             .DefaultOrder()
             .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
     }

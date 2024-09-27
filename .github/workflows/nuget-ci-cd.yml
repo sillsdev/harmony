@@ -21,85 +21,15 @@ jobs:
           # We use `git describe` to find tags in commit history, so we need complete repo history
           fetch-depth: 0
 
-      - name: Find most recent tag
-        shell: bash
-        run: |
-          DESCRIBE=$(git describe --long --match "v*")
-          TAG=$(echo "$DESCRIBE" | grep -E -o '^v[0-9]+\.[0-9]+\.[0-9]+')
-          echo "DESCRIBE=$DESCRIBE" >> "$GITHUB_ENV"
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
-
-      - name: Split version number from tag into major/minor/patch sections
-        shell: bash
-        run: |
-          MAJOR=$(echo "$TAG" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\1/')
-          MINOR=$(echo "$TAG" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\2/')
-          PATCH=$(echo "$TAG" | sed -E 's/^v([0-9]+)\.([0-9]+)\.([0-9]+)$/\3/')
-          echo "MAJOR=$MAJOR" >> "$GITHUB_ENV"
-          echo "MINOR=$MINOR" >> "$GITHUB_ENV"
-          echo "PATCH=$PATCH" >> "$GITHUB_ENV"
-
-      - name: Get GitHub build number
-        shell: bash
-        run: echo "BUILD_NUMBER=${{ github.run_number }}" >> "$GITHUB_ENV"
-
-      - name: Get PR number for prerelease suffix
+      - name: Calculate version number for PR build
         if: github.event_name == 'pull_request'
         shell: bash
-        run: echo "PR_NUMBER=${{ github.event.number }}" >> "$GITHUB_ENV"
+        run: src/calculate-version.sh "${{ github.run_number }}" "${{ github.event.number }}"
 
-      - name: Calculate prerelease suffix
+      - name: Calculate version number for non-PR build
+        if: github.event_name != 'pull_request'
         shell: bash
-        run: |
-          SUFFIX=""
-          if [ -n "$PR_NUMBER" ]; then
-            SUFFIX="-PR${PR_NUMBER}.${BUILD_NUMBER}"
-          elif [ "$GITHUB_REF" = "refs/heads/develop" ]; then
-            SUFFIX="-beta.${BUILD_NUMBER}"
-          elif [ "$GITHUB_REF" = "refs/heads/main" ]; then
-            SUFFIX="-rc.${BUILD_NUMBER}"
-          fi
-
-          echo "SUFFIX=$SUFFIX" >> "$GITHUB_ENV"
-
-      - name: Calculate version number bump
-        # Same logic as GitVersion:
-        # * "+semver: breaking" or "+semver: major" in commit log will produce major version bump (and reset minor and patch to 0)
-        # * "+semver: feature" or "+semver: minor" in commit log will produce minor version bump (and reset patch to 0)
-        # Default is to bump the patch version
-        # Git log format "%B" is the raw body with no author's email or anything else
-        shell: bash
-        run: |
-          COMMIT_COUNT=$(echo "$DESCRIBE" | sed -E 's/^[^-]+-([^-]+)-.*$/\1/')
-          if [ -n "$COMMIT_COUNT" -a "$COMMIT_COUNT" -gt 0 ]; then
-            # Calculate bump based on commit messages
-            RAW_LOG=$(git log --format="%B" "$TAG"..HEAD)
-            if grep -E '\+semver: (breaking|major)' <<< "$RAW_LOG"; then
-              MAJOR=$(($MAJOR + 1))
-              MINOR=0
-              PATCH=0
-            elif grep -E '\+semver: (feature|minor)' <<< "$RAW_LOG"; then
-              MINOR=$(($MINOR + 1))
-              PATCH=0
-            else
-              PATCH=$(($PATCH + 1))
-            fi
-          fi
-
-          echo "MAJOR=$MAJOR" >> "$GITHUB_ENV"
-          echo "MINOR=$MINOR" >> "$GITHUB_ENV"
-          echo "PATCH=$PATCH" >> "$GITHUB_ENV"
-
-      - name: Set version number variables for MSBuild
-        shell: bash
-        run: |
-          echo "PACKAGE_VERSION=${MAJOR}.${MINOR}.${PATCH}${SUFFIX}" >> "$GITHUB_ENV"
-          if [ $MAJOR -eq 0 ]; then
-            echo "ASSEMBLY_VERSION=0.${MINOR}.0.0" >> "$GITHUB_ENV"
-          else
-            echo "ASSEMBLY_VERSION=${MAJOR}.0.0.0" >> "$GITHUB_ENV"
-          fi
-          echo "FILE_VERSION=${MAJOR}.${MINOR}.${PATCH}.${BUILD_NUMBER}" >> "$GITHUB_ENV"
+        run: src/calculate-version.sh "${{ github.run_number }}"
 
       - name: Display version number for debugging
         shell: bash

@@ -209,6 +209,7 @@ public class DataModelSimpleChanges : DataModelTestBase
         await WriteNextChange(SetWord(_entity1Id, "test-value"));
         var word = await DataModel.GetLatest<Word>(_entity1Id);
         word!.Text.Should().Be("test-value");
+        word.Note.Should().BeNull();
         
         //change made outside the model, should not be saved when writing the next change
         word.Note = "a note";

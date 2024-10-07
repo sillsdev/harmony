@@ -58,7 +58,7 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 
     public IQueryable<ObjectSnapshot> CurrentSnapshots()
     {
-        //todo this does not respect ignoreChangesAfter
+        var ignoreDate = ignoreChangesAfter?.UtcDateTime;
         return _dbContext.Snapshots.FromSql(
 $"""
 WITH LatestSnapshots AS (SELECT first_value(s1.Id)
@@ -68,7 +68,7 @@ WITH LatestSnapshots AS (SELECT first_value(s1.Id)
     ) AS "LatestSnapshotId"
                          FROM "Snapshots" AS "s1"
                                   INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
-                         WHERE "c"."DateTime" < {ignoreChangesAfter?.UtcDateTime} OR {ignoreChangesAfter} IS NULL)
+                         WHERE "c"."DateTime" < {ignoreDate} OR {ignoreDate} IS NULL)
 SELECT *
 FROM "Snapshots" AS "s"
          INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"

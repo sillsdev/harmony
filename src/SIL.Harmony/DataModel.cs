@@ -151,10 +151,13 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         await _crdtRepository.DeleteStaleSnapshots(oldestAddedCommit);
         Dictionary<Guid, Guid?> snapshotLookup;
-        //this is a performance optimization to avoid loading all the snapshots, this number is somewhat arbitrary
         if (newCommits.Length > 10)
         {
-            snapshotLookup = await _crdtRepository.CurrentSnapshots().ToDictionaryAsync(s => s.EntityId, s => (Guid?) s.Id);
+            var entityIds = newCommits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId));
+            snapshotLookup = await _crdtRepository.CurrentSnapshots()
+                .Where(s => entityIds.Contains(s.EntityId))
+                .Select(s => new KeyValuePair<Guid, Guid?>(s.EntityId, s.Id))
+                .ToDictionaryAsync(s => s.Key, s => s.Value);
         }
         else
         {

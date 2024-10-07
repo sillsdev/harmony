@@ -2,6 +2,7 @@
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SIL.Harmony.Adapters;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
@@ -103,7 +104,23 @@ public class ObjectTypeListBuilder
     /// </summary>
     public void Freeze()
     {
+        if (_frozen) return;
         _frozen = true;
+        foreach (var registration in Adapter.GetRegistrations())
+        {
+            if (Types.Any(t => t.DerivedType == registration.ObjectType))
+                throw new InvalidOperationException($"Type {registration.ObjectType} already added");
+            Types.Add(new JsonDerivedType(registration.ObjectType, registration.ObjectName));
+            ModelConfigurations.Add((builder, config) =>
+            {
+                if (!config.EnableProjectedTables) return;
+                var entity = registration.EntityBuilder(builder);
+                entity.HasOne(typeof(ObjectSnapshot))
+                    .WithOne()
+                    .HasForeignKey(registration.ObjectType, ObjectSnapshot.ShadowRefName)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+        }
     }
 
     private void CheckFrozen()
@@ -121,34 +138,20 @@ public class ObjectTypeListBuilder
         ModelConfigurations.Add((builder, _) => modelConfiguration(builder));
         return this;
     }
+    internal IObjectAdapter Adapter => _adapter ?? throw new InvalidOperationException("No adapter has been added to the builder");
+    private IObjectAdapter? _adapter;
 
-  
-    public ObjectTypeListBuilder Add<TDerived>(Action<EntityTypeBuilder<TDerived>>? configureDb = null)
-        where TDerived : class, IObjectBase
+    public DefaultAdapter DefaultAdapter()
     {
-        CheckFrozen();
-        if (Types.Any(t => t.DerivedType == typeof(TDerived))) throw new InvalidOperationException($"Type {typeof(TDerived)} already added");
-        Types.Add(new JsonDerivedType(typeof(TDerived), TDerived.TypeName));
-        ModelConfigurations.Add((builder, config) =>
-        {
-            if (!config.EnableProjectedTables) return;
-            var baseType = typeof(TDerived).BaseType;
-            if (baseType is not null)
-                builder.Ignore(baseType);
-            var entity = builder.Entity<TDerived>();
-            entity.HasBaseType((Type)null!);
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id);
-            entity.HasOne<ObjectSnapshot>()
-                .WithOne()
-                .HasForeignKey<TDerived>(ObjectSnapshot.ShadowRefName)
-            //set null otherwise it will cascade delete, which would happen whenever snapshots are deleted
-                .OnDelete(DeleteBehavior.SetNull);
+        var adapter = new DefaultAdapter();
+        _adapter = adapter;
+        return adapter;
+    }
 
-            entity.Property(e => e.DeletedAt);
-            entity.Ignore(e => e.TypeName);
-            configureDb?.Invoke(entity);
-        });
-        return this;
+    public CustomAdapter CustomAdapter()
+    {
+        var adapter = new CustomAdapter();
+        _adapter = adapter;
+        return adapter;
     }
 }

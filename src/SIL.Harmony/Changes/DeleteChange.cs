@@ -3,7 +3,7 @@
 namespace SIL.Harmony.Changes;
 
 public class DeleteChange<T>(Guid entityId) : EditChange<T>(entityId), IPolyType
-    where T : IPolyType, IObjectBase
+    where T : class, IPolyType, IObjectBase
 {
     public static string TypeName => "delete:" + T.TypeName;
 

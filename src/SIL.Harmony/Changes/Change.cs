@@ -36,7 +36,12 @@ public abstract class Change<T> : IChange where T : IObjectBase
 
     public Guid EntityId { get; set; }
 
-    public abstract ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context);
+    async ValueTask<IObjectBase> IChange.NewEntity(Commit commit, ChangeContext context)
+    {
+        return await NewEntity(commit, context);
+    }
+
+    public abstract ValueTask<T> NewEntity(Commit commit, ChangeContext context);
     public abstract ValueTask ApplyChange(T entity, ChangeContext context);
 
     public async ValueTask ApplyChange(IObjectBase entity, ChangeContext context)

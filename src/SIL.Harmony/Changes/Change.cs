@@ -24,7 +24,7 @@ public interface IChange
 /// a change that can be applied to an entity, recommend inheriting from <see cref="CreateChange{T}"/> or <see cref="EditChange{T}"/>
 /// </summary>
 /// <typeparam name="T">Object type modified by this change</typeparam>
-public abstract class Change<T> : IChange where T : IObjectBase
+public abstract class Change<T> : IChange where T : class
 {
     protected Change(Guid entityId)
     {
@@ -38,7 +38,7 @@ public abstract class Change<T> : IChange where T : IObjectBase
 
     async ValueTask<IObjectBase> IChange.NewEntity(Commit commit, ChangeContext context)
     {
-        return await NewEntity(commit, context);
+        return context.Adapt(await NewEntity(commit, context));
     }
 
     public abstract ValueTask<T> NewEntity(Commit commit, ChangeContext context);
@@ -46,7 +46,8 @@ public abstract class Change<T> : IChange where T : IObjectBase
 
     public async ValueTask ApplyChange(IObjectBase entity, ChangeContext context)
     {
-        if (this is CreateChange<T>) return; // skip attempting to apply changes on CreateChange as it does not support apply changes
+        if (this is CreateChange<T>)
+            return; // skip attempting to apply changes on CreateChange as it does not support apply changes
         if (entity is T entityT) await ApplyChange(entityT, context);
     }
 

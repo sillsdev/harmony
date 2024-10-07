@@ -5,10 +5,10 @@ namespace SIL.Harmony.Entities;
 [JsonPolymorphic]
 public interface IObjectBase: IPolyType
 {
-    Guid Id { get; init; }
+    Guid Id { get; }
     DateTimeOffset? DeletedAt { get; set; }
 
-    public T Is<T>() where T : IObjectBase
+    public T Is<T>()
     {
         return (T)this;
     }
@@ -23,11 +23,15 @@ public interface IObjectBase: IPolyType
 
     public IObjectBase Copy();
     new string TypeName { get; }
+    Type ObjectType { get; }
+    object DbObject { get; }
     static string IPolyType.TypeName => throw new NotImplementedException();
 }
 
 public interface IObjectBase<TThis> : IObjectBase where TThis : IPolyType
 {
     string IObjectBase.TypeName => TThis.TypeName;
+    Type IObjectBase.ObjectType => typeof(TThis);
     static string IPolyType.TypeName => typeof(TThis).Name;
+    object IObjectBase.DbObject => this;
 }

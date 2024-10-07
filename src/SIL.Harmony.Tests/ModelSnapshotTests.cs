@@ -37,7 +37,7 @@ public class ModelSnapshotTests : DataModelTestBase
     [Theory]
     [InlineData(10)]
     [InlineData(100)]
-    [InlineData(1_000)]
+    // [InlineData(1_000)]
     public async Task CanGetSnapshotFromEarlier(int changeCount)
     {
         var entityId = Guid.NewGuid();

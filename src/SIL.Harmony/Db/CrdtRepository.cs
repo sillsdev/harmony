@@ -230,12 +230,12 @@ GROUP BY s.EntityId
         if (!crdtConfig.Value.EnableProjectedTables) return;
         if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
-        var existingEntry = await GetEntityEntry(objectSnapshot.Entity.GetType(), objectSnapshot.EntityId);
+        var existingEntry = await GetEntityEntry(objectSnapshot.Entity.ObjectType, objectSnapshot.EntityId);
         if (existingEntry is null && objectSnapshot.IsRoot)
         {
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
-            _dbContext.Add((object)objectSnapshot.Entity.Copy())
+            _dbContext.Add((object)objectSnapshot.Entity.Copy().DbObject)
                 .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
             return;
         }
@@ -247,7 +247,7 @@ GROUP BY s.EntityId
             return;
         }
 
-        existingEntry.CurrentValues.SetValues(objectSnapshot.Entity);
+        existingEntry.CurrentValues.SetValues(objectSnapshot.Entity.DbObject);
         existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
     }
 

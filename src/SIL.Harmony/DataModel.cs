@@ -164,7 +164,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             snapshotLookup = [];
         }
 
-        var snapshotWorker = new SnapshotWorker(snapshotLookup, _crdtRepository);
+        var snapshotWorker = new SnapshotWorker(snapshotLookup, _crdtRepository, _crdtConfig.Value);
         await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
     }
 
@@ -231,7 +231,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         if (pendingCommits.Length != 0)
         {
-            snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots, repository, pendingCommits);
+            snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots, repository, pendingCommits, _crdtConfig.Value);
         }
 
         return snapshots;

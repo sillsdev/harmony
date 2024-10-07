@@ -15,6 +15,10 @@ public class CrdtConfig
     /// it does however increase database size as now objects are stored both in snapshots and in their projected tables
     /// </summary>
     public bool EnableProjectedTables { get; set; } = true;
+    /// <summary>
+    /// after adding any commit validate the commit history, not great for performance but good for testing.
+    /// </summary>
+    public bool AlwaysValidateCommits { get; set; } = true;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;

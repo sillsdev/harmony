@@ -13,34 +13,49 @@ public static class QueryHelpers
         return new SyncState(dict);
     }
 
-    public static async Task<ChangesResult<TCommit>> GetChanges<TCommit, TChange>(this IQueryable<TCommit> commits, SyncState remoteState) where TCommit : CommitBase<TChange>
+    public static async Task<ChangesResult<TCommit>> GetChanges<TCommit, TChange>(this IQueryable<TCommit> commits,
+        SyncState remoteState) where TCommit : CommitBase<TChange>
     {
-        var newHistory = new List<TCommit>();
-        var localSyncState = await commits.GetSyncState();
-        foreach (var (clientId, localTimestamp) in localSyncState.ClientHeads)
+        var localState = await commits.AsNoTracking().GetSyncState();
+        return new ChangesResult<TCommit>(
+            await GetMissingCommits<TCommit, TChange>(commits, localState, remoteState).ToArrayAsync(),
+            localState);
+    }
+
+    public static async IAsyncEnumerable<TCommit> GetMissingCommits<TCommit, TChange>(
+        this IQueryable<TCommit> commits,
+        SyncState localState,
+        SyncState remoteState) where TCommit : CommitBase<TChange>
+    {
+        commits = commits.AsNoTracking();
+        foreach (var (clientId, localTimestamp) in localState.ClientHeads)
         {
             //client is new to the other history
             if (!remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp))
             {
                 //todo slow, it would be better if we could query on client id and get latest changes per client
-                newHistory.AddRange(await commits.Include(c => c.ChangeEntities).DefaultOrder()
-                    .Where(c => c.ClientId == clientId)
-                    .ToArrayAsync());
+                await foreach (var commit in commits.Include(c => c.ChangeEntities).DefaultOrder()
+                                   .Where(c => c.ClientId == clientId)
+                                   .AsAsyncEnumerable())
+                {
+                    yield return commit;
+                }
             }
             //client has newer history than the other history
             else if (localTimestamp > otherTimestamp)
             {
                 var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(otherTimestamp);
                 //todo even slower because we need to filter out changes that are already in the other history
-                newHistory.AddRange((await commits.Include(c => c.ChangeEntities).DefaultOrder()
-                    .Where(c => c.ClientId == clientId && c.HybridDateTime.DateTime > otherDt)
-                    .ToArrayAsync())
-                    //fixes an issue where the query would include commits that are already in the other history
-                    .Where(c => c.DateTime.ToUnixTimeMilliseconds() > otherTimestamp));
+                await foreach (var commit in commits.Include(c => c.ChangeEntities)
+                                   .DefaultOrder()
+                                   .Where(c => c.ClientId == clientId && c.HybridDateTime.DateTime > otherDt)
+                                   .AsAsyncEnumerable())
+                {
+                    if (commit.DateTime.ToUnixTimeMilliseconds() > otherTimestamp)
+                        yield return commit;
+                }
             }
         }
-
-        return new(newHistory.ToArray(), localSyncState);
     }
 
     public static IQueryable<T> DefaultOrder<T>(this IQueryable<T> queryable) where T: CommitBase

@@ -9,6 +9,7 @@ public class CommitEntityConfig : IEntityTypeConfiguration<Commit>
 {
     public void Configure(EntityTypeBuilder<Commit> builder)
     {
+        builder.ToTable("Commits");
         builder.HasKey(c => c.Id);
         builder.ComplexProperty(c => c.HybridDateTime,
             hybridEntity =>

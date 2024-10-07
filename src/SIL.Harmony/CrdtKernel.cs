@@ -23,7 +23,8 @@ public static class CrdtKernel
         services.AddScoped<DataModel>(provider => new DataModel(
             provider.GetRequiredService<CrdtRepository>(),
             provider.GetRequiredService<JsonSerializerOptions>(),
-            provider.GetRequiredService<IHybridDateTimeProvider>()
+            provider.GetRequiredService<IHybridDateTimeProvider>(),
+            provider.GetRequiredService<IOptions<CrdtConfig>>()
         ));
         return services;
     }

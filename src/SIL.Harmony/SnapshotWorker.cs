@@ -12,7 +12,7 @@ namespace SIL.Harmony;
 /// </summary>
 internal class SnapshotWorker
 {
-    private readonly IReadOnlyDictionary<Guid, SimpleSnapshot>? _snapshots;
+    private readonly Dictionary<Guid, Guid?> _snapshotLookup;
     private readonly CrdtRepository _crdtRepository;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots  = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
@@ -21,6 +21,7 @@ internal class SnapshotWorker
     {
         _pendingSnapshots = snapshots;
         _crdtRepository = crdtRepository;
+        _snapshotLookup = [];
     }
 
     internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(Dictionary<Guid, ObjectSnapshot> snapshots,
@@ -33,9 +34,14 @@ internal class SnapshotWorker
         return snapshots;
     }
 
-    internal SnapshotWorker(IReadOnlyDictionary<Guid, SimpleSnapshot> snapshots, CrdtRepository crdtRepository)
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="snapshotLookup">a dictionary of entity id to latest snapshot id</param>
+    /// <param name="crdtRepository"></param>
+    internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup, CrdtRepository crdtRepository)
     {
-        _snapshots = snapshots;
+        _snapshotLookup = snapshotLookup;
         _crdtRepository = crdtRepository;
     }
 
@@ -168,12 +174,16 @@ internal class SnapshotWorker
             return snapshot;
         }
 
-        if (_snapshots?.TryGetValue(entityId, out var simpleSnapshot) == true)
+        if (_snapshotLookup.TryGetValue(entityId, out var snapshotId))
         {
-            return await _crdtRepository.FindSnapshot(simpleSnapshot.Id);
+            if (snapshotId is null) return null;
+            return await _crdtRepository.FindSnapshot(snapshotId.Value, true);
         }
 
-        return null;
+        snapshot = await _crdtRepository.GetCurrentSnapshotByObjectId(entityId, true);
+        _snapshotLookup[entityId] = snapshot?.Id;
+
+        return snapshot;
     }
 
     private void AddSnapshot(ObjectSnapshot snapshot)

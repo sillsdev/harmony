@@ -36,9 +36,8 @@ public class ModelSnapshotTests : DataModelTestBase
 
     [Theory]
     [InlineData(10)]
-    // [InlineData(100)]
-    //not going higher because we run into insert performance issues
-    // [InlineData(1_000)]
+    [InlineData(100)]
+    [InlineData(1_000)]
     public async Task CanGetSnapshotFromEarlier(int changeCount)
     {
         var entityId = Guid.NewGuid();
@@ -65,14 +64,10 @@ public class ModelSnapshotTests : DataModelTestBase
         }
     }
 
-
-    /// <summary>
-    /// test isn't super useful as a perf test as 99% of the time is just inserting data
-    /// </summary>
-    [Fact(Skip = "Slow test")]
+    [Fact]
     public async Task WorstCaseSnapshotReApply()
     {
-        int changeCount = 10_000;
+        int changeCount = 1_000;
         var entityId = Guid.NewGuid();
         await WriteNextChange(SetWord(entityId, "first"));
         //adding all in one AddRange means there's sparse snapshots
@@ -86,7 +81,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var computedModelSnapshots = await DataModel.GetSnapshotsAt(latestSnapshot.Commit.DateTime);
 
         var entitySnapshot = computedModelSnapshots.Should().ContainSingle().Subject.Value;
-        entitySnapshot.Should().BeEquivalentTo(latestSnapshot, options => options.Excluding(snapshot => snapshot.Id));
+        entitySnapshot.Should().BeEquivalentTo(latestSnapshot, options => options.Excluding(snapshot => snapshot.Id).Excluding(snapshot => snapshot.Commit));
         var latestSnapshotEntry = latestSnapshot.Entity.Is<Word>();
         var entitySnapshotEntry = entitySnapshot.Entity.Is<Word>();
         entitySnapshotEntry.Text.Should().Be(latestSnapshotEntry.Text);

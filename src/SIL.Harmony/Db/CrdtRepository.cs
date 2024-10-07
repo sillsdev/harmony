@@ -11,6 +11,7 @@ namespace SIL.Harmony.Db;
 
 internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig, DateTimeOffset? ignoreChangesAfter = null)
 {
+    private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
     public Task<IDbContextTransaction> BeginTransactionAsync()
     {
         return _dbContext.Database.BeginTransactionAsync();
@@ -40,7 +41,10 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
     public async Task DeleteStaleSnapshots(Commit oldestChange)
     {
         //use the oldest commit added to clear any snapshots that are based on a now incomplete history
-        await _dbContext.Snapshots
+        //this is a performance optimization to avoid deleting snapshots where there are none to delete
+        var mostRecentCommit = await Snapshots.MaxAsync(s => (DateTimeOffset?)s.Commit.HybridDateTime.DateTime);
+        if (mostRecentCommit < oldestChange.HybridDateTime.DateTime) return;
+        await Snapshots
             .WhereAfter(oldestChange)
             .ExecuteDeleteAsync();
     }
@@ -54,12 +58,45 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 
     public IQueryable<ObjectSnapshot> CurrentSnapshots()
     {
-        return _dbContext.Snapshots.Where(snapshot => CurrentSnapshotIds().Contains(snapshot.Id));
+        var ignoreDate = ignoreChangesAfter?.UtcDateTime;
+        return _dbContext.Snapshots.FromSql(
+$"""
+WITH LatestSnapshots AS (SELECT first_value(s1.Id)
+    OVER (
+    PARTITION BY "s1"."EntityId"
+    ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
+    ) AS "LatestSnapshotId"
+                         FROM "Snapshots" AS "s1"
+                                  INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
+                         WHERE "c"."DateTime" < {ignoreDate} OR {ignoreDate} IS NULL)
+SELECT *
+FROM "Snapshots" AS "s"
+         INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"
+GROUP BY s.EntityId
+""").AsNoTracking();
+    }
+
+    public IAsyncEnumerable<SimpleSnapshot> CurrenSimpleSnapshots(bool includeDeleted = false)
+    {
+        var queryable = CurrentSnapshots();
+        if (!includeDeleted) queryable = queryable.Where(s => !s.EntityIsDeleted);
+        var snapshots = queryable.Select(s =>
+            new SimpleSnapshot(s.Id,
+                s.TypeName,
+                s.EntityId,
+                s.CommitId,
+                s.IsRoot,
+                s.Commit.HybridDateTime,
+                s.Commit.Hash,
+                s.EntityIsDeleted))
+            .AsNoTracking()
+            .AsAsyncEnumerable();
+        return snapshots;
     }
 
     private IQueryable<Guid> CurrentSnapshotIds()
     {
-        return _dbContext.Snapshots.GroupBy(s => s.EntityId,
+        return Snapshots.GroupBy(s => s.EntityId,
             (entityId, snapshots) => snapshots
                     //unfortunately this can not be extracted into a helper because the whole thing is part of an expression
                 .OrderByDescending(c => c.Commit.HybridDateTime.DateTime)
@@ -106,21 +143,24 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
             .ToArrayAsync();
     }
 
-    public async Task<ObjectSnapshot?> FindSnapshot(Guid id)
-    {
-        return await _dbContext.Snapshots.Include(s => s.Commit).SingleOrDefaultAsync(s => s.Id == id);
+    public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)
+    {        
+        return await Snapshots
+            .AsTracking(tracking)
+            .Include(s => s.Commit)
+            .SingleOrDefaultAsync(s => s.Id == id);
     }
 
-    public async Task<ObjectSnapshot> GetCurrentSnapshotByObjectId(Guid objectId)
+    public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId, bool tracking = false)
     {
-        return await _dbContext.Snapshots.Include(s => s.Commit)
+        return await Snapshots.AsTracking(tracking).Include(s => s.Commit)
             .DefaultOrder()
-            .LastAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
+            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
     }
 
     public async Task<IObjectBase> GetObjectBySnapshotId(Guid snapshotId)
     {
-        var entity = await _dbContext.Snapshots
+        var entity = await Snapshots
                          .Where(s => s.Id == snapshotId)
                          .Select(s => s.Entity)
                          .SingleOrDefaultAsync()
@@ -130,7 +170,7 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 
     public async Task<T?> GetCurrent<T>(Guid objectId) where T: class, IObjectBase
     {
-        var snapshot = await _dbContext.Snapshots
+        var snapshot = await Snapshots
             .DefaultOrder()
             .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
         return snapshot?.Entity.Is<T>();
@@ -176,8 +216,9 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
     {
         foreach (var snapshot in snapshots)
         {
-            if (_dbContext.Snapshots.Local.Contains(snapshot)) continue;
-            _dbContext.Snapshots.Add(snapshot);
+            
+            if (_dbContext.Snapshots.Local.FindEntry(snapshot.Id) is not null) continue;
+            _dbContext.Add(snapshot);
             await SnapshotAdded(snapshot);
         }
 

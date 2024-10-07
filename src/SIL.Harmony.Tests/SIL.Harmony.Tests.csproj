@@ -7,11 +7,13 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
         <PackageReference Include="FluentAssertions" Version="6.12.0" />
         <PackageReference Include="GitHubActionsTestLogger" Version="2.4.1">
           <PrivateAssets>all</PrivateAssets>
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
+        <PackageReference Include="JetBrains.Profiler.SelfApi" Version="2.5.10" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.7.2" />
         <PackageReference Include="Verify.DiffPlex" Version="2.3.0" />
         <PackageReference Include="Verify.EntityFramework" Version="12.1.0" />

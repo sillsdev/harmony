@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace SIL.Harmony.Db;
 
 //todo, I would like to move these extensions into QueryHelperTests but that's in Core and ObjectSnapshot is not part of core
@@ -25,5 +27,10 @@ public static class DbSetExtensions
             s => after.HybridDateTime.DateTime < s.Commit.HybridDateTime.DateTime
                  || (after.HybridDateTime.DateTime == s.Commit.HybridDateTime.DateTime && after.HybridDateTime.Counter < s.Commit.HybridDateTime.Counter)
                  || (after.HybridDateTime.DateTime == s.Commit.HybridDateTime.DateTime && after.HybridDateTime.Counter == s.Commit.HybridDateTime.Counter && after.Id < s.Commit.Id));
+    }
+    
+    public static IQueryable<T> AsTracking<T>(this IQueryable<T> queryable, bool tracking = true) where T : class
+    {
+        return queryable.AsTracking(tracking ? QueryTrackingBehavior.TrackAll : QueryTrackingBehavior.NoTracking);
     }
 }

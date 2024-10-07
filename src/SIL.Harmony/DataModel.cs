@@ -1,6 +1,7 @@
 using System.Text.Json;
 using SIL.Harmony.Core;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
@@ -14,18 +15,20 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
-    private readonly bool _autoValidate = true;
+    private bool AlwaysValidate => _crdtConfig.Value.AlwaysValidateCommits;
 
     private readonly CrdtRepository _crdtRepository;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly IHybridDateTimeProvider _timeProvider;
+    private readonly IOptions<CrdtConfig> _crdtConfig;
 
     //constructor must be internal because CrdtRepository is internal
-    internal DataModel(CrdtRepository crdtRepository, JsonSerializerOptions serializerOptions, IHybridDateTimeProvider timeProvider)
+    internal DataModel(CrdtRepository crdtRepository, JsonSerializerOptions serializerOptions, IHybridDateTimeProvider timeProvider, IOptions<CrdtConfig> crdtConfig)
     {
         _crdtRepository = crdtRepository;
         _serializerOptions = serializerOptions;
         _timeProvider = timeProvider;
+        _crdtConfig = crdtConfig;
     }
 
 
@@ -88,7 +91,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             //if there are deferred commits, update snapshots with them first
             if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
             await UpdateSnapshots(commit, [commit]);
-            if (_autoValidate) await ValidateCommits();
+            if (AlwaysValidate) await ValidateCommits();
         }
         else
         {
@@ -109,7 +112,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         var oldestChange = commits.MinBy(c => c.CompareKey);
         if (oldestChange is null) return;
         await UpdateSnapshots(oldestChange, commits.ToArray());
-        if (_autoValidate) await ValidateCommits();
+        if (AlwaysValidate) await ValidateCommits();
     }
 
 
@@ -147,8 +150,21 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task UpdateSnapshots(Commit oldestAddedCommit, Commit[] newCommits)
     {
         await _crdtRepository.DeleteStaleSnapshots(oldestAddedCommit);
-        var modelSnapshot = await GetProjectSnapshot(true);
-        var snapshotWorker = new SnapshotWorker(modelSnapshot.Snapshots, _crdtRepository);
+        Dictionary<Guid, Guid?> snapshotLookup;
+        if (newCommits.Length > 10)
+        {
+            var entityIds = newCommits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId));
+            snapshotLookup = await _crdtRepository.CurrentSnapshots()
+                .Where(s => entityIds.Contains(s.EntityId))
+                .Select(s => new KeyValuePair<Guid, Guid?>(s.EntityId, s.Id))
+                .ToDictionaryAsync(s => s.Key, s => s.Value);
+        }
+        else
+        {
+            snapshotLookup = [];
+        }
+
+        var snapshotWorker = new SnapshotWorker(snapshotLookup, _crdtRepository);
         await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
     }
 
@@ -180,7 +196,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
     {
-        return await _crdtRepository.GetCurrentSnapshotByObjectId(entityId);
+        return await _crdtRepository.GetCurrentSnapshotByObjectId(entityId) ?? throw new ArgumentException($"unable to find snapshot for entity {entityId}");
     }
 
     public async Task<T?> GetLatest<T>(Guid objectId) where T : class, IObjectBase
@@ -190,7 +206,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<ModelSnapshot> GetProjectSnapshot(bool includeDeleted = false)
     {
-        return new ModelSnapshot(await GetEntitySnapshots(includeDeleted));
+        return new ModelSnapshot(await _crdtRepository.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
     }
 
     public IQueryable<T> GetLatestObjects<T>() where T : class, IObjectBase
@@ -206,22 +222,6 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<IObjectBase> GetBySnapshotId(Guid snapshotId)
     {
         return await _crdtRepository.GetObjectBySnapshotId(snapshotId);
-    }
-
-    private async Task<SimpleSnapshot[]> GetEntitySnapshots(bool includeDeleted = false)
-    {
-        var queryable = _crdtRepository.CurrentSnapshots();
-        if (!includeDeleted) queryable = queryable.Where(s => !s.EntityIsDeleted);
-        var snapshots = await queryable.Select(s =>
-            new SimpleSnapshot(s.Id,
-                s.TypeName,
-                s.EntityId,
-                s.CommitId,
-                s.IsRoot,
-                s.Commit.HybridDateTime,
-                s.Commit.Hash,
-                s.EntityIsDeleted)).AsNoTracking().ToArrayAsync();
-        return snapshots;
     }
 
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAt(DateTimeOffset dateTime)

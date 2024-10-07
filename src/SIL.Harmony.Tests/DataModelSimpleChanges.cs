@@ -34,6 +34,17 @@ public class DataModelSimpleChanges : DataModelTestBase
     }
 
     [Fact]
+    public async Task CanUpdateAWordAfterRestarting()
+    {
+        await WriteNextChange(SetWord(_entity1Id, "test-value"));
+        var instance2 = ForkDatabase();//creates new services, but copies database. Simulates restarting the application
+        await instance2.WriteNextChange(new SetWordNoteChange(_entity1Id, "a word note"));
+        var word = await instance2.DataModel.GetLatest<Word>(_entity1Id);
+        word!.Text.Should().Be("test-value");
+        word.Note.Should().Be("a word note");
+    }
+
+    [Fact]
     public async Task WritingA2ndChangeDoesNotEffectTheFirstSnapshot()
     {
         await WriteNextChange(SetWord(_entity1Id, "change1"));
@@ -190,6 +201,23 @@ public class DataModelSimpleChanges : DataModelTestBase
         var word = snapshot.Entity.Is<Word>();
         word.Text.Should().Be("after-delete");
         word.DeletedAt.Should().Be(deleteCommit.DateTime);
+    }
+
+    [Fact]
+    public async Task ChangesToSnapshotsAreNotSaved()
+    {
+        await WriteNextChange(SetWord(_entity1Id, "test-value"));
+        var word = await DataModel.GetLatest<Word>(_entity1Id);
+        word!.Text.Should().Be("test-value");
+        word.Note.Should().BeNull();
+        
+        //change made outside the model, should not be saved when writing the next change
+        word.Note = "a note";
+        
+        var commit = await WriteNextChange(SetWord(_entity1Id, "after-change"));
+        var objectSnapshot = commit.Snapshots.Should().ContainSingle().Subject;
+        objectSnapshot.Entity.Is<Word>().Text.Should().Be("after-change");
+        objectSnapshot.Entity.Is<Word>().Note.Should().BeNull();
     }
 
 

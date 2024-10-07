@@ -10,6 +10,7 @@ public class SnapshotEntityConfig(JsonSerializerOptions jsonSerializerOptions) :
 {
     public void Configure(EntityTypeBuilder<ObjectSnapshot> builder)
     {
+        builder.ToTable("Snapshots");
         builder.HasKey(s => s.Id);
         builder.HasIndex(s => new { s.CommitId, s.EntityId }).IsUnique();
         builder

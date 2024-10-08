@@ -2,6 +2,7 @@
 
     <PropertyGroup>
         <RootNamespace>SIL.Harmony</RootNamespace>
+        <IsPackable>true</IsPackable>
     </PropertyGroup>
 
     <ItemGroup>

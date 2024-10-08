@@ -2,6 +2,7 @@
 
     <PropertyGroup>
         <RootNamespace>SIL.Harmony.Linq2db</RootNamespace>
+        <IsPackable>true</IsPackable>
     </PropertyGroup>
 
     <ItemGroup>

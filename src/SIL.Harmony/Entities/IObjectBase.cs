@@ -3,7 +3,7 @@
 namespace SIL.Harmony.Entities;
 
 [JsonPolymorphic]
-public interface IObjectBase: IPolyType
+public interface IObjectBase
 {
     Guid Id { get; }
     DateTimeOffset? DeletedAt { get; set; }
@@ -24,14 +24,16 @@ public interface IObjectBase: IPolyType
     public IObjectBase Copy();
     new string TypeName { get; }
     Type ObjectType { get; }
+    [JsonIgnore]
     object DbObject { get; }
-    static string IPolyType.TypeName => throw new NotImplementedException();
+    // static string IPolyType.TypeName => throw new NotImplementedException();
 }
 
-public interface IObjectBase<TThis> : IObjectBase where TThis : IPolyType
+public interface IObjectBase<TThis> : IObjectBase, IPolyType where TThis : IPolyType
 {
     string IObjectBase.TypeName => TThis.TypeName;
     Type IObjectBase.ObjectType => typeof(TThis);
     static string IPolyType.TypeName => typeof(TThis).Name;
+    [JsonIgnore]
     object IObjectBase.DbObject => this;
 }

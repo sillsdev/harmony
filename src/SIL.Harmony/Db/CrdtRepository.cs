@@ -176,7 +176,7 @@ GROUP BY s.EntityId
         return snapshot?.Entity.Is<T>();
     }
 
-    public IQueryable<T> GetCurrentObjects<T>() where T : class, IObjectBase
+    public IQueryable<T> GetCurrentObjects<T>() where T : class, IObjectBase, IPolyType
     {
         if (crdtConfig.Value.EnableProjectedTables)
         {

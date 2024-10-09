@@ -62,7 +62,7 @@ public class ObjectSnapshot
         References = entity.GetReferences();
         EntityId = entity.Id;
         EntityIsDeleted = entity.DeletedAt.HasValue;
-        TypeName = entity.TypeName;
+        TypeName = entity.ObjectTypeName;
         CommitId = commit.Id;
         Commit = commit;
         IsRoot = isRoot;

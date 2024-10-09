@@ -22,16 +22,16 @@ public interface IObjectBase
     public void RemoveReference(Guid id, Commit commit);
 
     public IObjectBase Copy();
-    new string TypeName { get; }
-    Type ObjectType { get; }
+    public string ObjectTypeName { get; }
+    public Type ObjectType { get; }
     [JsonIgnore]
-    object DbObject { get; }
+    public object DbObject { get; }
     // static string IPolyType.TypeName => throw new NotImplementedException();
 }
 
 public interface IObjectBase<TThis> : IObjectBase, IPolyType where TThis : IPolyType
 {
-    string IObjectBase.TypeName => TThis.TypeName;
+    string IObjectBase.ObjectTypeName => TThis.TypeName;
     Type IObjectBase.ObjectType => typeof(TThis);
     static string IPolyType.TypeName => typeof(TThis).Name;
     [JsonIgnore]

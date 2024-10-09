@@ -33,4 +33,22 @@ internal static class DerivedTypeHelper
     {
         return T.TypeName;
     }
+
+    public static void AddDerivedType(this Dictionary<Type, List<JsonDerivedType>> types, Type baseType, Type derivedType, string discriminator)
+    {
+        types.TryGetValue(baseType, out var list);
+        if (list is null)
+        {
+            list = new List<JsonDerivedType>();
+            types.Add(baseType, list);
+        }
+        else
+        {
+            if (list.Any(dt => dt.DerivedType == derivedType))
+            {
+                throw new InvalidOperationException($"Type {derivedType} already added for type {baseType}");
+            }
+        }
+        list.Add(new JsonDerivedType(derivedType, discriminator));
+    }
 }

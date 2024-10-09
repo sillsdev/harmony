@@ -58,9 +58,10 @@ public class CrdtConfig
             }
         }
 
-        if (typeInfo.Type == typeof(IObjectBase))
+        if (ObjectTypeListBuilder.JsonTypes?.TryGetValue(typeInfo.Type, out var types) == true)
         {
-            foreach (var type in ObjectTypeListBuilder.Types)
+            if (typeInfo.PolymorphismOptions is null) typeInfo.PolymorphismOptions = new();
+            foreach (var type in types)
             {
                 typeInfo.PolymorphismOptions!.DerivedTypes.Add(type);
             }
@@ -106,18 +107,16 @@ public class ObjectTypeListBuilder
     {
         if (_frozen) return;
         _frozen = true;
+        JsonTypes = Adapter.JsonTypes;
         foreach (var registration in Adapter.GetRegistrations())
         {
-            if (Types.Any(t => t.DerivedType == registration.ObjectType))
-                throw new InvalidOperationException($"Type {registration.ObjectType} already added");
-            Types.Add(new JsonDerivedType(registration.ObjectType, registration.ObjectName));
             ModelConfigurations.Add((builder, config) =>
             {
                 if (!config.EnableProjectedTables) return;
                 var entity = registration.EntityBuilder(builder);
                 entity.HasOne(typeof(ObjectSnapshot))
                     .WithOne()
-                    .HasForeignKey(registration.ObjectType, ObjectSnapshot.ShadowRefName)
+                    .HasForeignKey(registration.ObjectDbType, ObjectSnapshot.ShadowRefName)
                     .OnDelete(DeleteBehavior.SetNull);
             });
         }
@@ -128,7 +127,7 @@ public class ObjectTypeListBuilder
         if (_frozen) throw new InvalidOperationException($"{nameof(ObjectTypeListBuilder)} is frozen");
     }
 
-    internal List<JsonDerivedType> Types { get; } = [];
+    internal Dictionary<Type, List<JsonDerivedType>>? JsonTypes { get; set; }
 
     internal List<Action<ModelBuilder, CrdtConfig>> ModelConfigurations { get; } = [];
 
@@ -148,9 +147,10 @@ public class ObjectTypeListBuilder
         return adapter;
     }
 
-    public CustomAdapter CustomAdapter()
+    public CustomAdapterProvider<TCommonInterface, TAdapter> CustomAdapter<TCommonInterface, TAdapter>()
+        where TCommonInterface : class where TAdapter : class, ICustomAdapter<TAdapter, TCommonInterface>, IPolyType
     {
-        var adapter = new CustomAdapter();
+        var adapter = new CustomAdapterProvider<TCommonInterface, TAdapter>();
         _adapter = adapter;
         return adapter;
     }

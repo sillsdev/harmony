@@ -11,6 +11,7 @@ using Microsoft.Data.Sqlite;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Core;
 using SIL.Harmony.Db;
+using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 using Xunit.Abstractions;
 
@@ -100,7 +101,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         var parentHash = (await dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity 1"))).Hash;
         for (var i = 0; i < count; i++)
         {
-            var change = dataModelTest.SetWord(Guid.NewGuid(), $"entity {i}");
+            var change = (SetWordTextChange) dataModelTest.SetWord(Guid.NewGuid(), $"entity {i}");
             var commitId = Guid.NewGuid();
             var commit = new Commit(commitId)
             {

@@ -1,9 +1,7 @@
-﻿using SIL.Harmony.Entities;
-
-namespace SIL.Harmony.Changes;
+﻿namespace SIL.Harmony.Changes;
 
 public abstract class EditChange<T>(Guid entityId) : Change<T>(entityId)
-    where T : class, IObjectBase
+    where T : class
 {
     public override ValueTask<T> NewEntity(Commit commit, ChangeContext context)
     {

@@ -5,6 +5,7 @@ namespace SIL.Harmony.Changes;
 public interface IOrderableCrdt
 {
     public double Order { get; set; }
+    public Guid Id { get; }
 }
 
 public class SetOrderChange<T> : EditChange<T>, IPolyType

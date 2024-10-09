@@ -158,7 +158,7 @@ GROUP BY s.EntityId
             .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
     }
 
-    public async Task<IObjectBase> GetObjectBySnapshotId(Guid snapshotId)
+    public async Task<object> GetObjectBySnapshotId(Guid snapshotId)
     {
         var entity = await Snapshots
                          .Where(s => s.Id == snapshotId)
@@ -168,7 +168,7 @@ GROUP BY s.EntityId
         return entity;
     }
 
-    public async Task<T?> GetCurrent<T>(Guid objectId) where T: class, IObjectBase
+    public async Task<T?> GetCurrent<T>(Guid objectId) where T: class
     {
         var snapshot = await Snapshots
             .DefaultOrder()
@@ -176,15 +176,13 @@ GROUP BY s.EntityId
         return snapshot?.Entity.Is<T>();
     }
 
-    public IQueryable<T> GetCurrentObjects<T>() where T : class, IObjectBase, IPolyType
+    public IQueryable<T> GetCurrentObjects<T>() where T : class
     {
         if (crdtConfig.Value.EnableProjectedTables)
         {
             return _dbContext.Set<T>();
         }
-        var typeName = DerivedTypeHelper.GetEntityDiscriminator<T>();
-        var queryable = CurrentSnapshots().Where(s => s.TypeName == typeName && !s.EntityIsDeleted);
-        return queryable.Select(s => (T)s.Entity);
+        throw new NotSupportedException("GetCurrentObjects is not supported when not using projected tables");
     }
 
     public async Task<SyncState> GetCurrentSyncState()

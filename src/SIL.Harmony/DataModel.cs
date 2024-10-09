@@ -199,7 +199,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return await _crdtRepository.GetCurrentSnapshotByObjectId(entityId) ?? throw new ArgumentException($"unable to find snapshot for entity {entityId}");
     }
 
-    public async Task<T?> GetLatest<T>(Guid objectId) where T : class, IObjectBase
+    public async Task<T?> GetLatest<T>(Guid objectId) where T : class
     {
         return await _crdtRepository.GetCurrent<T>(objectId);
     }
@@ -209,17 +209,17 @@ public class DataModel : ISyncable, IAsyncDisposable
         return new ModelSnapshot(await _crdtRepository.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
     }
 
-    public IQueryable<T> GetLatestObjects<T>() where T : class, IObjectBase, IPolyType
+    public IQueryable<T> GetLatestObjects<T>() where T : class
     {
         var q = _crdtRepository.GetCurrentObjects<T>();
         if (q is IQueryable<IOrderableCrdt>)
         {
-            q = q.OrderBy(o => EF.Property<double>(o, nameof(IOrderableCrdt.Order))).ThenBy(o => o.Id);
+            q = q.OrderBy(o => EF.Property<double>(o, nameof(IOrderableCrdt.Order))).ThenBy(o => EF.Property<Guid>(o, nameof(IOrderableCrdt.Id)));
         }
         return q;
     }
 
-    public async Task<IObjectBase> GetBySnapshotId(Guid snapshotId)
+    public async Task<object> GetBySnapshotId(Guid snapshotId)
     {
         return await _crdtRepository.GetObjectBySnapshotId(snapshotId);
     }

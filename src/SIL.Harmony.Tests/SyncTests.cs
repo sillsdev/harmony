@@ -45,11 +45,9 @@ public class SyncTests : IAsyncLifetime
         var client1Snapshot = await _client1.DataModel.GetProjectSnapshot();
         var client2Snapshot = await _client2.DataModel.GetProjectSnapshot();
         client1Snapshot.LastCommitHash.Should().Be(client2Snapshot.LastCommitHash);
-        var entity = await _client2.DataModel.GetBySnapshotId(client2Snapshot.Snapshots[entity1Id].Id);
-        var client2Entity1 = entity.Is<Word>();
+        var client2Entity1 = (Word) await _client2.DataModel.GetBySnapshotId(client2Snapshot.Snapshots[entity1Id].Id);
         client2Entity1.Text.Should().Be("entity1");
-        var entity1 = await _client1.DataModel.GetBySnapshotId(client1Snapshot.Snapshots[entity2Id].Id);
-        var client1Entity2 = entity1.Is<Word>();
+        var client1Entity2 = (Word) await _client1.DataModel.GetBySnapshotId(client1Snapshot.Snapshots[entity2Id].Id);
         client1Entity2.Text.Should().Be("entity2");
     }
 
@@ -95,15 +93,13 @@ public class SyncTests : IAsyncLifetime
         serverSnapshot.Snapshots.Should().HaveCount(clientCount + 1);
         foreach (var entitySnapshot in serverSnapshot.Snapshots.Values)
         {
-            var entity1 = await _client1.DataModel.GetBySnapshotId(entitySnapshot.Id);
-            var serverEntity = entity1.Is<Word>();
+            var serverEntity = (Word) await _client1.DataModel.GetBySnapshotId(entitySnapshot.Id);
             foreach (var client in clients)
             {
                 var clientSnapshot = await client.DataModel.GetProjectSnapshot();
                 var simpleSnapshot = clientSnapshot.Snapshots.Should().ContainKey(entitySnapshot.EntityId).WhoseValue;
-                var entity2 = await client.DataModel.GetBySnapshotId(simpleSnapshot.Id);
-                var entity = entity2.Is<Word>();
-                  entity.Should().BeEquivalentTo(serverEntity);
+                var entity = (Word) await client.DataModel.GetBySnapshotId(simpleSnapshot.Id);
+                entity.Should().BeEquivalentTo(serverEntity);
             }
         }
     }

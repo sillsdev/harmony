@@ -57,7 +57,8 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
     }
 }
 
-// it's possible to implement this without a Common interface, but it would require the adapter to have 1 property for each object type
+// it's possible to implement this without a Common interface
+// but it would require the adapter to have 1 property for each object type in order to support deserialization
 public interface ICustomAdapter<TSelf, TCommonInterface> : IObjectBase, IPolyType
     where TSelf : class,
     ICustomAdapter<TSelf, TCommonInterface>
@@ -65,9 +66,4 @@ public interface ICustomAdapter<TSelf, TCommonInterface> : IObjectBase, IPolyTyp
     public static abstract TSelf Create(TCommonInterface obj);
     static string IPolyType.TypeName => TSelf.AdapterTypeName;
     public static abstract string AdapterTypeName { get; }
-
-    T IObjectBase.Is<T>()
-    {
-        return (T)DbObject;
-    }
 }

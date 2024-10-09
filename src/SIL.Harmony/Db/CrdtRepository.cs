@@ -173,7 +173,7 @@ GROUP BY s.EntityId
         var snapshot = await Snapshots
             .DefaultOrder()
             .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
-        return snapshot?.Entity.Is<T>();
+        return (T?) snapshot?.Entity.DbObject;
     }
 
     public IQueryable<T> GetCurrentObjects<T>() where T : class
@@ -228,7 +228,7 @@ GROUP BY s.EntityId
         if (!crdtConfig.Value.EnableProjectedTables) return;
         if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
-        var existingEntry = await GetEntityEntry(objectSnapshot.Entity.ObjectType, objectSnapshot.EntityId);
+        var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
         if (existingEntry is null && objectSnapshot.IsRoot)
         {
             //if we don't make a copy first then the entity will be tracked by the context and be modified

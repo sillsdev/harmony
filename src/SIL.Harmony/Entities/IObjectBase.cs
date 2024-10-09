@@ -8,31 +8,35 @@ public interface IObjectBase
     Guid Id { get; }
     DateTimeOffset? DeletedAt { get; set; }
 
-    public T Is<T>()
-    {
-        return (T)this;
-    }
-
-    public T? As<T>() where T : class, IObjectBase
-    {
-        return this as T;
-    }
-
+    /// <summary>
+    /// provides the references this object has to other objects, when those objects are deleted
+    /// <see cref="RemoveReference"/> will be called to remove the reference
+    /// </summary>
+    /// <returns></returns>
     public Guid[] GetReferences();
+    /// <summary>
+    /// remove a reference to another object, in some cases this may cause this object to be deleted
+    /// </summary>
+    /// <param name="id">id of the deleted object</param>
+    /// <param name="commit">
+    /// commit where the reference was removed
+    /// should be used to set the deleted date for this object
+    /// </param>
     public void RemoveReference(Guid id, Commit commit);
 
     public IObjectBase Copy();
-    public string ObjectTypeName { get; }
-    public Type ObjectType { get; }
+    /// <summary>
+    /// the name of the object type, this is used to discriminate between different types of objects in the snapshots table
+    /// </summary>
+    /// <returns>a stable type name of this object, should not change over time</returns>
+    public string GetObjectTypeName();
     [JsonIgnore]
     public object DbObject { get; }
-    // static string IPolyType.TypeName => throw new NotImplementedException();
 }
 
 public interface IObjectBase<TThis> : IObjectBase, IPolyType where TThis : IPolyType
 {
-    string IObjectBase.ObjectTypeName => TThis.TypeName;
-    Type IObjectBase.ObjectType => typeof(TThis);
+    string IObjectBase.GetObjectTypeName() => TThis.TypeName;
     static string IPolyType.TypeName => typeof(TThis).Name;
     [JsonIgnore]
     object IObjectBase.DbObject => this;

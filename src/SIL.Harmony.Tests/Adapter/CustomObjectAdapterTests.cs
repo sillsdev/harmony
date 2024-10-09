@@ -101,11 +101,7 @@ public class CustomObjectAdapterTests
             set => Obj.DeletedTime = value?.ToUnixTimeSeconds();
         }
 
-        [JsonIgnore]
-        public string ObjectTypeName => Obj.TypeName;
-
-        [JsonIgnore]
-        public Type ObjectType => typeof(MyClass);
+        public string GetObjectTypeName() => Obj.TypeName;
 
         [JsonIgnore]
         public object DbObject => Obj;

@@ -48,7 +48,14 @@ public abstract class Change<T> : IChange where T : class
     {
         if (this is CreateChange<T>)
             return; // skip attempting to apply changes on CreateChange as it does not support apply changes
-        if (entity is T entityT) await ApplyChange(entityT, context);
+        if (entity.DbObject is T entityT)
+        {
+            await ApplyChange(entityT, context);
+        }
+        else
+        {
+            throw new NotSupportedException($"Type {entity.DbObject.GetType()} is not type {typeof(T)}");
+        }
     }
 
     [JsonIgnore]

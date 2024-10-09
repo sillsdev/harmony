@@ -2,8 +2,7 @@
 
 namespace SIL.Harmony.Changes;
 
-public abstract class CreateChange<T>(Guid entityId) : Change<T>(entityId)
-    where T : IObjectBase
+public abstract class CreateChange<T>(Guid entityId) : Change<T>(entityId) where T : class
 {
     public override ValueTask ApplyChange(T entity, ChangeContext context)
     {

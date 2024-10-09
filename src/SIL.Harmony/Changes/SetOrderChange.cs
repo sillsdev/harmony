@@ -5,10 +5,11 @@ namespace SIL.Harmony.Changes;
 public interface IOrderableCrdt
 {
     public double Order { get; set; }
+    public Guid Id { get; }
 }
 
 public class SetOrderChange<T> : EditChange<T>, IPolyType
-    where T : IPolyType, IObjectBase, IOrderableCrdt
+    where T : class, IPolyType, IObjectBase, IOrderableCrdt
 {
     public static IChange Between(Guid entityId, T left, T right)
     {

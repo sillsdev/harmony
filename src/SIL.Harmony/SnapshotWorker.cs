@@ -14,35 +14,40 @@ internal class SnapshotWorker
 {
     private readonly Dictionary<Guid, Guid?> _snapshotLookup;
     private readonly CrdtRepository _crdtRepository;
+    private readonly CrdtConfig _crdtConfig;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots  = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
 
-    private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots, CrdtRepository crdtRepository)
+    private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
+        Dictionary<Guid, Guid?> snapshotLookup,
+        CrdtRepository crdtRepository,
+        CrdtConfig crdtConfig)
     {
         _pendingSnapshots = snapshots;
         _crdtRepository = crdtRepository;
-        _snapshotLookup = [];
+        _snapshotLookup = snapshotLookup;
+        _crdtConfig = crdtConfig;
     }
 
-    internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(Dictionary<Guid, ObjectSnapshot> snapshots,
+    internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
+        Dictionary<Guid, ObjectSnapshot> snapshots,
         CrdtRepository crdtRepository,
-        ICollection<Commit> commits)
+        ICollection<Commit> commits,
+        CrdtConfig crdtConfig)
     {
         //we need to pass in the snapshots because we expect it to be modified, this is intended.
         //if the constructor makes a copy in the future this will need to be updated
-        await new SnapshotWorker(snapshots, crdtRepository).ApplyCommitChanges(commits, false, null);
+        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig).ApplyCommitChanges(commits, false, null);
         return snapshots;
     }
 
-    /// <summary>
-    /// 
-    /// </summary>
     /// <param name="snapshotLookup">a dictionary of entity id to latest snapshot id</param>
     /// <param name="crdtRepository"></param>
-    internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup, CrdtRepository crdtRepository)
+    /// <param name="crdtConfig"></param>
+    internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup,
+        CrdtRepository crdtRepository,
+        CrdtConfig crdtConfig): this([], snapshotLookup, crdtRepository, crdtConfig)
     {
-        _snapshotLookup = snapshotLookup;
-        _crdtRepository = crdtRepository;
     }
 
     public async Task UpdateSnapshots(Commit oldestAddedCommit, Commit[] newCommits)
@@ -74,7 +79,7 @@ internal class SnapshotWorker
             {
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
-                var changeContext = new ChangeContext(commit, this);
+                var changeContext = new ChangeContext(commit, this, _crdtConfig);
                 bool wasDeleted;
                 if (prevSnapshot is not null)
                 {

@@ -12,7 +12,7 @@ public class NewDefinitionChange(Guid entityId) : CreateChange<Definition>(entit
     public required double Order { get; set; }
     public required Guid WordId { get; init; }
 
-    public override async ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context)
+    public override async ValueTask<Definition> NewEntity(Commit commit, ChangeContext context)
     {
         return new Definition
         {

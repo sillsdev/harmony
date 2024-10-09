@@ -16,7 +16,7 @@ public record SimpleSnapshot(
     string CommitHash,
     bool EntityIsDeleted)
 {
-    public bool IsType<T>() where T : IObjectBase => TypeName == DerivedTypeHelper.GetEntityDiscriminator<T>();
+    public bool IsType<T>() where T : IObjectBase, IPolyType => TypeName == DerivedTypeHelper.GetEntityDiscriminator<T>();
 
     public SimpleSnapshot(ObjectSnapshot snapshot) : this(snapshot.Id,
         snapshot.TypeName,
@@ -62,7 +62,7 @@ public class ObjectSnapshot
         References = entity.GetReferences();
         EntityId = entity.Id;
         EntityIsDeleted = entity.DeletedAt.HasValue;
-        TypeName = entity.TypeName;
+        TypeName = entity.GetObjectTypeName();
         CommitId = commit.Id;
         Commit = commit;
         IsRoot = isRoot;

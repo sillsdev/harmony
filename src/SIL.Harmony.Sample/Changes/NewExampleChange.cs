@@ -34,7 +34,7 @@ public class NewExampleChange : CreateChange<Example>, ISelfNamedType<NewExample
     {
     }
 
-    public override async ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context)
+    public override async ValueTask<Example> NewEntity(Commit commit, ChangeContext context)
     {
         return new Example
         {

@@ -11,7 +11,7 @@ public static class CrdtKernel
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
         Action<CrdtConfig> configureCrdt) where TContext: ICrdtDbContext
     {
-        services.AddOptions<CrdtConfig>().Configure(configureCrdt);
+        services.AddOptions<CrdtConfig>().Configure(configureCrdt).PostConfigure(crdtConfig => crdtConfig.ObjectTypeListBuilder.Freeze());
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);

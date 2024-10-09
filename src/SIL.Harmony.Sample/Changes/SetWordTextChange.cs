@@ -12,7 +12,7 @@ public class SetWordTextChange(Guid entityId, string text) : Change<Word>(entity
 {
     public string Text { get; } = text;
 
-    public override ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context)
+    public override ValueTask<Word> NewEntity(Commit commit, ChangeContext context)
     {
         return new(new Word()
         {

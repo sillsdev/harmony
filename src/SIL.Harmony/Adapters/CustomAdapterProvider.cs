@@ -6,18 +6,21 @@ using SIL.Harmony.Helpers;
 
 namespace SIL.Harmony.Adapters;
 
-public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAdapter
+public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAdapterProvider
     where TCommonInterface : class
     where TCustomAdapter : class, ICustomAdapter<TCustomAdapter, TCommonInterface>, IPolyType
 {
-    public CustomAdapterProvider()
+    private readonly ObjectTypeListBuilder _objectTypeListBuilder;
+    private readonly List<AdapterRegistration> _objectTypes = new();
+    private Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; } = [];
+    Dictionary<Type, List<JsonDerivedType>> IObjectAdapterProvider.JsonTypes => JsonTypes;
+
+    public CustomAdapterProvider(ObjectTypeListBuilder objectTypeListBuilder)
     {
+        _objectTypeListBuilder = objectTypeListBuilder;
         JsonTypes.AddDerivedType(typeof(IObjectBase), typeof(TCustomAdapter), TCustomAdapter.TypeName);
     }
-
-    private readonly List<AdapterRegistration> _objectTypes = new();
-    public Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; } = [];
-
+    
     public CustomAdapterProvider<TCommonInterface, TCustomAdapter> AddWithCustomPolymorphicMapping<T>(string typeName,
         Action<EntityTypeBuilder<T>>? configureEntry = null
     ) where T : class, TCommonInterface
@@ -25,10 +28,12 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
         JsonTypes.AddDerivedType(typeof(TCommonInterface), typeof(T), typeName);
         return Add(configureEntry);
     }
+
     public CustomAdapterProvider<TCommonInterface, TCustomAdapter> Add<T>(
         Action<EntityTypeBuilder<T>>? configureEntry = null
     ) where T : class, TCommonInterface
     {
+        _objectTypeListBuilder.CheckFrozen();
         _objectTypes.Add(
             new AdapterRegistration(typeof(T),
                 builder =>
@@ -41,17 +46,18 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
         return this;
     }
 
-    public IEnumerable<AdapterRegistration> GetRegistrations()
+    IEnumerable<AdapterRegistration> IObjectAdapterProvider.GetRegistrations()
     {
         return _objectTypes;
     }
 
-    public IObjectBase Adapt(object obj)
+    IObjectBase IObjectAdapterProvider.Adapt(object obj)
     {
         return TCustomAdapter.Create((TCommonInterface)obj);
     }
 }
 
+// it's possible to implement this without a Common interface, but it would require the adapter to have 1 property for each object type
 public interface ICustomAdapter<TSelf, TCommonInterface> : IObjectBase, IPolyType
     where TSelf : class,
     ICustomAdapter<TSelf, TCommonInterface>

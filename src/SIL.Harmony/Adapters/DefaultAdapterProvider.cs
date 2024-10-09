@@ -5,17 +5,18 @@ using SIL.Harmony.Helpers;
 
 namespace SIL.Harmony.Adapters;
 
-public class DefaultAdapter : IObjectAdapter
+public class DefaultAdapterProvider(ObjectTypeListBuilder objectTypeListBuilder) : IObjectAdapterProvider
 {
-    private readonly List<AdapterRegistration> _objectTypes = new();
+    private readonly List<AdapterRegistration> _objectTypes = [];
 
-    IEnumerable<AdapterRegistration> IObjectAdapter.GetRegistrations()
+    IEnumerable<AdapterRegistration> IObjectAdapterProvider.GetRegistrations()
     {
         return _objectTypes.AsReadOnly();
     }
 
-    public DefaultAdapter Add<T>(Action<EntityTypeBuilder<T>>? configureEntry = null) where T : class, IObjectBase<T>
+    public DefaultAdapterProvider Add<T>(Action<EntityTypeBuilder<T>>? configureEntry = null) where T : class, IObjectBase<T>
     {
+        objectTypeListBuilder.CheckFrozen();
         JsonTypes.AddDerivedType(typeof(IObjectBase), typeof(T), T.TypeName);
         _objectTypes.Add(new(typeof(T), builder =>
         {
@@ -26,7 +27,7 @@ public class DefaultAdapter : IObjectAdapter
         return this;
     }
 
-    IObjectBase IObjectAdapter.Adapt(object obj)
+    IObjectBase IObjectAdapterProvider.Adapt(object obj)
     {
         if (obj is IObjectBase objectBase)
         {
@@ -37,5 +38,6 @@ public class DefaultAdapter : IObjectAdapter
             $"Object is of type {obj.GetType().Name} which does not implement {nameof(IObjectBase)}");
     }
 
-    public Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; } = [];
+    private Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; } = [];
+    Dictionary<Type, List<JsonDerivedType>> IObjectAdapterProvider.JsonTypes => JsonTypes;
 }

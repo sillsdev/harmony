@@ -5,9 +5,9 @@ using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Adapters;
 
-public record AdapterRegistration(Type ObjectDbType, Func<ModelBuilder, EntityTypeBuilder> EntityBuilder);
+internal record AdapterRegistration(Type ObjectDbType, Func<ModelBuilder, EntityTypeBuilder> EntityBuilder);
 
-public interface IObjectAdapter
+internal interface IObjectAdapterProvider
 {
     IEnumerable<AdapterRegistration> GetRegistrations();
     IObjectBase Adapt(object obj);

@@ -219,9 +219,9 @@ public class DataModel : ISyncable, IAsyncDisposable
         return q;
     }
 
-    public async Task<object> GetBySnapshotId(Guid snapshotId)
+    public async Task<T> GetBySnapshotId<T>(Guid snapshotId)
     {
-        return await _crdtRepository.GetObjectBySnapshotId(snapshotId);
+        return await _crdtRepository.GetObjectBySnapshotId<T>(snapshotId);
     }
 
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAt(DateTimeOffset dateTime)

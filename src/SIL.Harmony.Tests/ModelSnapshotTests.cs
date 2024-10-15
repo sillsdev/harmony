@@ -28,7 +28,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var secondChange = await WriteNextChange(SetWord(entityId, "second"));
         var snapshot = await DataModel.GetProjectSnapshot();
         var simpleSnapshot = snapshot.Snapshots.Values.First();
-        var entry = (Word) await DataModel.GetBySnapshotId(simpleSnapshot.Id);
+        var entry = await DataModel.GetBySnapshotId<Word>(simpleSnapshot.Id);
         entry.Text.Should().Be("second");
         snapshot.LastChange.Should().Be(secondChange.DateTime);
     }

@@ -21,7 +21,7 @@ public class ExampleSentenceTests : DataModelTestBase
         await WriteNextChange(NewExampleSentence(definitionId, "Hello, world!"));
         var snapshot = await DataModel.GetProjectSnapshot();
         var exampleSentenceSnapshot = snapshot.Snapshots.Values.Single(s => s.IsType<Example>());
-        var exampleSentence = (Example)await DataModel.GetBySnapshotId(exampleSentenceSnapshot.Id);
+        var exampleSentence = await DataModel.GetBySnapshotId<Example>(exampleSentenceSnapshot.Id);
         exampleSentence.Text.Should().Be("Hello, world!");
         exampleSentence.DefinitionId.Should().Be(definitionId);
     }

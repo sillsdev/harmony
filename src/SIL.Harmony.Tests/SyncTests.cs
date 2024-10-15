@@ -45,9 +45,9 @@ public class SyncTests : IAsyncLifetime
         var client1Snapshot = await _client1.DataModel.GetProjectSnapshot();
         var client2Snapshot = await _client2.DataModel.GetProjectSnapshot();
         client1Snapshot.LastCommitHash.Should().Be(client2Snapshot.LastCommitHash);
-        var client2Entity1 = (Word) await _client2.DataModel.GetBySnapshotId(client2Snapshot.Snapshots[entity1Id].Id);
+        var client2Entity1 = await _client2.DataModel.GetBySnapshotId<Word>(client2Snapshot.Snapshots[entity1Id].Id);
         client2Entity1.Text.Should().Be("entity1");
-        var client1Entity2 = (Word) await _client1.DataModel.GetBySnapshotId(client1Snapshot.Snapshots[entity2Id].Id);
+        var client1Entity2 = await _client1.DataModel.GetBySnapshotId<Word>(client1Snapshot.Snapshots[entity2Id].Id);
         client1Entity2.Text.Should().Be("entity2");
     }
 
@@ -93,12 +93,12 @@ public class SyncTests : IAsyncLifetime
         serverSnapshot.Snapshots.Should().HaveCount(clientCount + 1);
         foreach (var entitySnapshot in serverSnapshot.Snapshots.Values)
         {
-            var serverEntity = (Word) await _client1.DataModel.GetBySnapshotId(entitySnapshot.Id);
+            var serverEntity = await _client1.DataModel.GetBySnapshotId<Word>(entitySnapshot.Id);
             foreach (var client in clients)
             {
                 var clientSnapshot = await client.DataModel.GetProjectSnapshot();
                 var simpleSnapshot = clientSnapshot.Snapshots.Should().ContainKey(entitySnapshot.EntityId).WhoseValue;
-                var entity = (Word) await client.DataModel.GetBySnapshotId(simpleSnapshot.Id);
+                var entity = await client.DataModel.GetBySnapshotId<Word>(simpleSnapshot.Id);
                 entity.Should().BeEquivalentTo(serverEntity);
             }
         }

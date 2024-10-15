@@ -14,7 +14,7 @@ public class DefinitionTests : DataModelTestBase
         await WriteNextChange(NewDefinition(wordId, "a greeting", "verb"));
         var snapshot = await DataModel.GetProjectSnapshot();
         var definitionSnapshot = snapshot.Snapshots.Values.Single(s => s.IsType<Definition>());
-        var definition = (Definition)await DataModel.GetBySnapshotId(definitionSnapshot.Id);
+        var definition = await DataModel.GetBySnapshotId<Definition>(definitionSnapshot.Id);
         definition.Text.Should().Be("a greeting");
         definition.WordId.Should().Be(wordId);
     }

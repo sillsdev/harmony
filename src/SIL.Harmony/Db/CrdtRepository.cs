@@ -158,14 +158,14 @@ GROUP BY s.EntityId
             .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
     }
 
-    public async Task<object> GetObjectBySnapshotId(Guid snapshotId)
+    public async Task<T> GetObjectBySnapshotId<T>(Guid snapshotId)
     {
         var entity = await Snapshots
                          .Where(s => s.Id == snapshotId)
                          .Select(s => s.Entity)
                          .SingleOrDefaultAsync()
                      ?? throw new ArgumentException($"unable to find snapshot with id {snapshotId}");
-        return entity;
+        return (T) entity;
     }
 
     public async Task<T?> GetCurrent<T>(Guid objectId) where T: class

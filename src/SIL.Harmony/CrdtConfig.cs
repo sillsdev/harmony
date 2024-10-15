@@ -108,8 +108,7 @@ public class ObjectTypeListBuilder
     {
         if (_frozen) return;
         _frozen = true;
-        JsonTypes = AdapterProvider.JsonTypes;
-        foreach (var registration in AdapterProvider.GetRegistrations())
+        foreach (var registration in AdapterProviders.SelectMany(a => a.GetRegistrations()))
         {
             ModelConfigurations.Add((builder, config) =>
             {
@@ -128,19 +127,18 @@ public class ObjectTypeListBuilder
         if (_frozen) throw new InvalidOperationException($"{nameof(ObjectTypeListBuilder)} is frozen");
     }
 
-    internal Dictionary<Type, List<JsonDerivedType>>? JsonTypes { get; set; }
+    internal Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; } = [];
 
     internal List<Action<ModelBuilder, CrdtConfig>> ModelConfigurations { get; } = [];
 
-    internal IObjectAdapterProvider AdapterProvider => _adapterProvider ?? throw new InvalidOperationException("No adapter has been added to the builder");
-    private IObjectAdapterProvider? _adapterProvider;
+    internal List<IObjectAdapterProvider> AdapterProviders { get; } = [];
 
     public DefaultAdapterProvider DefaultAdapter()
     {
         CheckFrozen();
-        if (_adapterProvider is not null) throw new InvalidOperationException("adapter has already been added");
-        var adapter = new DefaultAdapterProvider(this);
-        _adapterProvider = adapter;
+        if (AdapterProviders.OfType<DefaultAdapterProvider>().SingleOrDefault() is {} adapter) return adapter;
+        adapter = new DefaultAdapterProvider(this);
+        AdapterProviders.Add(adapter);
         return adapter;
     }
     
@@ -163,9 +161,26 @@ public class ObjectTypeListBuilder
         where TCommonInterface : class where TAdapter : class, ICustomAdapter<TAdapter, TCommonInterface>, IPolyType
     {
         CheckFrozen();
-        if (_adapterProvider is not null) throw new InvalidOperationException("adapter has already been added");
-        var adapter = new CustomAdapterProvider<TCommonInterface, TAdapter>(this);
-        _adapterProvider = adapter;
+        if (AdapterProviders.OfType<CustomAdapterProvider<TCommonInterface, TAdapter>>().SingleOrDefault() is {} adapter) return adapter;
+        adapter = new CustomAdapterProvider<TCommonInterface, TAdapter>(this);
+        AdapterProviders.Add(adapter);
         return adapter;
+    }
+
+    internal IObjectBase Adapt(object obj)
+    {
+        if (AdapterProviders is [{ } defaultAdapter])
+        {
+            return defaultAdapter.Adapt(obj);
+        }
+
+        foreach (var objectAdapterProvider in AdapterProviders)
+        {
+            if (objectAdapterProvider.CanAdapt(obj))
+            {
+                return objectAdapterProvider.Adapt(obj);
+            }
+        }
+        throw new ArgumentException($"Unable to adapt object of type {obj.GetType()}");
     }
 }

@@ -31,7 +31,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
             );
         foreach (var benchmarkCase in summary.BenchmarksCases.Where(b => !summary.IsBaseline(b)))
         {
-            var ratio = double.Parse(BaselineRatioColumn.RatioMean.GetValue(summary, benchmarkCase));
+            var ratio = double.Parse(BaselineRatioColumn.RatioMean.GetValue(summary, benchmarkCase), System.Globalization.CultureInfo.InvariantCulture);
             //for now it just makes sure that no case is worse that 7x, this is based on the 10_000 test being 5 times worse.
             //it would be better to have this scale off the number of changes
             ratio.Should().BeInRange(0, 7, "performance should not get worse, benchmark " + benchmarkCase.DisplayInfo);

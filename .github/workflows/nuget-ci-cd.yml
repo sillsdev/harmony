@@ -31,10 +31,6 @@ jobs:
         shell: bash
         run: src/calculate-version.sh "${{ github.run_number }}"
 
-      - name: Display version number for debugging
-        shell: bash
-        run: echo "Calculated version number is $PACKAGE_VERSION"
-
       - name: Install .NET
         uses: actions/setup-dotnet@v4
 

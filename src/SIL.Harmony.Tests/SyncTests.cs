@@ -100,7 +100,7 @@ public class SyncTests : IAsyncLifetime
                 var clientSnapshot = await client.DataModel.GetProjectSnapshot();
                 var simpleSnapshot = clientSnapshot.Snapshots.Should().ContainKey(entitySnapshot.EntityId).WhoseValue;
                 var entity = await client.DataModel.GetBySnapshotId<Word>(simpleSnapshot.Id);
-                  entity.Should().BeEquivalentTo(serverEntity);
+                entity.Should().BeEquivalentTo(serverEntity);
             }
         }
     }

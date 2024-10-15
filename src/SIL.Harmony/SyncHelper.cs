@@ -5,6 +5,12 @@ namespace SIL.Harmony;
 
 internal static class SyncHelper
 {
+    public static async Task<SyncResults> SyncWithResourceUpload(this DataModel localModel, ISyncable remoteModel, IResourceService resourceService, Guid localClientId)
+    {
+        await localModel.UploadPendingResources(localClientId, resourceService);
+        return await localModel.SyncWith(remoteModel);
+    }
+
     /// <summary>
     /// simple sync example, each ISyncable could be over the wire or in memory
     /// prefer that remote is over the wire for the best performance, however they could both be remote

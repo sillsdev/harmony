@@ -11,6 +11,5 @@ internal interface IObjectAdapterProvider
 {
     IEnumerable<AdapterRegistration> GetRegistrations();
     IObjectBase Adapt(object obj);
-
-    Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; }
+    bool CanAdapt(object obj);
 }

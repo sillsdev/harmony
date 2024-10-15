@@ -81,6 +81,40 @@
       Relational:TableName: Snapshots
       Relational:ViewName: 
       Relational:ViewSchema: 
+  EntityType: LocalResource
+    Properties: 
+      Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
+      LocalPath (string) Required
+    Keys: 
+      Id PK
+    Annotations: 
+      DiscriminatorProperty: 
+      Relational:FunctionName: 
+      Relational:Schema: 
+      Relational:SqlQuery: 
+      Relational:TableName: LocalResource
+      Relational:ViewName: 
+      Relational:ViewSchema: 
+  EntityType: RemoteResource
+    Properties: 
+      Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
+      DeletedAt (DateTimeOffset?)
+      RemoteId (string)
+      SnapshotId (no field, Guid?) Shadow FK Index
+    Keys: 
+      Id PK
+    Foreign keys: 
+      RemoteResource {'SnapshotId'} -> ObjectSnapshot {'Id'} Unique SetNull
+    Indexes: 
+      SnapshotId Unique
+    Annotations: 
+      DiscriminatorProperty: 
+      Relational:FunctionName: 
+      Relational:Schema: 
+      Relational:SqlQuery: 
+      Relational:TableName: RemoteResource
+      Relational:ViewName: 
+      Relational:ViewSchema: 
   EntityType: Definition
     Properties: 
       Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd

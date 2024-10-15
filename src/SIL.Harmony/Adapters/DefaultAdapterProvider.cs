@@ -38,6 +38,10 @@ public class DefaultAdapterProvider(ObjectTypeListBuilder objectTypeListBuilder)
             $"Object is of type {obj.GetType().Name} which does not implement {nameof(IObjectBase)}");
     }
 
-    private Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; } = [];
-    Dictionary<Type, List<JsonDerivedType>> IObjectAdapterProvider.JsonTypes => JsonTypes;
+    public bool CanAdapt(object obj)
+    {
+        return obj is IObjectBase;
+    }
+
+    private Dictionary<Type, List<JsonDerivedType>> JsonTypes => objectTypeListBuilder.JsonTypes;
 }

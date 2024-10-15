@@ -1,4 +1,4 @@
-﻿using SIL.Harmony.Core;
+using SIL.Harmony.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage;
@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Entities;
 using SIL.Harmony.Helpers;
+using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
@@ -16,6 +17,8 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
     {
         return _dbContext.Database.BeginTransactionAsync();
     }
+
+    public bool IsInTransaction => _dbContext.Database.CurrentTransaction is not null;
 
 
     public async Task<bool> HasCommit(Guid commitId)
@@ -280,5 +283,30 @@ GROUP BY s.EntityId
             .AsNoTracking()
             .Select(c => c.HybridDateTime)
             .FirstOrDefault();
+    }
+
+
+    public async Task AddLocalResource(LocalResource localResource)
+    {
+        _dbContext.Set<LocalResource>().Add(localResource);
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public IAsyncEnumerable<LocalResource> LocalResourcesByIds(IEnumerable<Guid> resourceIds)
+    {
+        return _dbContext.Set<LocalResource>().Where(r => resourceIds.Contains(r.Id)).AsAsyncEnumerable();
+    }
+
+    /// <summary>
+    /// primarily for filtering other queries
+    /// </summary>
+    public IQueryable<Guid> LocalResourceIds()
+    {
+        return _dbContext.Set<LocalResource>().Select(r => r.Id);
+    }
+
+    public async Task<LocalResource?> GetLocalResource(Guid resourceId)
+    {
+        return await _dbContext.Set<LocalResource>().FindAsync(resourceId);
     }
 }

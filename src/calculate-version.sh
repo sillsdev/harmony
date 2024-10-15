@@ -7,7 +7,7 @@
 BUILD_NUMBER=$1
 PR_NUMBER=$2
 
-if [ -z "BUILD_NUMBER" ]; then
+if [ -z "$BUILD_NUMBER" ]; then
   echo "Required: pass a build number as first parameter"
   echo "Optional: pass a PR number as second parameter"
   exit 2

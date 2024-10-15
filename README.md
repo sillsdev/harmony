@@ -175,3 +175,14 @@ ISyncable remoteModel;
 await dataModel.SyncWith(remoteModel);
 ```
 It's that easy. All the heavy lifting is done by the interface which is fairly simple to implement.
+
+## Development
+
+### SemVer commit messages
+
+NuGet package versions are calculated from a combination of tags and commit messages. First, the most recent Git tag matching the pattern `v\d+.\d+.\d+` is located. If that is the commit being built, then that version number is used. If there have been any commits since then, the version number will be bumped by looking for one of the following patterns in the commit messages:
+
+* `+semver: major` or `+semver: breaking` - update major version number, reset others to 0 (so 2.3.1 would become 3.0.0)
+* `+semver: minor` or `+semver: feature` - update minor version number, reset patch to 0 (so 2.3.1 would become 2.4.0)
+* Anything else, including no `+semver` lines at all - update patch version number (so 2.3.1 would become 2.3.2)
+    * If you want to include `+semver` lines, then `+semver: patch` or `+semver: fix` are the standard ways to increment a patch version bump, but the patch version will be bumped regardless as long as there is at least one commit since the most recent tag.

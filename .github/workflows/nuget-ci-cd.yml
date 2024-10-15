@@ -1,0 +1,68 @@
+name: Build NuGet packages
+
+on:
+  push:
+    branches: [ develop, main ]
+    tags:
+      - v*
+  pull_request:
+    branches: [ develop, main ]
+
+jobs:
+  build:
+    permissions:
+      packages: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # We use `git describe` to find tags in commit history, so we need complete repo history
+          fetch-depth: 0
+
+      - name: Calculate version number for PR build
+        if: github.event_name == 'pull_request'
+        shell: bash
+        run: src/calculate-version.sh "${{ github.run_number }}" "${{ github.event.number }}"
+
+      - name: Calculate version number for non-PR build
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: src/calculate-version.sh "${{ github.run_number }}"
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+
+      - name: Build & test
+        run: dotnet test --configuration Release --logger GitHubActions
+
+      - name: Pack
+        shell: bash
+        run: |
+          dotnet pack --include-symbols /p:PackageVersion="$PACKAGE_VERSION" /p:AssemblyVersion="$ASSEMBLY_VERSION" /p:FileVersion="$FILE_VERSION"
+
+      - name: Upload packages to build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: src/artifacts/package/release/*nupkg
+
+      # Not using the GitHub package registry right now, since it doesn't allow anonymous access so it's a hassle to use
+
+      # - name: Publish package to GitHub
+      #   if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads'))
+      #   shell: bash
+      #   run: |
+      #     dotnet nuget push "src/artifacts/package/release/*.symbols.nupkg" -s https://nuget.pkg.github.com/sillsdev/index.json -k "$NUGET_API_KEY" --skip-duplicate
+      #   env:
+      #     NUGET_API_KEY: ${{ secrets.GITHUB_TOKEN }}
+
+      # - name: Publish package to NuGet.org
+      #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
+      #   shell: bash
+      #   run: |
+      #     echo Would run the following:
+      #     echo dotnet nuget push "src/artifacts/package/release/*nupkg" --skip-duplicate --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
+      #   env:
+      #     NUGET_API_KEY: ${{ secrets.SILLSDEV_PUBLISH_NUGET_ORG }}

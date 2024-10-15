@@ -158,33 +158,31 @@ GROUP BY s.EntityId
             .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
     }
 
-    public async Task<IObjectBase> GetObjectBySnapshotId(Guid snapshotId)
+    public async Task<T> GetObjectBySnapshotId<T>(Guid snapshotId)
     {
         var entity = await Snapshots
                          .Where(s => s.Id == snapshotId)
                          .Select(s => s.Entity)
                          .SingleOrDefaultAsync()
                      ?? throw new ArgumentException($"unable to find snapshot with id {snapshotId}");
-        return entity;
+        return (T) entity;
     }
 
-    public async Task<T?> GetCurrent<T>(Guid objectId) where T: class, IObjectBase
+    public async Task<T?> GetCurrent<T>(Guid objectId) where T: class
     {
         var snapshot = await Snapshots
             .DefaultOrder()
             .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
-        return snapshot?.Entity.Is<T>();
+        return (T?) snapshot?.Entity.DbObject;
     }
 
-    public IQueryable<T> GetCurrentObjects<T>() where T : class, IObjectBase
+    public IQueryable<T> GetCurrentObjects<T>() where T : class
     {
         if (crdtConfig.Value.EnableProjectedTables)
         {
             return _dbContext.Set<T>();
         }
-        var typeName = DerivedTypeHelper.GetEntityDiscriminator<T>();
-        var queryable = CurrentSnapshots().Where(s => s.TypeName == typeName && !s.EntityIsDeleted);
-        return queryable.Select(s => (T)s.Entity);
+        throw new NotSupportedException("GetCurrentObjects is not supported when not using projected tables");
     }
 
     public async Task<SyncState> GetCurrentSyncState()
@@ -230,12 +228,12 @@ GROUP BY s.EntityId
         if (!crdtConfig.Value.EnableProjectedTables) return;
         if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
-        var existingEntry = await GetEntityEntry(objectSnapshot.Entity.GetType(), objectSnapshot.EntityId);
+        var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
         if (existingEntry is null && objectSnapshot.IsRoot)
         {
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
-            _dbContext.Add((object)objectSnapshot.Entity.Copy())
+            _dbContext.Add((object)objectSnapshot.Entity.Copy().DbObject)
                 .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
             return;
         }
@@ -247,7 +245,7 @@ GROUP BY s.EntityId
             return;
         }
 
-        existingEntry.CurrentValues.SetValues(objectSnapshot.Entity);
+        existingEntry.CurrentValues.SetValues(objectSnapshot.Entity.DbObject);
         existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
     }
 

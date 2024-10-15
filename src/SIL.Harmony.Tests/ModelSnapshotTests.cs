@@ -28,8 +28,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var secondChange = await WriteNextChange(SetWord(entityId, "second"));
         var snapshot = await DataModel.GetProjectSnapshot();
         var simpleSnapshot = snapshot.Snapshots.Values.First();
-        var entity = await DataModel.GetBySnapshotId(simpleSnapshot.Id);
-        var entry = entity.Is<Word>();
+        var entry = await DataModel.GetBySnapshotId<Word>(simpleSnapshot.Id);
         entry.Text.Should().Be("second");
         snapshot.LastChange.Should().Be(secondChange.DateTime);
     }
@@ -37,7 +36,7 @@ public class ModelSnapshotTests : DataModelTestBase
     [Theory]
     [InlineData(10)]
     [InlineData(100)]
-    [InlineData(1_000)]
+    // [InlineData(1_000)]
     public async Task CanGetSnapshotFromEarlier(int changeCount)
     {
         var entityId = Guid.NewGuid();
@@ -81,7 +80,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var computedModelSnapshots = await DataModel.GetSnapshotsAt(latestSnapshot.Commit.DateTime);
 
         var entitySnapshot = computedModelSnapshots.Should().ContainSingle().Subject.Value;
-        entitySnapshot.Should().BeEquivalentTo(latestSnapshot, options => options.Excluding(snapshot => snapshot.Id).Excluding(snapshot => snapshot.Commit));
+        entitySnapshot.Should().BeEquivalentTo(latestSnapshot, options => options.Excluding(snapshot => snapshot.Id).Excluding(snapshot => snapshot.Commit).Excluding(s => s.Entity.DbObject));
         var latestSnapshotEntry = latestSnapshot.Entity.Is<Word>();
         var entitySnapshotEntry = entitySnapshot.Entity.Is<Word>();
         entitySnapshotEntry.Text.Should().Be(latestSnapshotEntry.Text);

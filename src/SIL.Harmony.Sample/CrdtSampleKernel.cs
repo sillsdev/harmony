@@ -49,7 +49,7 @@ public static class CrdtSampleKernel
                 .Add<DeleteChange<Definition>>()
                 .Add<DeleteChange<Example>>()
                 ;
-            config.ObjectTypeListBuilder
+            config.ObjectTypeListBuilder.DefaultAdapter()
                 .Add<Word>()
                 .Add<Definition>()
                 .Add<Example>();

@@ -164,7 +164,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             snapshotLookup = [];
         }
 
-        var snapshotWorker = new SnapshotWorker(snapshotLookup, _crdtRepository);
+        var snapshotWorker = new SnapshotWorker(snapshotLookup, _crdtRepository, _crdtConfig.Value);
         await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
     }
 
@@ -199,7 +199,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return await _crdtRepository.GetCurrentSnapshotByObjectId(entityId) ?? throw new ArgumentException($"unable to find snapshot for entity {entityId}");
     }
 
-    public async Task<T?> GetLatest<T>(Guid objectId) where T : class, IObjectBase
+    public async Task<T?> GetLatest<T>(Guid objectId) where T : class
     {
         return await _crdtRepository.GetCurrent<T>(objectId);
     }
@@ -209,19 +209,19 @@ public class DataModel : ISyncable, IAsyncDisposable
         return new ModelSnapshot(await _crdtRepository.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
     }
 
-    public IQueryable<T> GetLatestObjects<T>() where T : class, IObjectBase
+    public IQueryable<T> GetLatestObjects<T>() where T : class
     {
         var q = _crdtRepository.GetCurrentObjects<T>();
         if (q is IQueryable<IOrderableCrdt>)
         {
-            q = q.OrderBy(o => EF.Property<double>(o, nameof(IOrderableCrdt.Order))).ThenBy(o => o.Id);
+            q = q.OrderBy(o => EF.Property<double>(o, nameof(IOrderableCrdt.Order))).ThenBy(o => EF.Property<Guid>(o, nameof(IOrderableCrdt.Id)));
         }
         return q;
     }
 
-    public async Task<IObjectBase> GetBySnapshotId(Guid snapshotId)
+    public async Task<T> GetBySnapshotId<T>(Guid snapshotId)
     {
-        return await _crdtRepository.GetObjectBySnapshotId(snapshotId);
+        return await _crdtRepository.GetObjectBySnapshotId<T>(snapshotId);
     }
 
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAt(DateTimeOffset dateTime)
@@ -231,7 +231,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         if (pendingCommits.Length != 0)
         {
-            snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots, repository, pendingCommits);
+            snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots, repository, pendingCommits, _crdtConfig.Value);
         }
 
         return snapshots;

@@ -2,6 +2,7 @@
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SIL.Harmony.Adapters;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
@@ -57,9 +58,10 @@ public class CrdtConfig
             }
         }
 
-        if (typeInfo.Type == typeof(IObjectBase))
+        if (ObjectTypeListBuilder.JsonTypes?.TryGetValue(typeInfo.Type, out var types) == true)
         {
-            foreach (var type in ObjectTypeListBuilder.Types)
+            if (typeInfo.PolymorphismOptions is null) typeInfo.PolymorphismOptions = new();
+            foreach (var type in types)
             {
                 typeInfo.PolymorphismOptions!.DerivedTypes.Add(type);
             }
@@ -103,52 +105,66 @@ public class ObjectTypeListBuilder
     /// </summary>
     public void Freeze()
     {
+        if (_frozen) return;
         _frozen = true;
+        JsonTypes = AdapterProvider.JsonTypes;
+        foreach (var registration in AdapterProvider.GetRegistrations())
+        {
+            ModelConfigurations.Add((builder, config) =>
+            {
+                if (!config.EnableProjectedTables) return;
+                var entity = registration.EntityBuilder(builder);
+                entity.HasOne(typeof(ObjectSnapshot))
+                    .WithOne()
+                    .HasForeignKey(registration.ObjectDbType, ObjectSnapshot.ShadowRefName)
+                    .OnDelete(DeleteBehavior.SetNull);
+            });
+        }
     }
 
-    private void CheckFrozen()
+    internal void CheckFrozen()
     {
         if (_frozen) throw new InvalidOperationException($"{nameof(ObjectTypeListBuilder)} is frozen");
     }
 
-    internal List<JsonDerivedType> Types { get; } = [];
+    internal Dictionary<Type, List<JsonDerivedType>>? JsonTypes { get; set; }
 
     internal List<Action<ModelBuilder, CrdtConfig>> ModelConfigurations { get; } = [];
 
-    public ObjectTypeListBuilder AddDbModelConfig(Action<ModelBuilder> modelConfiguration)
+    internal IObjectAdapterProvider AdapterProvider => _adapterProvider ?? throw new InvalidOperationException("No adapter has been added to the builder");
+    private IObjectAdapterProvider? _adapterProvider;
+
+    public DefaultAdapterProvider DefaultAdapter()
     {
         CheckFrozen();
-        ModelConfigurations.Add((builder, _) => modelConfiguration(builder));
-        return this;
+        if (_adapterProvider is not null) throw new InvalidOperationException("adapter has already been added");
+        var adapter = new DefaultAdapterProvider(this);
+        _adapterProvider = adapter;
+        return adapter;
     }
-
-  
-    public ObjectTypeListBuilder Add<TDerived>(Action<EntityTypeBuilder<TDerived>>? configureDb = null)
-        where TDerived : class, IObjectBase
+    
+    /// <summary>
+    /// add a custom adapter for a common interface
+    /// this is required as CRDT objects must express their references and have an Id property
+    /// using a custom adapter allows your model to not take a dependency on Harmony
+    /// </summary>
+    /// <typeparam name="TCommonInterface">
+    /// A common interface that all objects in your application implement
+    /// which System.Text.Json will deserialize your objects to, they must support polymorphic deserialization
+    /// </typeparam>
+    /// <typeparam name="TAdapter">
+    /// This adapter will be serialized and stored in the database,
+    /// it should include the object it is adapting otherwise Harmony will not work
+    /// </typeparam>
+    /// <returns></returns>
+    /// <exception cref="InvalidOperationException">when another adapter has already been added or the config has been frozen</exception>
+    public CustomAdapterProvider<TCommonInterface, TAdapter> CustomAdapter<TCommonInterface, TAdapter>()
+        where TCommonInterface : class where TAdapter : class, ICustomAdapter<TAdapter, TCommonInterface>, IPolyType
     {
         CheckFrozen();
-        if (Types.Any(t => t.DerivedType == typeof(TDerived))) throw new InvalidOperationException($"Type {typeof(TDerived)} already added");
-        Types.Add(new JsonDerivedType(typeof(TDerived), TDerived.TypeName));
-        ModelConfigurations.Add((builder, config) =>
-        {
-            if (!config.EnableProjectedTables) return;
-            var baseType = typeof(TDerived).BaseType;
-            if (baseType is not null)
-                builder.Ignore(baseType);
-            var entity = builder.Entity<TDerived>();
-            entity.HasBaseType((Type)null!);
-            entity.HasKey(e => e.Id);
-            entity.Property(e => e.Id);
-            entity.HasOne<ObjectSnapshot>()
-                .WithOne()
-                .HasForeignKey<TDerived>(ObjectSnapshot.ShadowRefName)
-            //set null otherwise it will cascade delete, which would happen whenever snapshots are deleted
-                .OnDelete(DeleteBehavior.SetNull);
-
-            entity.Property(e => e.DeletedAt);
-            entity.Ignore(e => e.TypeName);
-            configureDb?.Invoke(entity);
-        });
-        return this;
+        if (_adapterProvider is not null) throw new InvalidOperationException("adapter has already been added");
+        var adapter = new CustomAdapterProvider<TCommonInterface, TAdapter>(this);
+        _adapterProvider = adapter;
+        return adapter;
     }
 }

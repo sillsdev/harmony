@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
+using SIL.Harmony.Resource;
 
 namespace SIL.Harmony;
 

@@ -25,5 +25,5 @@ public class ChangeContext
     }
 
     public async ValueTask<bool> IsObjectDeleted(Guid entityId) => (await GetSnapshot(entityId))?.EntityIsDeleted ?? true;
-    internal IObjectBase Adapt(object obj) => _crdtConfig.ObjectTypeListBuilder.AdapterProvider.Adapt(obj);
+    internal IObjectBase Adapt(object obj) => _crdtConfig.ObjectTypeListBuilder.Adapt(obj);
 }

@@ -9,9 +9,9 @@ public class CreateRemoteResourcePendingUploadChange: CreateChange<RemoteResourc
     {
     }
 
-    public override ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context)
+    public override ValueTask<RemoteResource> NewEntity(Commit commit, ChangeContext context)
     {
-        return ValueTask.FromResult<IObjectBase>(new RemoteResource
+        return ValueTask.FromResult(new RemoteResource
         {
             Id = EntityId
         });

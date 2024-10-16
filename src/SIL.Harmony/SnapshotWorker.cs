@@ -16,6 +16,7 @@ internal class SnapshotWorker
     private readonly CrdtRepository _crdtRepository;
     private readonly CrdtConfig _crdtConfig;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots  = [];
+    private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
@@ -56,8 +57,11 @@ internal class SnapshotWorker
         var commits = await _crdtRepository.GetCommitsAfter(previousCommit);
         await ApplyCommitChanges(commits.UnionBy(newCommits, c => c.Id), true, previousCommit?.Hash ?? CommitBase.NullParentHash);
 
-        //intermediate snapshots should be added first, as the last snapshot added for an entity will be used in the projected tables
+        // First add any new entities/snapshots as they might be referenced by intermediate snapshots
+        await _crdtRepository.AddSnapshots(_rootSnapshots.Values);
+        // Then add any intermediate snapshots we're hanging onto for performance benefits
         await _crdtRepository.AddIfNew(_newIntermediateSnapshots);
+        // And finally the up-to-date snapshots, which will be used in the projected tables
         await _crdtRepository.AddSnapshots(_pendingSnapshots.Values);
     }
 
@@ -117,7 +121,7 @@ internal class SnapshotWorker
                 {
                     //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
                 }
-                else if (commitIndex % 2 == 0 || prevSnapshot.IsRoot)
+                else if (commitIndex % 2 == 0 && !prevSnapshot.IsRoot)
                 {
                     intermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
                 }
@@ -179,6 +183,11 @@ internal class SnapshotWorker
             return snapshot;
         }
 
+        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
+        {
+            return rootSnapshot;
+        }
+
         if (_snapshotLookup.TryGetValue(entityId, out var snapshotId))
         {
             if (snapshotId is null) return null;
@@ -193,7 +202,14 @@ internal class SnapshotWorker
 
     private void AddSnapshot(ObjectSnapshot snapshot)
     {
-        //if there was already a pending snapshot there's no need to store it as both may point to the same commit
-        _pendingSnapshots[snapshot.Entity.Id] = snapshot;
+        if (snapshot.IsRoot)
+        {
+            _rootSnapshots[snapshot.Entity.Id] = snapshot;
+        }
+        else
+        {
+            //if there was already a pending snapshot there's no need to store it as both may point to the same commit
+            _pendingSnapshots[snapshot.Entity.Id] = snapshot;
+        }
     }
 }

@@ -45,13 +45,20 @@ public static class CrdtSampleKernel
                 .Add<SetWordNoteChange>()
                 .Add<AddAntonymReferenceChange>()
                 .Add<SetOrderChange<Definition>>()
+                .Add<SetDefinitionPartOfSpeechChange>()
                 .Add<DeleteChange<Word>>()
                 .Add<DeleteChange<Definition>>()
                 .Add<DeleteChange<Example>>()
                 ;
             config.ObjectTypeListBuilder.DefaultAdapter()
                 .Add<Word>()
-                .Add<Definition>()
+                .Add<Definition>(builder =>
+                {
+                    builder.HasOne<Word>()
+                        .WithMany()
+                        .HasForeignKey(d => d.WordId)
+                        .OnDelete(DeleteBehavior.Cascade);
+                })
                 .Add<Example>();
         });
         return services;

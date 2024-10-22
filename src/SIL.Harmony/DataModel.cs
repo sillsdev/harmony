@@ -209,7 +209,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return new ModelSnapshot(await _crdtRepository.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
     }
 
-    public IQueryable<T> GetLatestObjects<T>() where T : class
+    public IQueryable<T> QueryLatest<T>() where T : class
     {
         var q = _crdtRepository.GetCurrentObjects<T>();
         if (q is IQueryable<IOrderableCrdt>)

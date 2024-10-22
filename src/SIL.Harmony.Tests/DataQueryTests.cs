@@ -15,7 +15,7 @@ public class DataQueryTests: DataModelTestBase
     [Fact]
     public async Task CanQueryLatestData()
     {
-        var entries = await DataModel.GetLatestObjects<Word>().ToArrayAsync();
+        var entries = await DataModel.QueryLatest<Word>().ToArrayAsync();
         var entry = entries.Should().ContainSingle().Subject;
         entry.Text.Should().Be("entity1");
     }

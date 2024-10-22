@@ -79,7 +79,7 @@ public class DataModelSimpleChanges : DataModelTestBase
 
         await WriteNextChange(SetWord(Guid.NewGuid(), "change 3"));
         DbContext.Snapshots.Should().HaveCount(3);
-        DataModel.GetLatestObjects<Word>().Should().HaveCount(3);
+        DataModel.QueryLatest<Word>().Should().HaveCount(3);
     }
 
     [Fact]

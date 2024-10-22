@@ -25,6 +25,9 @@ public static class CrdtSampleKernel
     {
         services.AddDbContext<SampleDbContext>((provider, builder) =>
         {
+            //this ensures that Ef Conversion methods will not be cached across different IoC containers
+            //this can show up as the second instance using the JsonSerializerOptions from the first container
+            builder.UseRootApplicationServiceProvider();
             builder.UseLinqToDbCrdt(provider);
             optionsBuilder(builder);
             builder.EnableDetailedErrors();

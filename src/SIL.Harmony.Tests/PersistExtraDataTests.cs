@@ -27,7 +27,8 @@ public class PersistExtraDataTests
         public Guid Id { get; set; }
         public DateTimeOffset? DeletedAt { get; set; }
         public Guid CommitId { get; set; }
-        public HybridDateTime? HybridDateTime { get; set; }
+        public DateTimeOffset? DateTime { get; set; }
+        public long Counter { get; set; }
 
         public Guid[] GetReferences()
         {
@@ -40,7 +41,10 @@ public class PersistExtraDataTests
 
         public IObjectBase Copy()
         {
-            return new ExtraDataModel();
+            return new ExtraDataModel()
+            {
+                Id = Id
+            };
         }
     }
 
@@ -48,10 +52,20 @@ public class PersistExtraDataTests
     {
         _dataModelTestBase = new DataModelTestBase(configure: services =>
         {
-            services.AddOptions<CrdtConfig>().Configure(config =>
+            services.Configure<CrdtConfig>(config =>
             {
                 config.ObjectTypeListBuilder.DefaultAdapter().Add<ExtraDataModel>();
                 config.ChangeTypeListBuilder.Add<CreateExtraDataModelChange>();
+                config.BeforePersistObjectInProjectedTable = (obj, snapshot) =>
+                {
+                    if (obj is ExtraDataModel extraDataModel)
+                    {
+                        extraDataModel.CommitId = snapshot.CommitId;
+                        extraDataModel.DateTime = snapshot.Commit.HybridDateTime.DateTime;
+                        extraDataModel.Counter = snapshot.Commit.HybridDateTime.Counter;
+                    }
+                    return ValueTask.CompletedTask;
+                };
             });
         });
     }
@@ -64,6 +78,7 @@ public class PersistExtraDataTests
         var extraDataModel = _dataModelTestBase.DataModel.QueryLatest<ExtraDataModel>().Should().ContainSingle().Subject;
         extraDataModel.Id.Should().Be(entityId);
         extraDataModel.CommitId.Should().Be(commit.Id);
-        extraDataModel.HybridDateTime.Should().Be(commit.HybridDateTime);
+        extraDataModel.DateTime.Should().Be(commit.HybridDateTime.DateTime);
+        extraDataModel.Counter.Should().Be(commit.HybridDateTime.Counter);
     }
 }

@@ -37,8 +37,7 @@ public class DataModelTestBase : IAsyncLifetime
     {
         var serviceCollection = new ServiceCollection()
             .AddCrdtDataSample(connection)
-            .AddOptions<CrdtConfig>().Configure(config => config.AlwaysValidateCommits = alwaysValidate)
-            .Services
+            .Configure<CrdtConfig>(config => config.AlwaysValidateCommits = alwaysValidate)
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider));
         configure?.Invoke(serviceCollection);
         _services = serviceCollection.BuildServiceProvider();

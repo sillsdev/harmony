@@ -22,9 +22,10 @@ public class DataModelTestBase : IAsyncLifetime
     internal readonly CrdtRepository CrdtRepository;
     protected readonly MockTimeProvider MockTimeProvider = new();
 
-    public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true) : this(saveToDisk
+    public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true,
+        Action<IServiceCollection>? configure = null) : this(saveToDisk
         ? new SqliteConnection("Data Source=test.db")
-        : new SqliteConnection("Data Source=:memory:"), alwaysValidate)
+        : new SqliteConnection("Data Source=:memory:"), alwaysValidate, configure)
     {
     }
 
@@ -32,14 +33,15 @@ public class DataModelTestBase : IAsyncLifetime
     {
     }
 
-    public DataModelTestBase(SqliteConnection connection, bool alwaysValidate = true)
+    public DataModelTestBase(SqliteConnection connection, bool alwaysValidate = true, Action<IServiceCollection>? configure = null)
     {
-        _services = new ServiceCollection()
+        var serviceCollection = new ServiceCollection()
             .AddCrdtDataSample(connection)
             .AddOptions<CrdtConfig>().Configure(config => config.AlwaysValidateCommits = alwaysValidate)
             .Services
-            .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider))
-            .BuildServiceProvider();
+            .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider));
+        configure?.Invoke(serviceCollection);
+        _services = serviceCollection.BuildServiceProvider();
         DbContext = _services.GetRequiredService<SampleDbContext>();
         DbContext.Database.OpenConnection();
         DbContext.Database.EnsureCreated();

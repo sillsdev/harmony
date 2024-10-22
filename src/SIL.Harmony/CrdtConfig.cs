@@ -8,7 +8,7 @@ using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
 
 namespace SIL.Harmony;
-
+public delegate ValueTask BeforeSaveObject(object obj, ObjectSnapshot snapshot);
 public class CrdtConfig
 {
     /// <summary>
@@ -16,6 +16,7 @@ public class CrdtConfig
     /// it does however increase database size as now objects are stored both in snapshots and in their projected tables
     /// </summary>
     public bool EnableProjectedTables { get; set; } = true;
+    public BeforeSaveObject? BeforePersistObjectInProjectedTable { get; set; }
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>

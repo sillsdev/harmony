@@ -235,7 +235,6 @@ GROUP BY s.EntityId
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
             entity = objectSnapshot.Entity.Copy().DbObject;
-            crdtConfig.Value.BeforePersistObjectInProjectedTable?.Invoke(entity, objectSnapshot);
             _dbContext.Add(entity)
                 .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
             return;
@@ -249,7 +248,6 @@ GROUP BY s.EntityId
         }
 
         entity = objectSnapshot.Entity.DbObject;
-        crdtConfig.Value.BeforePersistObjectInProjectedTable?.Invoke(entity, objectSnapshot);
         existingEntry.CurrentValues.SetValues(entity);
         existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
     }

@@ -43,7 +43,11 @@ public class PersistExtraDataTests
         {
             return new ExtraDataModel()
             {
-                Id = Id
+                Id = Id,
+                DeletedAt = DeletedAt,
+                CommitId = CommitId,
+                DateTime = DateTime,
+                Counter = Counter
             };
         }
     }
@@ -56,7 +60,7 @@ public class PersistExtraDataTests
             {
                 config.ObjectTypeListBuilder.DefaultAdapter().Add<ExtraDataModel>();
                 config.ChangeTypeListBuilder.Add<CreateExtraDataModelChange>();
-                config.BeforePersistObjectInProjectedTable = (obj, snapshot) =>
+                config.BeforePersistObject = (obj, snapshot) =>
                 {
                     if (obj is ExtraDataModel extraDataModel)
                     {

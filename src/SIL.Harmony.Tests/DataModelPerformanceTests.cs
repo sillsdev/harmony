@@ -23,6 +23,9 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
     [Fact]
     public void AddingChangePerformance()
     {
+        #if DEBUG
+        Assert.Fail("This test is disabled in debug builds, not reliable");
+        #endif
         var summary =
             BenchmarkRunner.Run<DataModelPerformanceBenchmarks>(
                 ManualConfig.CreateEmpty()
@@ -188,7 +191,7 @@ public class DataModelPerformanceBenchmarks
     [GlobalSetup]
     public void GlobalSetup()
     {
-        _templateModel = new DataModelTestBase(alwaysValidate: false);
+        _templateModel = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
         DataModelPerformanceTests.BulkInsertChanges(_templateModel, StartingSnapshots).GetAwaiter().GetResult();
     }
 
@@ -198,7 +201,7 @@ public class DataModelPerformanceBenchmarks
     [IterationSetup]
     public void IterationSetup()
     {
-        _emptyDataModel = new(alwaysValidate: false);
+        _emptyDataModel = new(alwaysValidate: false, performanceTest: true);
         _ = _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result;
         _dataModelTestBase = _templateModel.ForkDatabase(false);
     }

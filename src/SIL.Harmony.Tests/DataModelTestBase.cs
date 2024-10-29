@@ -1,3 +1,4 @@
+using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Core;
@@ -17,15 +18,16 @@ public class DataModelTestBase : IAsyncLifetime
 {
     protected readonly ServiceProvider _services;
     protected readonly Guid _localClientId = Guid.NewGuid();
+    private readonly bool _performanceTest;
     public readonly DataModel DataModel;
     public readonly SampleDbContext DbContext;
     internal readonly CrdtRepository CrdtRepository;
     protected readonly MockTimeProvider MockTimeProvider = new();
 
     public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true,
-        Action<IServiceCollection>? configure = null) : this(saveToDisk
+        Action<IServiceCollection>? configure = null, bool performanceTest = false) : this(saveToDisk
         ? new SqliteConnection("Data Source=test.db")
-        : new SqliteConnection("Data Source=:memory:"), alwaysValidate, configure)
+        : new SqliteConnection("Data Source=:memory:"), alwaysValidate, configure, performanceTest)
     {
     }
 
@@ -33,10 +35,13 @@ public class DataModelTestBase : IAsyncLifetime
     {
     }
 
-    public DataModelTestBase(SqliteConnection connection, bool alwaysValidate = true, Action<IServiceCollection>? configure = null)
+    public DataModelTestBase(SqliteConnection connection, bool alwaysValidate = true, Action<IServiceCollection>? configure = null, bool performanceTest = false)
     {
-        var serviceCollection = new ServiceCollection()
-            .AddCrdtDataSample(connection)
+        _performanceTest = performanceTest;
+        var serviceCollection = new ServiceCollection().AddCrdtDataSample(builder =>
+            {
+                builder.UseSqlite(connection, true);
+            }, performanceTest)
             .Configure<CrdtConfig>(config => config.AlwaysValidateCommits = alwaysValidate)
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider));
         configure?.Invoke(serviceCollection);
@@ -55,7 +60,7 @@ public class DataModelTestBase : IAsyncLifetime
         var existingConnection = DbContext.Database.GetDbConnection() as SqliteConnection;
         if (existingConnection is null) throw new InvalidOperationException("Database is not SQLite");
         existingConnection.BackupDatabase(connection);
-        var newTestBase = new DataModelTestBase(connection, alwaysValidate);
+        var newTestBase = new DataModelTestBase(connection, alwaysValidate, performanceTest: _performanceTest);
         newTestBase.SetCurrentDate(currentDate.DateTime);
         return newTestBase;
     }

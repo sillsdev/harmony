@@ -29,6 +29,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         var summary =
             BenchmarkRunner.Run<DataModelPerformanceBenchmarks>(
                 ManualConfig.CreateEmpty()
+                    .AddExporter(JsonExporter.FullCompressed)
                     .AddColumnProvider(DefaultColumnProviders.Instance)
                     .AddLogger(new XUnitBenchmarkLogger(output))
             );

@@ -6,7 +6,8 @@ on:
   pull_request: 
     branches:
       - main
-
+permissions: 
+  pull-requests: write #allow benchmark-action to comment on PRs
 jobs:
   build:
     runs-on: ubuntu-latest

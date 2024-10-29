@@ -182,7 +182,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
 
 // disable warning about waiting for sync code, benchmarkdotnet does not support async code, and it doesn't deadlock when waiting.
 #pragma warning disable VSTHRD002
-[SimpleJob(RunStrategy.Throughput, warmupCount: 2)]
+[SimpleJob(RunStrategy.Monitoring, warmupCount: 2)]
 public class DataModelPerformanceBenchmarks
 {
     private DataModelTestBase _templateModel = null!;
@@ -203,7 +203,7 @@ public class DataModelPerformanceBenchmarks
     [IterationSetup]
     public void IterationSetup()
     {
-        _emptyDataModel = new(alwaysValidate: false, performanceTest: true);
+        _emptyDataModel = new(alwaysValidate: false, performanceTest: false);
         _ = _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result;
         _dataModelTestBase = _templateModel.ForkDatabase(false);
     }

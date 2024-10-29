@@ -30,7 +30,7 @@ jobs:
         uses: benchmark-action/github-action-benchmark@v1.20.4
         with: 
           tool: benchmarkdotnet
-          output-file-path: src\artifacts\bin\SIL.Harmony.Tests\release\BenchmarkDotNet.Artifacts\results\SIL.Harmony.Tests.DataModelPerformanceBenchmarks-report-full-compressed.json
+          output-file-path: src/artifacts/bin/SIL.Harmony.Tests/release/BenchmarkDotNet.Artifacts/results/SIL.Harmony.Tests.DataModelPerformanceBenchmarks-report-full-compressed.json
           external-data-json-path: ./cache/benchmark-data.json
           fail-on-alert: true
           summary-always: true

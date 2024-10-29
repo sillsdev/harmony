@@ -203,7 +203,7 @@ public class DataModelPerformanceBenchmarks
     [IterationSetup]
     public void IterationSetup()
     {
-        _emptyDataModel = new(alwaysValidate: false, performanceTest: false);
+        _emptyDataModel = new(alwaysValidate: false, performanceTest: true);
         _ = _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result;
         _dataModelTestBase = _templateModel.ForkDatabase(false);
     }

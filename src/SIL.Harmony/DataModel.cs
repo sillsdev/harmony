@@ -77,7 +77,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         };
         await Add(commit, deferCommit);
         return commit;
-    } 
+    }
 
     private List<Commit> _deferredCommits = [];
     private async Task Add(Commit commit, bool deferSnapshotUpdates)
@@ -188,11 +188,6 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
     }
 
-    public async Task<ObjectSnapshot?> GetEntitySnapshotAtTime(DateTimeOffset time, Guid entityId)
-    {
-        var snapshots = await GetSnapshotsAt(time);
-        return snapshots.GetValueOrDefault(entityId);
-    }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
     {
@@ -237,6 +232,34 @@ public class DataModel : ISyncable, IAsyncDisposable
         return snapshots;
     }
 
+    public async Task<ObjectSnapshot?> GetEntitySnapshotAtTime(DateTimeOffset time, Guid entityId)
+    {
+        var snapshots = await GetSnapshotsAt(time);
+        return snapshots.GetValueOrDefault(entityId);
+    }
+
+
+    public async Task<T> GetAtCommit<T>(Guid commitId, Guid entityId)
+    {
+        var commit = await _crdtRepository.CurrentCommits().SingleAsync(c => c.Id == commitId);
+        var repository = _crdtRepository.GetScopedRepository(commit);
+        var snapshot = await repository.GetCurrentSnapshotByObjectId(entityId, false);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var newCommits = await _crdtRepository.CurrentCommits()
+            .Include(c => c.ChangeEntities)
+            .WhereAfter(snapshot.Commit)
+            .ToArrayAsync();
+        if (newCommits.Length > 0)
+        {
+            var snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(new Dictionary<Guid, ObjectSnapshot>([new KeyValuePair<Guid, ObjectSnapshot>(snapshot.EntityId, snapshot)]),
+                repository,
+                newCommits,
+                _crdtConfig.Value);
+            snapshot = snapshots[snapshot.EntityId];
+        }
+
+        return (T) snapshot.Entity.DbObject;
+    }
     public async Task<SyncState> GetSyncState()
     {
         return await _crdtRepository.GetCurrentSyncState();

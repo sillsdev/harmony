@@ -33,6 +33,32 @@ public class ModelSnapshotTests : DataModelTestBase
         snapshot.LastChange.Should().Be(secondChange.DateTime);
     }
 
+    [Fact]
+    public async Task CanGetWordForASpecificCommit()
+    {
+        var entityId = Guid.NewGuid();
+        var firstCommit = await WriteNextChange(SetWord(entityId, "first"));
+        var secondCommit = await WriteNextChange(SetWord(entityId, "second"));
+        var thirdCommit = await WriteNextChange(SetWord(entityId, "third"));
+        await ClearNonRootSnapshots();
+        var firstWord = await DataModel.GetAtCommit<Word>(firstCommit.Id, entityId);
+        firstWord.Should().NotBeNull();
+        firstWord.Text.Should().Be("first");
+
+        var secondWord = await DataModel.GetAtCommit<Word>(secondCommit.Id, entityId);
+        secondWord.Should().NotBeNull();
+        secondWord.Text.Should().Be("second");
+
+        var thirdWord = await DataModel.GetAtCommit<Word>(thirdCommit.Id, entityId);
+        thirdWord.Should().NotBeNull();
+        thirdWord.Text.Should().Be("third");
+    }
+
+    private Task ClearNonRootSnapshots()
+    {
+        return DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync();
+    }
+
     [Theory]
     [InlineData(10)]
     [InlineData(100)]

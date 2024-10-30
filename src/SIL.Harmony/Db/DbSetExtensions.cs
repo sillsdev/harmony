@@ -28,7 +28,27 @@ public static class DbSetExtensions
                  || (after.HybridDateTime.DateTime == s.Commit.HybridDateTime.DateTime && after.HybridDateTime.Counter < s.Commit.HybridDateTime.Counter)
                  || (after.HybridDateTime.DateTime == s.Commit.HybridDateTime.DateTime && after.HybridDateTime.Counter == s.Commit.HybridDateTime.Counter && after.Id < s.Commit.Id));
     }
-    
+
+    public static IQueryable<ObjectSnapshot> WhereBefore(this IQueryable<ObjectSnapshot> queryable, Commit before, bool inclusive = false)
+    {
+        if (inclusive)
+        {
+            return queryable.Where(c => c.Commit.HybridDateTime.DateTime < before.HybridDateTime.DateTime
+                                        || (c.Commit.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
+                                            c.Commit.HybridDateTime.Counter < before.HybridDateTime.Counter)
+                                        || (c.Commit.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
+                                            c.Commit.HybridDateTime.Counter == before.HybridDateTime.Counter &&
+                                            c.CommitId < before.Id)
+                                        || c.CommitId == before.Id);
+        }
+
+        return queryable.Where(c => c.Commit.HybridDateTime.DateTime < before.HybridDateTime.DateTime
+                                    || (c.Commit.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
+                                        c.Commit.HybridDateTime.Counter < before.HybridDateTime.Counter)
+                                    || (c.Commit.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
+                                        c.Commit.HybridDateTime.Counter == before.HybridDateTime.Counter && c.CommitId < before.Id));
+    }
+
     public static IQueryable<T> AsTracking<T>(this IQueryable<T> queryable, bool tracking = true) where T : class
     {
         return queryable.AsTracking(tracking ? QueryTrackingBehavior.TrackAll : QueryTrackingBehavior.NoTracking);

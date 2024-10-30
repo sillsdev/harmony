@@ -9,24 +9,38 @@ using SIL.Harmony.Helpers;
 
 namespace SIL.Harmony.Db;
 
-internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig, DateTimeOffset? ignoreChangesAfter = null)
+internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig,
+    Commit? ignoreChangesAfter = null
+    // DateTimeOffset? ignoreChangesAfter = null
+)
 {
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
+    private IQueryable<Commit> Commits
+    {
+        get
+        {
+            if (ignoreChangesAfter is not null)
+            {
+                return _dbContext.Commits.WhereBefore(ignoreChangesAfter);
+            }
+            return _dbContext.Commits;
+        }
+    }
+
     public Task<IDbContextTransaction> BeginTransactionAsync()
     {
         return _dbContext.Database.BeginTransactionAsync();
     }
 
-
     public async Task<bool> HasCommit(Guid commitId)
     {
-        return await _dbContext.Commits.AnyAsync(c => c.Id == commitId);
+        return await Commits.AnyAsync(c => c.Id == commitId);
     }
 
     public async Task<(Commit? oldestChange, Commit[] newCommits)> FilterExistingCommits(ICollection<Commit> commits)
     {
         Commit? oldestChange = null;
-        var commitIdsToExclude = await _dbContext.Commits
+        var commitIdsToExclude = await Commits
             .Where(c => commits.Select(c => c.Id).Contains(c.Id))
             .Select(c => c.Id)
             .ToArrayAsync();
@@ -51,14 +65,13 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 
     public IQueryable<Commit> CurrentCommits()
     {
-        var query = _dbContext.Commits.DefaultOrder();
-        if (ignoreChangesAfter is not null) query = query.Where(c => c.HybridDateTime.DateTime <= ignoreChangesAfter);
-        return query;
+        return Commits.DefaultOrder();
     }
 
     public IQueryable<ObjectSnapshot> CurrentSnapshots()
     {
-        var ignoreDate = ignoreChangesAfter?.UtcDateTime;
+        //todo actually filter by commit
+        var ignoreDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
         return _dbContext.Snapshots.FromSql(
 $"""
 WITH LatestSnapshots AS (SELECT first_value(s1.Id)
@@ -94,17 +107,6 @@ GROUP BY s.EntityId
         return snapshots;
     }
 
-    private IQueryable<Guid> CurrentSnapshotIds()
-    {
-        return Snapshots.GroupBy(s => s.EntityId,
-            (entityId, snapshots) => snapshots
-                    //unfortunately this can not be extracted into a helper because the whole thing is part of an expression
-                .OrderByDescending(c => c.Commit.HybridDateTime.DateTime)
-                .ThenByDescending(c => c.Commit.HybridDateTime.Counter)
-                .ThenByDescending(c => c.Commit.Id)
-                .First(s => ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter).Id);
-    }
-
     public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, Commit[] pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
     {
         var snapshots = await CurrentSnapshots().Include(s => s.Commit).ToDictionaryAsync(s => s.EntityId);
@@ -121,21 +123,21 @@ GROUP BY s.EntityId
 
     public async Task<Commit?> FindCommitByHash(string hash)
     {
-        return await _dbContext.Commits.SingleOrDefaultAsync(c => c.Hash == hash);
+        return await Commits.SingleOrDefaultAsync(c => c.Hash == hash);
     }
 
     public async Task<Commit?> FindPreviousCommit(Commit commit)
     {
         //can't trust the parentHash actually, so we can't do this.
         // if (!string.IsNullOrWhiteSpace(commit.ParentHash)) return await FindCommitByHash(commit.ParentHash);
-        return await _dbContext.Commits.WhereBefore(commit)
+        return await Commits.WhereBefore(commit)
             .DefaultOrderDescending()
             .FirstOrDefaultAsync();
     }
 
     public async Task<Commit[]> GetCommitsAfter(Commit? commit)
     {
-        var dbContextCommits = _dbContext.Commits.Include(c => c.ChangeEntities);
+        var dbContextCommits = Commits.Include(c => c.ChangeEntities);
         if (commit is null) return await dbContextCommits.DefaultOrder().ToArrayAsync();
         return await dbContextCommits
             .WhereAfter(commit)
@@ -155,7 +157,8 @@ GROUP BY s.EntityId
     {
         return await Snapshots.AsTracking(tracking).Include(s => s.Commit)
             .DefaultOrder()
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter));
+            //todo actually filter by commit
+            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter.HybridDateTime.DateTime));
     }
 
     public async Task<T> GetObjectBySnapshotId<T>(Guid snapshotId)
@@ -172,7 +175,8 @@ GROUP BY s.EntityId
     {
         var snapshot = await Snapshots
             .DefaultOrder()
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter));
+            //todo actually filter by commit
+            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter.HybridDateTime.DateTime));
         return (T?) snapshot?.Entity.DbObject;
     }
 
@@ -187,10 +191,7 @@ GROUP BY s.EntityId
 
     public async Task<SyncState> GetCurrentSyncState()
     {
-        var queryable = _dbContext.Commits.AsQueryable();
-        if (ignoreChangesAfter is not null)
-            queryable = queryable.Where(c => c.HybridDateTime.DateTime <= ignoreChangesAfter);
-        return await queryable.GetSyncState();
+        return await Commits.GetSyncState();
     }
 
     public async Task<ChangesResult<Commit>> GetChanges(SyncState remoteState)
@@ -261,7 +262,16 @@ GROUP BY s.EntityId
 
     public CrdtRepository GetScopedRepository(DateTimeOffset newCurrentTime)
     {
-        return new CrdtRepository(_dbContext, crdtConfig, newCurrentTime);
+        return GetScopedRepository(new Commit(Guid.Empty)
+        {
+            ClientId = Guid.Empty,
+            HybridDateTime = new HybridDateTime(newCurrentTime, 0)
+        });
+    }
+
+    public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
+    {
+        return new CrdtRepository(_dbContext, crdtConfig, excludeChangesAfterCommit);
     }
 
     public async Task AddCommit(Commit commit)
@@ -278,7 +288,7 @@ GROUP BY s.EntityId
 
     public HybridDateTime? GetLatestDateTime()
     {
-        return _dbContext.Commits
+        return Commits
             .DefaultOrderDescending()
             .AsNoTracking()
             .Select(c => c.HybridDateTime)

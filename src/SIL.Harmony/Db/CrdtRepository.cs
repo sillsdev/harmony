@@ -144,7 +144,7 @@ GROUP BY s.EntityId
     }
 
     public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)
-    {        
+    {
         return await Snapshots
             .AsTracking(tracking)
             .Include(s => s.Commit)
@@ -155,7 +155,7 @@ GROUP BY s.EntityId
     {
         return await Snapshots.AsTracking(tracking).Include(s => s.Commit)
             .DefaultOrder()
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
+            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter));
     }
 
     public async Task<T> GetObjectBySnapshotId<T>(Guid snapshotId)
@@ -172,7 +172,7 @@ GROUP BY s.EntityId
     {
         var snapshot = await Snapshots
             .DefaultOrder()
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
+            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter));
         return (T?) snapshot?.Entity.DbObject;
     }
 
@@ -214,7 +214,7 @@ GROUP BY s.EntityId
     {
         foreach (var snapshot in snapshots)
         {
-            
+
             if (_dbContext.Snapshots.Local.FindEntry(snapshot.Id) is not null) continue;
             _dbContext.Add(snapshot);
             await SnapshotAdded(snapshot);

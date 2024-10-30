@@ -12,8 +12,7 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
 {
     private readonly ObjectTypeListBuilder _objectTypeListBuilder;
     private readonly List<AdapterRegistration> _objectTypes = new();
-    private Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; } = [];
-    Dictionary<Type, List<JsonDerivedType>> IObjectAdapterProvider.JsonTypes => JsonTypes;
+    private Dictionary<Type, List<JsonDerivedType>> JsonTypes => _objectTypeListBuilder.JsonTypes;
 
     public CustomAdapterProvider(ObjectTypeListBuilder objectTypeListBuilder)
     {
@@ -54,6 +53,11 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
     IObjectBase IObjectAdapterProvider.Adapt(object obj)
     {
         return TCustomAdapter.Create((TCommonInterface)obj);
+    }
+
+    public bool CanAdapt(object obj)
+    {
+        return obj is TCommonInterface;
     }
 }
 

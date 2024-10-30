@@ -50,7 +50,7 @@ public class DefinitionTests : DataModelTestBase
         await WriteNextChange(NewDefinition(wordId, "greet someone", "verb", 2));
         await WriteNextChange(NewDefinition(wordId, "a greeting", "noun", 1));
 
-        var definitions = await DataModel.GetLatestObjects<Definition>().ToArrayAsync();
+        var definitions = await DataModel.QueryLatest<Definition>().ToArrayAsync();
         definitions.Select(d => d.PartOfSpeech).Should().ContainInConsecutiveOrder(
             "noun",
             "verb"
@@ -69,7 +69,7 @@ public class DefinitionTests : DataModelTestBase
         await WriteNextChange(NewDefinition(wordId, "greet someone", "verb", 2, definitionBId));
         await WriteNextChange(NewDefinition(wordId, "used as a greeting", "exclamation", 3, definitionCId));
 
-        var definitions = await DataModel.GetLatestObjects<Definition>().ToArrayAsync();
+        var definitions = await DataModel.QueryLatest<Definition>().ToArrayAsync();
         definitions.Select(d => d.PartOfSpeech).Should().ContainInConsecutiveOrder(
             "noun",
             "verb",
@@ -79,7 +79,7 @@ public class DefinitionTests : DataModelTestBase
         //change the order of the exclamation to be between the noun and verb
         await WriteNextChange(SetOrderChange<Definition>.Between(definitionCId, definitions[0], definitions[1]));
 
-        definitions = await DataModel.GetLatestObjects<Definition>().ToArrayAsync();
+        definitions = await DataModel.QueryLatest<Definition>().ToArrayAsync();
         definitions.Select(d => d.PartOfSpeech).Should().ContainInConsecutiveOrder(
             "noun",
             "exclamation",
@@ -98,7 +98,7 @@ public class DefinitionTests : DataModelTestBase
         await WriteNextChange(NewDefinition(wordId, "greet someone", "verb", 1, definitionAId));
         await WriteNextChange(NewDefinition(wordId, "a greeting", "noun", 1, definitionBId));
 
-        var definitions = await DataModel.GetLatestObjects<Definition>().ToArrayAsync();
+        var definitions = await DataModel.QueryLatest<Definition>().ToArrayAsync();
         definitions.Select(d => d.Id).Should().ContainInConsecutiveOrder(
             definitionBId,
             definitionAId

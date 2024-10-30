@@ -229,11 +229,13 @@ GROUP BY s.EntityId
         if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
         var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
+        object? entity;
         if (existingEntry is null && objectSnapshot.IsRoot)
         {
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
-            _dbContext.Add((object)objectSnapshot.Entity.Copy().DbObject)
+            entity = objectSnapshot.Entity.Copy().DbObject;
+            _dbContext.Add(entity)
                 .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
             return;
         }
@@ -245,7 +247,8 @@ GROUP BY s.EntityId
             return;
         }
 
-        existingEntry.CurrentValues.SetValues(objectSnapshot.Entity.DbObject);
+        entity = objectSnapshot.Entity.DbObject;
+        existingEntry.CurrentValues.SetValues(entity);
         existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
     }
 

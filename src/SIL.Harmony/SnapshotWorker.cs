@@ -126,7 +126,7 @@ internal class SnapshotWorker
                     intermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
                 }
                 
-                await _crdtConfig.BeforePersistObject.Invoke(entity.DbObject, newSnapshot);
+                await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
                 AddSnapshot(newSnapshot);
             }

@@ -60,7 +60,7 @@ public class PersistExtraDataTests
             {
                 config.ObjectTypeListBuilder.DefaultAdapter().Add<ExtraDataModel>();
                 config.ChangeTypeListBuilder.Add<CreateExtraDataModelChange>();
-                config.BeforePersistObject = (obj, snapshot) =>
+                config.BeforeSaveObject = (obj, snapshot) =>
                 {
                     if (obj is ExtraDataModel extraDataModel)
                     {

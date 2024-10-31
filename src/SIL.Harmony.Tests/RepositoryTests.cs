@@ -339,4 +339,27 @@ public class RepositoryTests : IAsyncLifetime
             .Should().ContainSingle().Subject;
         queriedCommit.Should().NotBeSameAs(commit).And.BeEquivalentTo(commit);
     }
+
+    [Fact]
+    public async Task FindPreviousCommit_Works()
+    {
+        var commit1 = Commit(Guid.NewGuid(), Time(1, 0));
+        var commit2 = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommits([commit1, commit2]);
+
+        var previousCommit = await _repository.FindPreviousCommit(commit2);
+        ArgumentNullException.ThrowIfNull(previousCommit);
+        previousCommit.Id.Should().Be(commit1.Id);
+    }
+
+    [Fact]
+    public async Task FindPreviousCommit_ReturnsNullForFirstCommit()
+    {
+        var commit1 = Commit(Guid.NewGuid(), Time(1, 0));
+        var commit2 = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommits([commit1, commit2]);
+
+        var previousCommit = await _repository.FindPreviousCommit(commit1);
+        previousCommit.Should().BeNull();
+    }
 }

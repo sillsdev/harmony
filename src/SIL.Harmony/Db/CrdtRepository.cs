@@ -92,8 +92,8 @@ WITH LatestSnapshots AS (SELECT first_value(s1.Id)
     PARTITION BY "s1"."EntityId"
     ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
     ) AS "LatestSnapshotId"
-     FROM "Snapshots" AS "s1"
-     INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
+                         FROM "Snapshots" AS "s1"
+                                  INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
      WHERE {ignoreAfterDate} IS NULL
         OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
             ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId}))
@@ -145,7 +145,8 @@ GROUP BY s.EntityId
     {
         //can't trust the parentHash actually, so we can't do this.
         // if (!string.IsNullOrWhiteSpace(commit.ParentHash)) return await FindCommitByHash(commit.ParentHash);
-        return await Commits.DefaultOrderDescending()
+        return await Commits.WhereBefore(commit)
+            .DefaultOrderDescending()
             .FirstOrDefaultAsync();
     }
 

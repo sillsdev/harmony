@@ -15,13 +15,25 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 )
 {
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
+
+    private IQueryable<ObjectSnapshot> SnapshotsFiltered
+    {
+        get
+        {
+            if (ignoreChangesAfter is not null)
+            {
+                return Snapshots.WhereBefore(ignoreChangesAfter, inclusive: true);
+            }
+            return Snapshots;
+        }
+    }
     private IQueryable<Commit> Commits
     {
         get
         {
             if (ignoreChangesAfter is not null)
             {
-                return _dbContext.Commits.WhereBefore(ignoreChangesAfter);
+                return _dbContext.Commits.WhereBefore(ignoreChangesAfter, inclusive: true);
             }
             return _dbContext.Commits;
         }
@@ -70,8 +82,9 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 
     public IQueryable<ObjectSnapshot> CurrentSnapshots()
     {
-        //todo actually filter by commit
-        var ignoreDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
+        var ignoreAfterDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
+        var ignoreAfterCounter = ignoreChangesAfter?.HybridDateTime.Counter;
+        var ignoreAfterCommitId = ignoreChangesAfter?.Id;
         return _dbContext.Snapshots.FromSql(
 $"""
 WITH LatestSnapshots AS (SELECT first_value(s1.Id)
@@ -79,9 +92,11 @@ WITH LatestSnapshots AS (SELECT first_value(s1.Id)
     PARTITION BY "s1"."EntityId"
     ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
     ) AS "LatestSnapshotId"
-                         FROM "Snapshots" AS "s1"
-                                  INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
-                         WHERE "c"."DateTime" < {ignoreDate} OR {ignoreDate} IS NULL)
+     FROM "Snapshots" AS "s1"
+     INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
+     WHERE {ignoreAfterDate} IS NULL
+        OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
+            ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId}))
 SELECT *
 FROM "Snapshots" AS "s"
          INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"
@@ -130,8 +145,7 @@ GROUP BY s.EntityId
     {
         //can't trust the parentHash actually, so we can't do this.
         // if (!string.IsNullOrWhiteSpace(commit.ParentHash)) return await FindCommitByHash(commit.ParentHash);
-        return await Commits.WhereBefore(commit)
-            .DefaultOrderDescending()
+        return await Commits.DefaultOrderDescending()
             .FirstOrDefaultAsync();
     }
 
@@ -147,7 +161,7 @@ GROUP BY s.EntityId
 
     public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)
     {
-        return await Snapshots
+        return await SnapshotsFiltered
             .AsTracking(tracking)
             .Include(s => s.Commit)
             .SingleOrDefaultAsync(s => s.Id == id);
@@ -155,15 +169,16 @@ GROUP BY s.EntityId
 
     public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId, bool tracking = false)
     {
-        return await Snapshots.AsTracking(tracking).Include(s => s.Commit)
+        return await SnapshotsFiltered
+            .AsTracking(tracking)
+            .Include(s => s.Commit)
             .DefaultOrder()
-            //todo actually filter by commit
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter.HybridDateTime.DateTime));
+            .LastOrDefaultAsync(s => s.EntityId == objectId);
     }
 
     public async Task<T> GetObjectBySnapshotId<T>(Guid snapshotId)
     {
-        var entity = await Snapshots
+        var entity = await SnapshotsFiltered
                          .Where(s => s.Id == snapshotId)
                          .Select(s => s.Entity)
                          .SingleOrDefaultAsync()
@@ -173,10 +188,7 @@ GROUP BY s.EntityId
 
     public async Task<T?> GetCurrent<T>(Guid objectId) where T: class
     {
-        var snapshot = await Snapshots
-            .DefaultOrder()
-            //todo actually filter by commit
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter.HybridDateTime.DateTime));
+        var snapshot = await GetCurrentSnapshotByObjectId(objectId);
         return (T?) snapshot?.Entity.DbObject;
     }
 

@@ -184,7 +184,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             var actualParentCommit = await _crdtRepository.FindCommitByHash(commit.ParentHash);
 
             throw new CommitValidationException(
-                $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit} and actual parent {actualParentCommit}");
+                $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit?.ToString() ?? "null"} and actual parent {actualParentCommit?.ToString() ?? "null"}");
         }
     }
 
@@ -245,7 +245,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         var repository = _crdtRepository.GetScopedRepository(commit);
         var snapshot = await repository.GetCurrentSnapshotByObjectId(entityId, false);
         ArgumentNullException.ThrowIfNull(snapshot);
-        var newCommits = await _crdtRepository.CurrentCommits()
+        var newCommits = await repository.CurrentCommits()
             .Include(c => c.ChangeEntities)
             .WhereAfter(snapshot.Commit)
             .ToArrayAsync();

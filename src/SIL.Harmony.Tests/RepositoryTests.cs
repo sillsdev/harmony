@@ -193,25 +193,6 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CurrentSnapshots_FiltersByDate()
-    {
-        var entityId = Guid.NewGuid();
-        var commit1Time = Time(1, 0);
-        var commit2Time = Time(3, 0);
-        await _repository.AddSnapshots([
-            Snapshot(entityId, Guid.NewGuid(), commit1Time),
-            Snapshot(entityId, Guid.NewGuid(), commit2Time),
-        ]);
-
-        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
-        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(commit2Time);
-
-        var newCurrentTime = Time(2, 0).DateTime;
-        snapshots = await _repository.GetScopedRepository(newCurrentTime).CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
-        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(commit1Time);
-    }
-
-    [Fact]
     public async Task ScopedRepo_CurrentSnapshots_FiltersByCounter()
     {
         var entityId = Guid.NewGuid();

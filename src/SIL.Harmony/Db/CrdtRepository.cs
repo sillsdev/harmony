@@ -273,15 +273,6 @@ GROUP BY s.EntityId
         return entity is not null ? _dbContext.Entry(entity) : null;
     }
 
-    public CrdtRepository GetScopedRepository(DateTimeOffset newCurrentTime)
-    {
-        return GetScopedRepository(new Commit(Guid.Empty)
-        {
-            ClientId = Guid.Empty,
-            HybridDateTime = new HybridDateTime(newCurrentTime, 0)
-        });
-    }
-
     public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
     {
         return new CrdtRepository(_dbContext, crdtConfig, excludeChangesAfterCommit);

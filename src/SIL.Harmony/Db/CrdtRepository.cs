@@ -11,7 +11,6 @@ namespace SIL.Harmony.Db;
 
 internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig,
     Commit? ignoreChangesAfter = null
-    // DateTimeOffset? ignoreChangesAfter = null
 )
 {
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();

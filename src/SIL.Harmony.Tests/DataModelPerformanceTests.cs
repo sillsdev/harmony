@@ -125,8 +125,8 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
             };
             commit.SetParentHash(parentHash);
             parentHash = commit.Hash;
-            dataModelTest.DbContext.Commits.Add(commit);
-            dataModelTest.DbContext.Snapshots.Add(new ObjectSnapshot(await change.NewEntity(commit, null!), commit, true));
+            dataModelTest.DbContext.Add(commit);
+            dataModelTest.DbContext.Add(new ObjectSnapshot(await change.NewEntity(commit, null!), commit, true));
         }
 
         await dataModelTest.DbContext.SaveChangesAsync();

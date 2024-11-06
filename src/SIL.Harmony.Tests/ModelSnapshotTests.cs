@@ -61,6 +61,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var firstCommit = await WriteNextChange(SetWord(entityId, "first"));
         var secondCommit = await WriteNextChange(SetWord(entityId, "second"));
         var thirdCommit = await WriteNextChange(SetWord(entityId, "third"));
+        //ensures that SnapshotWorker.ApplyCommitsToSnapshots will be called when getting the snapshots
         await ClearNonRootSnapshots();
         var firstWord = await DataModel.GetAtTime<Word>(firstCommit.DateTime.AddMinutes(5), entityId);
         firstWord.Should().NotBeNull();

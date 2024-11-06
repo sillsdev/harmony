@@ -293,6 +293,7 @@ public class QueryHelperTests
         var snapshots = Snapshots([
             Snapshot(id1, Time(1, 0)),
             Snapshot(id2, Time(3, 0)),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime),
             Snapshot(id3, Time(4, 0)),
         ]);
         snapshots.WhereBefore(filterCommit).Select(c => c.CommitId).Should().BeEquivalentTo([
@@ -323,6 +324,7 @@ public class QueryHelperTests
         var snapshots = Snapshots([
             Snapshot(id1, Time(1, 1)),
             Snapshot(id2, Time(1, 3)),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime),
             Snapshot(id3, Time(1, 4)),
         ]);
         snapshots.WhereBefore(filterCommit).Select(c => c.CommitId).Should().BeEquivalentTo([
@@ -359,6 +361,7 @@ public class QueryHelperTests
             Snapshot(commitId1, hybridDateTime),
             Snapshot(commitId2, hybridDateTime),
             Snapshot(commitId3, hybridDateTime),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime),
         ]);
         snapshots.WhereBefore(filterCommit).Select(c => c.CommitId).Should().BeEquivalentTo([
             commitId1
@@ -394,6 +397,7 @@ public class QueryHelperTests
             Commit(id1, Time(1, 0)),
             Commit(id2, Time(3, 0)),
             Commit(id3, Time(4, 0)),
+            filterCommit
         ]);
         commits.WhereBefore(filterCommit).Select(c => c.Id).Should().BeEquivalentTo([
             id1
@@ -424,6 +428,7 @@ public class QueryHelperTests
             Commit(id1, Time(1, 1)),
             Commit(id2, Time(1, 3)),
             Commit(id3, Time(1, 4)),
+            filterCommit
         ]);
         commits.WhereBefore(filterCommit).Select(c => c.Id).Should().BeEquivalentTo([
             id1,
@@ -459,6 +464,7 @@ public class QueryHelperTests
             Commit(commitId1, hybridDateTime),
             Commit(commitId2, hybridDateTime),
             Commit(commitId3, hybridDateTime),
+            filterCommit
         ]);
         commits.WhereBefore(filterCommit).Select(c => c.Id).Should().BeEquivalentTo([
             commitId1

@@ -89,10 +89,21 @@ public static class QueryHelpers
         || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter == c.HybridDateTime.Counter && after.Id < c.Id));
     }
 
-    public static IQueryable<T> WhereBefore<T>(this IQueryable<T> queryable, T after) where T : CommitBase
+    public static IQueryable<T> WhereBefore<T>(this IQueryable<T> queryable, T before, bool inclusive = false) where T : CommitBase
     {
-        return queryable.Where(c => c.HybridDateTime.DateTime < after.HybridDateTime.DateTime
-        || (c.HybridDateTime.DateTime == after.HybridDateTime.DateTime && c.HybridDateTime.Counter < after.HybridDateTime.Counter)
-        || (c.HybridDateTime.DateTime == after.HybridDateTime.DateTime && c.HybridDateTime.Counter == after.HybridDateTime.Counter && c.Id < after.Id));
+        if (inclusive)
+        {
+
+            return queryable.Where(c => c.HybridDateTime.DateTime < before.HybridDateTime.DateTime
+                                        || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
+                                            c.HybridDateTime.Counter < before.HybridDateTime.Counter)
+                                        || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
+                                            c.HybridDateTime.Counter == before.HybridDateTime.Counter &&
+                                            c.Id < before.Id)
+                                        || c.Id == before.Id);
+        }
+        return queryable.Where(c => c.HybridDateTime.DateTime < before.HybridDateTime.DateTime
+        || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime && c.HybridDateTime.Counter < before.HybridDateTime.Counter)
+        || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime && c.HybridDateTime.Counter == before.HybridDateTime.Counter && c.Id < before.Id));
     }
 }

@@ -6,8 +6,8 @@ namespace SIL.Harmony.Db;
 
 public interface ICrdtDbContext
 {
-    DbSet<Commit> Commits => Set<Commit>();
-    DbSet<ObjectSnapshot> Snapshots => Set<ObjectSnapshot>();
+    IQueryable<Commit> Commits => Set<Commit>();
+    IQueryable<ObjectSnapshot> Snapshots => Set<ObjectSnapshot>();
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     ValueTask<object?> FindAsync(Type entityType, params object?[]? keyValues);
     DbSet<TEntity> Set<TEntity>() where TEntity : class;
@@ -15,5 +15,6 @@ public interface ICrdtDbContext
     EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class;
     EntityEntry Entry(object entity);
     EntityEntry Add(object entity);
+    void AddRange(IEnumerable<object> entities);
     EntityEntry Remove(object entity);
 }

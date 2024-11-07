@@ -23,7 +23,10 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly IOptions<CrdtConfig> _crdtConfig;
 
     //constructor must be internal because CrdtRepository is internal
-    internal DataModel(CrdtRepository crdtRepository, JsonSerializerOptions serializerOptions, IHybridDateTimeProvider timeProvider, IOptions<CrdtConfig> crdtConfig)
+    internal DataModel(CrdtRepository crdtRepository,
+        JsonSerializerOptions serializerOptions,
+        IHybridDateTimeProvider timeProvider,
+        IOptions<CrdtConfig> crdtConfig)
     {
         _crdtRepository = crdtRepository;
         _serializerOptions = serializerOptions;
@@ -77,9 +80,10 @@ public class DataModel : ISyncable, IAsyncDisposable
         };
         await Add(commit, deferCommit);
         return commit;
-    } 
+    }
 
     private List<Commit> _deferredCommits = [];
+
     private async Task Add(Commit commit, bool deferSnapshotUpdates)
     {
         if (await _crdtRepository.HasCommit(commit.Id)) return;
@@ -97,6 +101,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         {
             _deferredCommits.Add(commit);
         }
+
         await transaction.CommitAsync();
     }
 
@@ -184,19 +189,15 @@ public class DataModel : ISyncable, IAsyncDisposable
             var actualParentCommit = await _crdtRepository.FindCommitByHash(commit.ParentHash);
 
             throw new CommitValidationException(
-                $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit} and actual parent {actualParentCommit}");
+                $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit?.ToString() ?? "null"} and actual parent {actualParentCommit?.ToString() ?? "null"}");
         }
     }
 
-    public async Task<ObjectSnapshot?> GetEntitySnapshotAtTime(DateTimeOffset time, Guid entityId)
-    {
-        var snapshots = await GetSnapshotsAt(time);
-        return snapshots.GetValueOrDefault(entityId);
-    }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
     {
-        return await _crdtRepository.GetCurrentSnapshotByObjectId(entityId) ?? throw new ArgumentException($"unable to find snapshot for entity {entityId}");
+        return await _crdtRepository.GetCurrentSnapshotByObjectId(entityId) ??
+               throw new ArgumentException($"unable to find snapshot for entity {entityId}");
     }
 
     public async Task<T?> GetLatest<T>(Guid objectId) where T : class
@@ -214,8 +215,10 @@ public class DataModel : ISyncable, IAsyncDisposable
         var q = _crdtRepository.GetCurrentObjects<T>();
         if (q is IQueryable<IOrderableCrdt>)
         {
-            q = q.OrderBy(o => EF.Property<double>(o, nameof(IOrderableCrdt.Order))).ThenBy(o => EF.Property<Guid>(o, nameof(IOrderableCrdt.Id)));
+            q = q.OrderBy(o => EF.Property<double>(o, nameof(IOrderableCrdt.Order)))
+                .ThenBy(o => EF.Property<Guid>(o, nameof(IOrderableCrdt.Id)));
         }
+
         return q;
     }
 
@@ -224,17 +227,57 @@ public class DataModel : ISyncable, IAsyncDisposable
         return await _crdtRepository.GetObjectBySnapshotId<T>(snapshotId);
     }
 
-    public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAt(DateTimeOffset dateTime)
+    public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAtCommit(Commit commit)
     {
-        var repository = _crdtRepository.GetScopedRepository(dateTime);
+        var repository = _crdtRepository.GetScopedRepository(commit);
         var (snapshots, pendingCommits) = await repository.GetCurrentSnapshotsAndPendingCommits();
 
         if (pendingCommits.Length != 0)
         {
-            snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots, repository, pendingCommits, _crdtConfig.Value);
+            snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots,
+                repository,
+                pendingCommits,
+                _crdtConfig.Value);
         }
 
         return snapshots;
+    }
+
+    public async Task<T> GetAtTime<T>(DateTimeOffset time, Guid entityId)
+    {
+        var commitBefore = await _crdtRepository.CurrentCommits().LastOrDefaultAsync(c => c.HybridDateTime.DateTime <= time);
+        if (commitBefore is null) throw new ArgumentException("unable to find any commits");
+        return await GetAtCommit<T>(commitBefore, entityId);
+    }
+
+    public async Task<T> GetAtCommit<T>(Guid commitId, Guid entityId)
+    {
+        return await GetAtCommit<T>(await _crdtRepository.CurrentCommits().SingleAsync(c => c.Id == commitId),
+            entityId);
+    }
+
+    public async Task<T> GetAtCommit<T>(Commit commit, Guid entityId)
+    {
+        var repository = _crdtRepository.GetScopedRepository(commit);
+        var snapshot = await repository.GetCurrentSnapshotByObjectId(entityId, false);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        var newCommits = await repository.CurrentCommits()
+            .Include(c => c.ChangeEntities)
+            .WhereAfter(snapshot.Commit)
+            .ToArrayAsync();
+        if (newCommits.Length > 0)
+        {
+            var snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(
+                new Dictionary<Guid, ObjectSnapshot>([
+                    new KeyValuePair<Guid, ObjectSnapshot>(snapshot.EntityId, snapshot)
+                ]),
+                repository,
+                newCommits,
+                _crdtConfig.Value);
+            snapshot = snapshots[snapshot.EntityId];
+        }
+
+        return (T)snapshot.Entity.DbObject;
     }
 
     public async Task<SyncState> GetSyncState()

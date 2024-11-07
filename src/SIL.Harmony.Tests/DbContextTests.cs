@@ -27,7 +27,7 @@ public class DbContextTests: DataModelTestBase
             ClientId = Guid.NewGuid(),
             HybridDateTime = new HybridDateTime(expectedDateTime, 0)
         };
-        DbContext.Commits.Add(commit);
+        DbContext.Add(commit);
         await DbContext.SaveChangesAsync();
         var actualCommit = await DbContext.Commits.AsNoTracking().SingleOrDefaultAsyncEF(c => c.Id == commitId);
         actualCommit!.HybridDateTime.DateTime.Should().Be(expectedDateTime, "EF");
@@ -46,7 +46,7 @@ public class DbContextTests: DataModelTestBase
         var commitId = Guid.NewGuid();
         var expectedDateTime = new DateTimeOffset(2000, 1, 1, 1, 11, 11, TimeSpan.FromHours(offset));
 
-        await DbContext.Commits.ToLinqToDBTable().AsValueInsertable()
+        await DbContext.Set<Commit>().ToLinqToDBTable().AsValueInsertable()
             .Value(c => c.Id, commitId)
             .Value(c => c.ClientId, Guid.NewGuid())
             .Value(c => c.HybridDateTime.DateTime, expectedDateTime)
@@ -74,7 +74,7 @@ public class DbContextTests: DataModelTestBase
         for (int i = 0; i < 50; i++)
         {
             var offset = new TimeSpan((long)(i * scale));
-            DbContext.Commits.Add(new Commit
+            DbContext.Add(new Commit
             {
                 ClientId = Guid.NewGuid(),
                 HybridDateTime = new HybridDateTime(baseDateTime.Add(offset), 0)

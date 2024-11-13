@@ -5,6 +5,8 @@
 // ------------------------------------------------------------------------------
 
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Ycs
 {
@@ -197,7 +199,7 @@ namespace Ycs
             CheckDisposed();
 
             var jsonString = Reader.ReadVarString();
-            var result = Newtonsoft.Json.JsonConvert.DeserializeObject(jsonString);
+            var result = JsonSerializer.Deserialize<JsonNode>(jsonString);
             return result;
         }
 

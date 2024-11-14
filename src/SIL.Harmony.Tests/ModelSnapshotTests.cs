@@ -33,6 +33,59 @@ public class ModelSnapshotTests : DataModelTestBase
         snapshot.LastChange.Should().Be(secondChange.DateTime);
     }
 
+    [Fact]
+    public async Task CanGetWordForASpecificCommit()
+    {
+        var entityId = Guid.NewGuid();
+        var firstCommit = await WriteNextChange(SetWord(entityId, "first"));
+        var secondCommit = await WriteNextChange(SetWord(entityId, "second"));
+        var thirdCommit = await WriteNextChange(SetWord(entityId, "third"));
+        await ClearNonRootSnapshots();
+        var firstWord = await DataModel.GetAtCommit<Word>(firstCommit.Id, entityId);
+        firstWord.Should().NotBeNull();
+        firstWord.Text.Should().Be("first");
+
+        var secondWord = await DataModel.GetAtCommit<Word>(secondCommit.Id, entityId);
+        secondWord.Should().NotBeNull();
+        secondWord.Text.Should().Be("second");
+
+        var thirdWord = await DataModel.GetAtCommit<Word>(thirdCommit.Id, entityId);
+        thirdWord.Should().NotBeNull();
+        thirdWord.Text.Should().Be("third");
+    }
+
+    [Fact]
+    public async Task CanGetWordForASpecificTime()
+    {
+        var entityId = Guid.NewGuid();
+        var firstCommit = await WriteNextChange(SetWord(entityId, "first"));
+        var secondCommit = await WriteNextChange(SetWord(entityId, "second"));
+        var thirdCommit = await WriteNextChange(SetWord(entityId, "third"));
+        //ensures that SnapshotWorker.ApplyCommitsToSnapshots will be called when getting the snapshots
+        await ClearNonRootSnapshots();
+        var firstWord = await DataModel.GetAtTime<Word>(firstCommit.DateTime.AddMinutes(5), entityId);
+        firstWord.Should().NotBeNull();
+        firstWord.Text.Should().Be("first");
+
+        var secondWord = await DataModel.GetAtTime<Word>(secondCommit.DateTime.AddMinutes(5), entityId);
+        secondWord.Should().NotBeNull();
+        secondWord.Text.Should().Be("second");
+
+        //just before the 3rd commit should still be second
+        secondWord = await DataModel.GetAtTime<Word>(thirdCommit.DateTime.Subtract(TimeSpan.FromSeconds(5)), entityId);
+        secondWord.Should().NotBeNull();
+        secondWord.Text.Should().Be("second");
+
+        var thirdWord = await DataModel.GetAtTime<Word>(thirdCommit.DateTime.AddMinutes(5), entityId);
+        thirdWord.Should().NotBeNull();
+        thirdWord.Text.Should().Be("third");
+    }
+
+    private Task ClearNonRootSnapshots()
+    {
+        return DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync();
+    }
+
     [Theory]
     [InlineData(10)]
     [InlineData(100)]
@@ -56,7 +109,7 @@ public class ModelSnapshotTests : DataModelTestBase
 
         for (int i = 0; i < changeCount; i++)
         {
-            var snapshots = await DataModel.GetSnapshotsAt(changes[i].DateTime);
+            var snapshots = await DataModel.GetSnapshotsAtCommit(changes[i]);
             var entry = snapshots[entityId].Entity.Is<Word>();
             entry.Text.Should().Be($"change {i}");
             snapshots.Values.Should().HaveCount(1 + i);
@@ -77,7 +130,7 @@ public class ModelSnapshotTests : DataModelTestBase
         //delete snapshots so when we get at then we need to re-apply
         await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync();
 
-        var computedModelSnapshots = await DataModel.GetSnapshotsAt(latestSnapshot.Commit.DateTime);
+        var computedModelSnapshots = await DataModel.GetSnapshotsAtCommit(latestSnapshot.Commit);
 
         var entitySnapshot = computedModelSnapshots.Should().ContainSingle().Subject.Value;
         entitySnapshot.Should().BeEquivalentTo(latestSnapshot, options => options.Excluding(snapshot => snapshot.Id).Excluding(snapshot => snapshot.Commit).Excluding(s => s.Entity.DbObject));

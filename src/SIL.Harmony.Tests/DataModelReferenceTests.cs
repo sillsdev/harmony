@@ -47,9 +47,9 @@ public class DataModelReferenceTests : DataModelTestBase
     {
         var refAdd = await WriteNextChange(new AddAntonymReferenceChange(_word1Id, _word2Id));
         await WriteNextChange(new DeleteChange<Word>(_word2Id));
-        var entitySnapshot1 = await DataModel.GetEntitySnapshotAtTime(refAdd.DateTime, _word1Id);
-        entitySnapshot1.Should().NotBeNull();
-        entitySnapshot1!.Entity.Is<Word>().AntonymId.Should().Be(_word2Id);
+        var word = await DataModel.GetAtCommit<Word>(refAdd.Id, _word1Id);
+        word.Should().NotBeNull();
+        word.AntonymId.Should().Be(_word2Id);
     }
 
     [Fact]

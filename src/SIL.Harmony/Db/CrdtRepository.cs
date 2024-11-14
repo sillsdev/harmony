@@ -1,6 +1,7 @@
 using SIL.Harmony.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
@@ -10,9 +11,26 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
-internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> crdtConfig, DateTimeOffset? ignoreChangesAfter = null)
+internal class CrdtRepository
 {
+    private readonly ICrdtDbContext _dbContext;
+    private readonly IOptions<CrdtConfig> _crdtConfig;
+
+    public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
+        Commit? ignoreChangesAfter = null)
+    {
+        _crdtConfig = crdtConfig;
+        _dbContext = ignoreChangesAfter is not null ? new ScopedDbContext(dbContext, ignoreChangesAfter) : dbContext;
+        //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
+        //but since we're using a custom query, we can use it directly and apply the scoped filters manually
+        _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
+    }
+    
+
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
+
+    private IQueryable<Commit> Commits => _dbContext.Commits;
+
     public Task<IDbContextTransaction> BeginTransactionAsync()
     {
         return _dbContext.Database.BeginTransactionAsync();
@@ -23,13 +41,13 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 
     public async Task<bool> HasCommit(Guid commitId)
     {
-        return await _dbContext.Commits.AnyAsync(c => c.Id == commitId);
+        return await Commits.AnyAsync(c => c.Id == commitId);
     }
 
     public async Task<(Commit? oldestChange, Commit[] newCommits)> FilterExistingCommits(ICollection<Commit> commits)
     {
         Commit? oldestChange = null;
-        var commitIdsToExclude = await _dbContext.Commits
+        var commitIdsToExclude = await Commits
             .Where(c => commits.Select(c => c.Id).Contains(c.Id))
             .Select(c => c.Id)
             .ToArrayAsync();
@@ -54,29 +72,37 @@ internal class CrdtRepository(ICrdtDbContext _dbContext, IOptions<CrdtConfig> cr
 
     public IQueryable<Commit> CurrentCommits()
     {
-        var query = _dbContext.Commits.DefaultOrder();
-        if (ignoreChangesAfter is not null) query = query.Where(c => c.HybridDateTime.DateTime <= ignoreChangesAfter);
-        return query;
+        return Commits.DefaultOrder();
     }
 
+    private static IQueryable<ObjectSnapshot> MakeCurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? ignoreChangesAfter)
+    {
+        var ignoreAfterDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
+        var ignoreAfterCounter = ignoreChangesAfter?.HybridDateTime.Counter;
+        var ignoreAfterCommitId = ignoreChangesAfter?.Id;
+        return dbContext.Set<ObjectSnapshot>().FromSql(
+            $"""
+             WITH LatestSnapshots AS (SELECT first_value(s1.Id)
+                 OVER (
+                 PARTITION BY "s1"."EntityId"
+                 ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
+                 ) AS "LatestSnapshotId"
+                                      FROM "Snapshots" AS "s1"
+                                               INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
+                  WHERE {ignoreAfterDate} IS NULL
+                     OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
+                         ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId}))
+             SELECT *
+             FROM "Snapshots" AS "s"
+                      INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"
+             GROUP BY s.EntityId
+             """).AsNoTracking();
+    }
+
+    private readonly IQueryable<ObjectSnapshot> _currentSnapshotsQueryable;
     public IQueryable<ObjectSnapshot> CurrentSnapshots()
     {
-        var ignoreDate = ignoreChangesAfter?.UtcDateTime;
-        return _dbContext.Snapshots.FromSql(
-$"""
-WITH LatestSnapshots AS (SELECT first_value(s1.Id)
-    OVER (
-    PARTITION BY "s1"."EntityId"
-    ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
-    ) AS "LatestSnapshotId"
-                         FROM "Snapshots" AS "s1"
-                                  INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
-                         WHERE "c"."DateTime" < {ignoreDate} OR {ignoreDate} IS NULL)
-SELECT *
-FROM "Snapshots" AS "s"
-         INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"
-GROUP BY s.EntityId
-""").AsNoTracking();
+        return _currentSnapshotsQueryable;
     }
 
     public IAsyncEnumerable<SimpleSnapshot> CurrenSimpleSnapshots(bool includeDeleted = false)
@@ -97,17 +123,6 @@ GROUP BY s.EntityId
         return snapshots;
     }
 
-    private IQueryable<Guid> CurrentSnapshotIds()
-    {
-        return Snapshots.GroupBy(s => s.EntityId,
-            (entityId, snapshots) => snapshots
-                    //unfortunately this can not be extracted into a helper because the whole thing is part of an expression
-                .OrderByDescending(c => c.Commit.HybridDateTime.DateTime)
-                .ThenByDescending(c => c.Commit.HybridDateTime.Counter)
-                .ThenByDescending(c => c.Commit.Id)
-                .First(s => ignoreChangesAfter == null || s.Commit.HybridDateTime.DateTime <= ignoreChangesAfter).Id);
-    }
-
     public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, Commit[] pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
     {
         var snapshots = await CurrentSnapshots().Include(s => s.Commit).ToDictionaryAsync(s => s.EntityId);
@@ -124,21 +139,21 @@ GROUP BY s.EntityId
 
     public async Task<Commit?> FindCommitByHash(string hash)
     {
-        return await _dbContext.Commits.SingleOrDefaultAsync(c => c.Hash == hash);
+        return await Commits.SingleOrDefaultAsync(c => c.Hash == hash);
     }
 
     public async Task<Commit?> FindPreviousCommit(Commit commit)
     {
         //can't trust the parentHash actually, so we can't do this.
         // if (!string.IsNullOrWhiteSpace(commit.ParentHash)) return await FindCommitByHash(commit.ParentHash);
-        return await _dbContext.Commits.WhereBefore(commit)
+        return await Commits.WhereBefore(commit)
             .DefaultOrderDescending()
             .FirstOrDefaultAsync();
     }
 
     public async Task<Commit[]> GetCommitsAfter(Commit? commit)
     {
-        var dbContextCommits = _dbContext.Commits.Include(c => c.ChangeEntities);
+        var dbContextCommits = Commits.Include(c => c.ChangeEntities);
         if (commit is null) return await dbContextCommits.DefaultOrder().ToArrayAsync();
         return await dbContextCommits
             .WhereAfter(commit)
@@ -147,7 +162,7 @@ GROUP BY s.EntityId
     }
 
     public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)
-    {        
+    {
         return await Snapshots
             .AsTracking(tracking)
             .Include(s => s.Commit)
@@ -156,9 +171,11 @@ GROUP BY s.EntityId
 
     public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId, bool tracking = false)
     {
-        return await Snapshots.AsTracking(tracking).Include(s => s.Commit)
+        return await Snapshots
+            .AsTracking(tracking)
+            .Include(s => s.Commit)
             .DefaultOrder()
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
+            .LastOrDefaultAsync(s => s.EntityId == objectId);
     }
 
     public async Task<T> GetObjectBySnapshotId<T>(Guid snapshotId)
@@ -173,15 +190,13 @@ GROUP BY s.EntityId
 
     public async Task<T?> GetCurrent<T>(Guid objectId) where T: class
     {
-        var snapshot = await Snapshots
-            .DefaultOrder()
-            .LastOrDefaultAsync(s => s.EntityId == objectId && (ignoreChangesAfter == null || s.Commit.DateTime <= ignoreChangesAfter));
+        var snapshot = await GetCurrentSnapshotByObjectId(objectId);
         return (T?) snapshot?.Entity.DbObject;
     }
 
     public IQueryable<T> GetCurrentObjects<T>() where T : class
     {
-        if (crdtConfig.Value.EnableProjectedTables)
+        if (_crdtConfig.Value.EnableProjectedTables)
         {
             return _dbContext.Set<T>();
         }
@@ -190,23 +205,19 @@ GROUP BY s.EntityId
 
     public async Task<SyncState> GetCurrentSyncState()
     {
-        var queryable = _dbContext.Commits.AsQueryable();
-        if (ignoreChangesAfter is not null)
-            queryable = queryable.Where(c => c.HybridDateTime.DateTime <= ignoreChangesAfter);
-        return await queryable.GetSyncState();
+        return await Commits.GetSyncState();
     }
 
     public async Task<ChangesResult<Commit>> GetChanges(SyncState remoteState)
     {
-        var dbContextCommits = _dbContext.Commits;
-        return await dbContextCommits.GetChanges<Commit, IChange>(remoteState);
+        return await _dbContext.Commits.GetChanges<Commit, IChange>(remoteState);
     }
 
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
         foreach (var objectSnapshot in snapshots)
         {
-            _dbContext.Snapshots.Add(objectSnapshot);
+            _dbContext.Add(objectSnapshot);
             await SnapshotAdded(objectSnapshot);
         }
 
@@ -217,8 +228,8 @@ GROUP BY s.EntityId
     {
         foreach (var snapshot in snapshots)
         {
-            
-            if (_dbContext.Snapshots.Local.FindEntry(snapshot.Id) is not null) continue;
+
+            if (_dbContext.Set<ObjectSnapshot>().Local.FindEntry(snapshot.Id) is not null) continue;
             _dbContext.Add(snapshot);
             await SnapshotAdded(snapshot);
         }
@@ -228,15 +239,17 @@ GROUP BY s.EntityId
 
     private async ValueTask SnapshotAdded(ObjectSnapshot objectSnapshot)
     {
-        if (!crdtConfig.Value.EnableProjectedTables) return;
+        if (!_crdtConfig.Value.EnableProjectedTables) return;
         if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
         var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
+        object? entity;
         if (existingEntry is null && objectSnapshot.IsRoot)
         {
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
-            _dbContext.Add((object)objectSnapshot.Entity.Copy().DbObject)
+            entity = objectSnapshot.Entity.Copy().DbObject;
+            _dbContext.Add(entity)
                 .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
             return;
         }
@@ -248,37 +261,38 @@ GROUP BY s.EntityId
             return;
         }
 
-        existingEntry.CurrentValues.SetValues(objectSnapshot.Entity.DbObject);
+        entity = objectSnapshot.Entity.DbObject;
+        existingEntry.CurrentValues.SetValues(entity);
         existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
     }
 
     private async ValueTask<EntityEntry?> GetEntityEntry(Type entityType, Guid entityId)
     {
-        if (!crdtConfig.Value.EnableProjectedTables) return null;
+        if (!_crdtConfig.Value.EnableProjectedTables) return null;
         var entity = await _dbContext.FindAsync(entityType, entityId);
         return entity is not null ? _dbContext.Entry(entity) : null;
     }
 
-    public CrdtRepository GetScopedRepository(DateTimeOffset newCurrentTime)
+    public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
     {
-        return new CrdtRepository(_dbContext, crdtConfig, newCurrentTime);
+        return new CrdtRepository(_dbContext, _crdtConfig, excludeChangesAfterCommit);
     }
 
     public async Task AddCommit(Commit commit)
     {
-        _dbContext.Commits.Add(commit);
+        _dbContext.Add(commit);
         await _dbContext.SaveChangesAsync();
     }
 
     public async Task AddCommits(IEnumerable<Commit> commits, bool save = true)
     {
-        _dbContext.Commits.AddRange(commits);
+        _dbContext.AddRange(commits);
         if (save) await _dbContext.SaveChangesAsync();
     }
 
     public HybridDateTime? GetLatestDateTime()
     {
-        return _dbContext.Commits
+        return Commits
             .DefaultOrderDescending()
             .AsNoTracking()
             .Select(c => c.HybridDateTime)
@@ -308,5 +322,54 @@ GROUP BY s.EntityId
     public async Task<LocalResource?> GetLocalResource(Guid resourceId)
     {
         return await _dbContext.Set<LocalResource>().FindAsync(resourceId);
+    }
+}
+
+internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) : ICrdtDbContext
+{
+    public IQueryable<Commit> Commits => inner.Commits.WhereBefore(ignoreChangesAfter, inclusive: true);
+
+    public IQueryable<ObjectSnapshot> Snapshots => inner.Snapshots.WhereBefore(ignoreChangesAfter, inclusive: true);
+
+    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        return inner.SaveChangesAsync(cancellationToken);
+    }
+
+    public ValueTask<object?> FindAsync(Type entityType, params object?[]? keyValues)
+    {
+        throw new NotSupportedException("can not support FindAsync when using scoped db context");
+    }
+
+    public DbSet<TEntity> Set<TEntity>() where TEntity : class
+    {
+        throw new NotSupportedException("can not support Set<T> when using scoped db context");
+    }
+
+    public DatabaseFacade Database => inner.Database;
+
+    public EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class
+    {
+        return inner.Entry(entity);
+    }
+
+    public EntityEntry Entry(object entity)
+    {
+        return inner.Entry(entity);
+    }
+
+    public EntityEntry Add(object entity)
+    {
+        return inner.Add(entity);
+    }
+
+    public void AddRange(IEnumerable<object> entities)
+    {
+        inner.AddRange(entities);
+    }
+
+    public EntityEntry Remove(object entity)
+    {
+        return inner.Remove(entity);
     }
 }

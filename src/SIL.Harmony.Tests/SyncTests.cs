@@ -1,4 +1,5 @@
-﻿using SIL.Harmony.Sample.Models;
+﻿using SIL.Harmony.Sample.Changes;
+using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
 
@@ -102,5 +103,20 @@ public class SyncTests : IAsyncLifetime
                 entity.Should().BeEquivalentTo(serverEntity);
             }
         }
+    }
+
+    [Fact]
+    public async Task CanSync_AddDependentWithMultipleChanges()
+    {
+        var entity1Id = Guid.NewGuid();
+        var definitionId = Guid.NewGuid();
+        await _client1.WriteNextChange(_client1.SetWord(entity1Id, "entity1"));
+        await _client1.WriteNextChange(_client1.NewDefinition(entity1Id, "def1", "pos1", definitionId: definitionId));
+        await _client1.WriteNextChange(new SetDefinitionPartOfSpeechChange(definitionId, "pos2"));
+
+        await _client2.DataModel.SyncWith(_client1.DataModel);
+
+        _client2.DataModel.QueryLatest<Definition>().Should()
+            .BeEquivalentTo(_client1.DataModel.QueryLatest<Definition>());
     }
 }

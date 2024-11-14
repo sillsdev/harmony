@@ -4,6 +4,7 @@ using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Engines;
+using BenchmarkDotNet.Exporters.Json;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Running;
 using JetBrains.Profiler.SelfApi;
@@ -23,15 +24,19 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
     [Fact]
     public void AddingChangePerformance()
     {
+        #if DEBUG
+        Assert.Fail("This test is disabled in debug builds, not reliable");
+        #endif
         var summary =
             BenchmarkRunner.Run<DataModelPerformanceBenchmarks>(
                 ManualConfig.CreateEmpty()
+                    .AddExporter(JsonExporter.FullCompressed)
                     .AddColumnProvider(DefaultColumnProviders.Instance)
                     .AddLogger(new XUnitBenchmarkLogger(output))
             );
         foreach (var benchmarkCase in summary.BenchmarksCases.Where(b => !summary.IsBaseline(b)))
         {
-            var ratio = double.Parse(BaselineRatioColumn.RatioMean.GetValue(summary, benchmarkCase));
+            var ratio = double.Parse(BaselineRatioColumn.RatioMean.GetValue(summary, benchmarkCase), System.Globalization.CultureInfo.InvariantCulture);
             //for now it just makes sure that no case is worse that 7x, this is based on the 10_000 test being 5 times worse.
             //it would be better to have this scale off the number of changes
             ratio.Should().BeInRange(0, 7, "performance should not get worse, benchmark " + benchmarkCase.DisplayInfo);
@@ -120,8 +125,8 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
             };
             commit.SetParentHash(parentHash);
             parentHash = commit.Hash;
-            dataModelTest.DbContext.Commits.Add(commit);
-            dataModelTest.DbContext.Snapshots.Add(new ObjectSnapshot(await change.NewEntity(commit, null!), commit, true));
+            dataModelTest.DbContext.Add(commit);
+            dataModelTest.DbContext.Add(new ObjectSnapshot(await change.NewEntity(commit, null!), commit, true));
         }
 
         await dataModelTest.DbContext.SaveChangesAsync();
@@ -188,7 +193,7 @@ public class DataModelPerformanceBenchmarks
     [GlobalSetup]
     public void GlobalSetup()
     {
-        _templateModel = new DataModelTestBase(alwaysValidate: false);
+        _templateModel = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
         DataModelPerformanceTests.BulkInsertChanges(_templateModel, StartingSnapshots).GetAwaiter().GetResult();
     }
 
@@ -198,7 +203,7 @@ public class DataModelPerformanceBenchmarks
     [IterationSetup]
     public void IterationSetup()
     {
-        _emptyDataModel = new(alwaysValidate: false);
+        _emptyDataModel = new(alwaysValidate: false, performanceTest: true);
         _ = _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result;
         _dataModelTestBase = _templateModel.ForkDatabase(false);
     }

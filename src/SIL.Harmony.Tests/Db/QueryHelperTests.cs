@@ -15,7 +15,8 @@ public class QueryHelperTests
     private Commit Commit(Guid id, HybridDateTime hybridDateTime) =>
         new(id) { ClientId = Guid.Empty, HybridDateTime = hybridDateTime };
 
-    private ObjectSnapshot Snapshot(Guid commitId, HybridDateTime hybridDateTime) => ObjectSnapshot.ForTesting(Commit(commitId, hybridDateTime));
+    private ObjectSnapshot Snapshot(Guid commitId, HybridDateTime hybridDateTime) =>
+        ObjectSnapshot.ForTesting(Commit(commitId, hybridDateTime));
 
     private IQueryable<Commit> Commits(IEnumerable<Commit> commits) => commits.AsQueryable();
     private IQueryable<ObjectSnapshot> Snapshots(IEnumerable<ObjectSnapshot> snapshots) => snapshots.AsQueryable();
@@ -283,6 +284,111 @@ public class QueryHelperTests
         ]);
     }
 
+
+
+    [Fact]
+    public void WhereBeforeSnapshot_FiltersOnDate()
+    {
+        var filterCommit = Commit(Guid.NewGuid(), Time(2, 0));
+        var snapshots = Snapshots([
+            Snapshot(id1, Time(1, 0)),
+            Snapshot(id2, Time(3, 0)),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime),
+            Snapshot(id3, Time(4, 0)),
+        ]);
+        snapshots.WhereBefore(filterCommit).Select(c => c.CommitId).Should().BeEquivalentTo([
+            id1
+        ]);
+    }
+
+    [Fact]
+    public void WhereBeforeSnapshotInclusive_FiltersOnDate()
+    {
+        var filterCommit = Commit(Guid.NewGuid(), Time(2, 0));
+        var snapshots = Snapshots([
+            Snapshot(id1, Time(1, 0)),
+            Snapshot(id2, Time(3, 0)),
+            Snapshot(id3, Time(4, 0)),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime)
+        ]);
+        snapshots.WhereBefore(filterCommit, inclusive: true).Select(c => c.CommitId).Should().BeEquivalentTo([
+            id1,
+            filterCommit.Id
+        ]);
+    }
+
+    [Fact]
+    public void WhereBeforeSnapshot_FiltersOnCounter()
+    {
+        var filterCommit = Commit(Guid.NewGuid(), Time(1, 2));
+        var snapshots = Snapshots([
+            Snapshot(id1, Time(1, 1)),
+            Snapshot(id2, Time(1, 3)),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime),
+            Snapshot(id3, Time(1, 4)),
+        ]);
+        snapshots.WhereBefore(filterCommit).Select(c => c.CommitId).Should().BeEquivalentTo([
+            id1,
+        ]);
+    }
+
+    [Fact]
+    public void WhereBeforeSnapshotInclusive_FiltersOnCounter()
+    {
+        var filterCommit = Commit(Guid.NewGuid(), Time(1, 2));
+        var snapshots = Snapshots([
+            Snapshot(id1, Time(1, 1)),
+            Snapshot(id2, Time(1, 3)),
+            Snapshot(id3, Time(1, 4)),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime),
+        ]);
+        snapshots.WhereBefore(filterCommit, inclusive: true).Select(c => c.CommitId).Should().BeEquivalentTo([
+            id1,
+            filterCommit.Id
+        ]);
+    }
+
+    [Fact]
+    public void WhereBeforeSnapshot_FiltersOnId()
+    {
+        var hybridDateTime = Time(1, 1);
+        Guid[] ids = OrderedIds(4);
+        var commitId1 = ids[0];
+        var filterCommit = Commit(ids[1], hybridDateTime);
+        var commitId2 = ids[2];
+        var commitId3 = ids[3];
+        var snapshots = Snapshots([
+            Snapshot(commitId1, hybridDateTime),
+            Snapshot(commitId2, hybridDateTime),
+            Snapshot(commitId3, hybridDateTime),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime),
+        ]);
+        snapshots.WhereBefore(filterCommit).Select(c => c.CommitId).Should().BeEquivalentTo([
+            commitId1
+        ]);
+    }
+
+    [Fact]
+    public void WhereBeforeSnapshotInclusive_FiltersOnId()
+    {
+        var hybridDateTime = Time(1, 1);
+        Guid[] ids = OrderedIds(4);
+        var commitId1 = ids[0];
+        var filterCommit = Commit(ids[1], hybridDateTime);
+        var commitId2 = ids[2];
+        var commitId3 = ids[3];
+        var snapshots = Snapshots([
+            Snapshot(commitId1, hybridDateTime),
+            Snapshot(filterCommit.Id, filterCommit.HybridDateTime),
+            Snapshot(commitId2, hybridDateTime),
+            Snapshot(commitId3, hybridDateTime),
+        ]);
+        snapshots.WhereBefore(filterCommit, inclusive: true).Select(c => c.CommitId).Should().BeEquivalentTo([
+            commitId1,
+            filterCommit.Id
+        ]);
+    }
+
     [Fact]
     public void WhereBeforeCommit_FiltersOnDate()
     {
@@ -291,9 +397,26 @@ public class QueryHelperTests
             Commit(id1, Time(1, 0)),
             Commit(id2, Time(3, 0)),
             Commit(id3, Time(4, 0)),
+            filterCommit
         ]);
         commits.WhereBefore(filterCommit).Select(c => c.Id).Should().BeEquivalentTo([
             id1
+        ]);
+    }
+
+    [Fact]
+    public void WhereBeforeCommitInclusive_FiltersOnDate()
+    {
+        var filterCommit = Commit(Guid.NewGuid(), Time(2, 0));
+        var commits = Commits([
+            Commit(id1, Time(1, 0)),
+            Commit(id2, Time(3, 0)),
+            Commit(id3, Time(4, 0)),
+            filterCommit
+        ]);
+        commits.WhereBefore(filterCommit, inclusive: true).Select(c => c.Id).Should().BeEquivalentTo([
+            id1,
+            filterCommit.Id
         ]);
     }
 
@@ -305,9 +428,26 @@ public class QueryHelperTests
             Commit(id1, Time(1, 1)),
             Commit(id2, Time(1, 3)),
             Commit(id3, Time(1, 4)),
+            filterCommit
         ]);
         commits.WhereBefore(filterCommit).Select(c => c.Id).Should().BeEquivalentTo([
-            id1
+            id1,
+        ]);
+    }
+
+    [Fact]
+    public void WhereBeforeCommitInclusive_FiltersOnCounter()
+    {
+        var filterCommit = Commit(Guid.NewGuid(), Time(1, 2));
+        var commits = Commits([
+            Commit(id1, Time(1, 1)),
+            Commit(id2, Time(1, 3)),
+            Commit(id3, Time(1, 4)),
+            filterCommit
+        ]);
+        commits.WhereBefore(filterCommit, inclusive: true).Select(c => c.Id).Should().BeEquivalentTo([
+            id1,
+            filterCommit.Id
         ]);
     }
 
@@ -324,9 +464,31 @@ public class QueryHelperTests
             Commit(commitId1, hybridDateTime),
             Commit(commitId2, hybridDateTime),
             Commit(commitId3, hybridDateTime),
+            filterCommit
         ]);
         commits.WhereBefore(filterCommit).Select(c => c.Id).Should().BeEquivalentTo([
             commitId1
+        ]);
+    }
+
+    [Fact]
+    public void WhereBeforeCommitInclusive_FiltersOnId()
+    {
+        var hybridDateTime = Time(1, 1);
+        Guid[] ids = OrderedIds(4);
+        var commitId1 = ids[0];
+        var filterCommit = Commit(ids[1], hybridDateTime);
+        var commitId2 = ids[2];
+        var commitId3 = ids[3];
+        var commits = Commits([
+            Commit(commitId1, hybridDateTime),
+            filterCommit,
+            Commit(commitId2, hybridDateTime),
+            Commit(commitId3, hybridDateTime),
+        ]);
+        commits.WhereBefore(filterCommit, inclusive: true).Select(c => c.Id).Should().BeEquivalentTo([
+            commitId1,
+            filterCommit.Id
         ]);
     }
 }

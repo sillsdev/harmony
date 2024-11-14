@@ -124,13 +124,15 @@
       PartOfSpeech (string) Required
       SnapshotId (no field, Guid?) Shadow FK Index
       Text (string) Required
-      WordId (Guid) Required
+      WordId (Guid) Required FK Index
     Keys: 
       Id PK
     Foreign keys: 
       Definition {'SnapshotId'} -> ObjectSnapshot {'Id'} Unique SetNull
+      Definition {'WordId'} -> Word {'Id'} Required Cascade
     Indexes: 
       SnapshotId Unique
+      WordId
     Annotations: 
       DiscriminatorProperty: 
       Relational:FunctionName: 

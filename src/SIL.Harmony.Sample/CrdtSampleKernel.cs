@@ -15,16 +15,16 @@ public static class CrdtSampleKernel
     {
         return services.AddCrdtDataSample(builder => builder.UseSqlite($"Data Source={dbPath}"));
     }
-    public static IServiceCollection AddCrdtDataSample(this IServiceCollection services, DbConnection connection)
-    {
-        return services.AddCrdtDataSample(builder => builder.UseSqlite(connection, true));
-    }
 
     public static IServiceCollection AddCrdtDataSample(this IServiceCollection services,
-        Action<DbContextOptionsBuilder> optionsBuilder) 
+        Action<DbContextOptionsBuilder> optionsBuilder, bool performanceTest = false)
     {
         services.AddDbContext<SampleDbContext>((provider, builder) =>
         {
+            //this ensures that Ef Conversion methods will not be cached across different IoC containers
+            //this can show up as the second instance using the JsonSerializerOptions from the first container
+            //only needed for testing scenarios
+            builder.EnableServiceProviderCaching(performanceTest);
             builder.UseLinqToDbCrdt(provider);
             optionsBuilder(builder);
             builder.EnableDetailedErrors();
@@ -46,13 +46,20 @@ public static class CrdtSampleKernel
                 .Add<SetWordNoteChange>()
                 .Add<AddAntonymReferenceChange>()
                 .Add<SetOrderChange<Definition>>()
+                .Add<SetDefinitionPartOfSpeechChange>()
                 .Add<DeleteChange<Word>>()
                 .Add<DeleteChange<Definition>>()
                 .Add<DeleteChange<Example>>()
                 ;
             config.ObjectTypeListBuilder.DefaultAdapter()
                 .Add<Word>()
-                .Add<Definition>()
+                .Add<Definition>(builder =>
+                {
+                    builder.HasOne<Word>()
+                        .WithMany()
+                        .HasForeignKey(d => d.WordId)
+                        .OnDelete(DeleteBehavior.Cascade);
+                })
                 .Add<Example>();
         });
         return services;

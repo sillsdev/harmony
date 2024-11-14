@@ -193,22 +193,52 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task CurrentSnapshots_FiltersByDate()
+    public async Task ScopedRepo_CurrentSnapshots_FiltersByCounter()
     {
         var entityId = Guid.NewGuid();
-        var commit1Time = Time(1, 0);
-        var commit2Time = Time(3, 0);
+        //not sorting as we want to order based on the hybrid date time counter
+        Guid[] commitIds = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        var snapshot1 = Snapshot(entityId, commitIds[0], Time(1, 0));
+        var snapshot2 = Snapshot(entityId, commitIds[1], Time(2, 0));
+        var snapshot3 = Snapshot(entityId, commitIds[2], Time(2, 1));
         await _repository.AddSnapshots([
-            Snapshot(entityId, Guid.NewGuid(), commit1Time),
-            Snapshot(entityId, Guid.NewGuid(), commit2Time),
+            snapshot3,
+            snapshot1,
+            snapshot2,
         ]);
 
         var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
-        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(commit2Time);
+        var commit = snapshots.Should().ContainSingle().Subject.Commit;
+        commit.Id.Should().Be(commitIds[2]);
 
-        var newCurrentTime = Time(2, 0).DateTime;
-        snapshots = await _repository.GetScopedRepository(newCurrentTime).CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
-        snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(commit1Time);
+        snapshots = await _repository.GetScopedRepository(snapshot2.Commit).CurrentSnapshots().Include(s => s.Commit)
+            .ToArrayAsync();
+        commit = snapshots.Should().ContainSingle().Subject.Commit;
+        commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
+    }
+
+    [Fact]
+    public async Task ScopedRepo_CurrentSnapshots_FiltersByCommitId()
+    {
+        var entityId = Guid.NewGuid();
+        Guid[] commitIds = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
+        Array.Sort(commitIds);
+        var snapshot1 = Snapshot(entityId, commitIds[0], Time(1, 0));
+        var snapshot2 = Snapshot(entityId, commitIds[1], Time(2, 0));
+        var snapshot3 = Snapshot(entityId, commitIds[2], Time(2, 0));
+        await _repository.AddSnapshots([
+            snapshot3,
+            snapshot1,
+            snapshot2,
+        ]);
+
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        var commit = snapshots.Should().ContainSingle().Subject.Commit;
+        commit.Id.Should().Be(commitIds[2]);
+
+        snapshots = await _repository.GetScopedRepository(snapshot2.Commit).CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        commit = snapshots.Should().ContainSingle().Subject.Commit;
+        commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
     }
 
     [Fact]
@@ -283,11 +313,34 @@ public class RepositoryTests : IAsyncLifetime
     {
         var commit = Commit(Guid.NewGuid(), Time(1, 0));
         await _repository.AddCommit(commit);
-        
+
         var queriedCommit = _repository.CurrentCommits()
             .AsNoTracking()//ensures that the commit which is tracked above is not returned
             .Include(c => c.ChangeEntities)
             .Should().ContainSingle().Subject;
         queriedCommit.Should().NotBeSameAs(commit).And.BeEquivalentTo(commit);
+    }
+
+    [Fact]
+    public async Task FindPreviousCommit_Works()
+    {
+        var commit1 = Commit(Guid.NewGuid(), Time(1, 0));
+        var commit2 = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommits([commit1, commit2]);
+
+        var previousCommit = await _repository.FindPreviousCommit(commit2);
+        ArgumentNullException.ThrowIfNull(previousCommit);
+        previousCommit.Id.Should().Be(commit1.Id);
+    }
+
+    [Fact]
+    public async Task FindPreviousCommit_ReturnsNullForFirstCommit()
+    {
+        var commit1 = Commit(Guid.NewGuid(), Time(1, 0));
+        var commit2 = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommits([commit1, commit2]);
+
+        var previousCommit = await _repository.FindPreviousCommit(commit1);
+        previousCommit.Should().BeNull();
     }
 }

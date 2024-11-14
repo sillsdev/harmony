@@ -10,10 +10,17 @@ public class Word : IObjectBase<Word>
     public Guid Id { get; init; }
     public DateTimeOffset? DeletedAt { get; set; }
     public Guid? AntonymId { get; set; }
+    public Guid? ImageResourceId { get; set; }
 
     public Guid[] GetReferences()
     {
-        return AntonymId is null ? [] : [AntonymId.Value];
+        return Refs().ToArray();
+
+        IEnumerable<Guid> Refs()
+        {
+            if (AntonymId.HasValue) yield return AntonymId.Value;
+            if (ImageResourceId.HasValue) yield return ImageResourceId.Value;
+        }
     }
 
     public void RemoveReference(Guid id, Commit commit)

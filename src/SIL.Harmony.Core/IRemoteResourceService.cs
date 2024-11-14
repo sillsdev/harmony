@@ -5,7 +5,7 @@
 /// the remote Id is opaque to the CRDT lib and could be a URL or some other identifier provided by the backend
 /// the local path returned for the application code to use as required, it could be a URL if needed also.
 /// </summary>
-public interface IResourceService
+public interface IRemoteResourceService
 {
     /// <summary>
     /// instructs application code to download a resource from the remote server

@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Tests.ResourceTests;
@@ -6,6 +7,7 @@ namespace SIL.Harmony.Tests.ResourceTests;
 public class RemoteResourcesTests : DataModelTestBase
 {
     private RemoteServiceMock _remoteServiceMock = new();
+    private ResourceService _resourceService => _services.GetRequiredService<ResourceService>();
 
     public RemoteResourcesTests()
     {
@@ -30,7 +32,7 @@ public class RemoteResourcesTests : DataModelTestBase
     {
         var file = CreateFile(contents, fileName);
         //because resource service is null the file is not uploaded
-        var resourceId = await DataModel.AddLocalResource(file, _localClientId, resourceService: null);
+        var resourceId = await _resourceService.AddLocalResource(file, _localClientId, resourceService: null);
         return (resourceId, file);
     }
 
@@ -40,7 +42,7 @@ public class RemoteResourcesTests : DataModelTestBase
         var (_, file) = await SetupLocalFile("contents");
 
         //act
-        var pending = await DataModel.ListResourcesPendingUpload();
+        var pending = await _resourceService.ListResourcesPendingUpload();
 
 
         pending.Should().ContainSingle().Which.LocalPath.Should().Be(file);
@@ -52,7 +54,7 @@ public class RemoteResourcesTests : DataModelTestBase
         var (resourceId, remoteId) = await SetupRemoteResource("test");
 
         //act
-        var pending = await DataModel.ListResourcesPendingDownload();
+        var pending = await _resourceService.ListResourcesPendingDownload();
 
 
         var remoteResource = pending.Should().ContainSingle().Subject;
@@ -68,14 +70,14 @@ public class RemoteResourcesTests : DataModelTestBase
 
         //act
         var resourceId =
-            await DataModel.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
+            await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
 
 
         var resource = await DataModel.GetLatest<RemoteResource>(resourceId);
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(resource.RemoteId);
         _remoteServiceMock.ReadFile(resource.RemoteId).Should().Be(fileContents);
-        var pendingUpload = await DataModel.ListResourcesPendingUpload();
+        var pendingUpload = await _resourceService.ListResourcesPendingUpload();
         pendingUpload.Should().BeEmpty();
     }
 
@@ -86,7 +88,7 @@ public class RemoteResourcesTests : DataModelTestBase
         await SetupLocalFile("file2", "file2");
 
         //act
-        await DataModel.UploadPendingResources(_localClientId, _remoteServiceMock);
+        await _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock);
 
 
         _remoteServiceMock.ListFiles()
@@ -102,13 +104,13 @@ public class RemoteResourcesTests : DataModelTestBase
         var (resourceId, _) = await SetupRemoteResource(fileContents);
 
         //act
-        var localResource = await DataModel.DownloadResource(resourceId, _remoteServiceMock);
+        var localResource = await _resourceService.DownloadResource(resourceId, _remoteServiceMock);
 
 
         localResource.Id.Should().Be(resourceId);
         var actualFileContents = await File.ReadAllTextAsync(localResource.LocalPath);
         actualFileContents.Should().Be(fileContents);
-        var pendingDownloads = await DataModel.ListResourcesPendingDownload();
+        var pendingDownloads = await _resourceService.ListResourcesPendingDownload();
         pendingDownloads.Should().BeEmpty();
     }
 
@@ -117,10 +119,10 @@ public class RemoteResourcesTests : DataModelTestBase
     {
         var file = CreateFile("resource");
         //because resource service is null the file is not uploaded
-        var resourceId = await DataModel.AddLocalResource(file, _localClientId, resourceService: null);
+        var resourceId = await _resourceService.AddLocalResource(file, _localClientId, resourceService: null);
 
         //act
-        var localResource = await DataModel.GetLocalResource(resourceId);
+        var localResource = await _resourceService.GetLocalResource(resourceId);
 
 
         localResource.Should().NotBeNull();
@@ -131,7 +133,7 @@ public class RemoteResourcesTests : DataModelTestBase
     public async Task LocalResourceIsNullIfNotDownloaded()
     {
         var (resourceId, _) = await SetupRemoteResource("test");
-        var localResource = await DataModel.GetLocalResource(resourceId);
+        var localResource = await _resourceService.GetLocalResource(resourceId);
         localResource.Should().BeNull();
     }
 }

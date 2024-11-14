@@ -26,6 +26,12 @@ public static class CrdtKernel
             provider.GetRequiredService<IHybridDateTimeProvider>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>()
         ));
+        //must use factory method because ResourceService constructor is internal
+        services.AddScoped<ResourceService>(provider => new ResourceService(
+            provider.GetRequiredService<CrdtRepository>(),
+            provider.GetRequiredService<IOptions<CrdtConfig>>(),
+            provider.GetRequiredService<DataModel>()
+        ));
         return services;
     }
 

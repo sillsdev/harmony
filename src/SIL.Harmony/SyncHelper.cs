@@ -5,9 +5,13 @@ namespace SIL.Harmony;
 
 internal static class SyncHelper
 {
-    public static async Task<SyncResults> SyncWithResourceUpload(this DataModel localModel, ISyncable remoteModel, IResourceService resourceService, Guid localClientId)
+    public static async Task<SyncResults> SyncWithResourceUpload(this DataModel localModel,
+        ISyncable remoteModel,
+        ResourceService resourceService,
+        IRemoteResourceService remoteResourceService,
+        Guid localClientId)
     {
-        await localModel.UploadPendingResources(localClientId, resourceService);
+        await resourceService.UploadPendingResource(localClientId, localClientId, remoteResourceService);
         return await localModel.SyncWith(remoteModel);
     }
 

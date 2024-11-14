@@ -2,7 +2,7 @@
 
 namespace SIL.Harmony.Tests.ResourceTests;
 
-public class RemoteServiceMock : IResourceService
+public class RemoteServiceMock : IRemoteResourceService
 {
     public static readonly string RemotePath = Directory.CreateTempSubdirectory("RemoteServiceMock").FullName;
 

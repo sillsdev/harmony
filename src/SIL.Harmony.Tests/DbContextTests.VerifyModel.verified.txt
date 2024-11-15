@@ -167,6 +167,7 @@
       Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
       AntonymId (Guid?)
       DeletedAt (DateTimeOffset?)
+      ImageResourceId (Guid?)
       Note (string)
       SnapshotId (no field, Guid?) Shadow FK Index
       Text (string) Required

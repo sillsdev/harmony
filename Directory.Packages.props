@@ -22,6 +22,6 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
     <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
     <PackageVersion Include="linq2db.AspNet" Version="5.4.1" />
-    <PackageVersion Include="linq2db.EntityFrameworkCore" Version="9.0.0-rc.2" />
+    <PackageVersion Include="linq2db.EntityFrameworkCore" Version="9.0.0" />
   </ItemGroup>
 </Project>

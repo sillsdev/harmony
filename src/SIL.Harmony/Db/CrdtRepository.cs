@@ -310,6 +310,10 @@ internal class CrdtRepository
     {
         return _dbContext.Set<LocalResource>().Where(r => resourceIds.Contains(r.Id)).AsAsyncEnumerable();
     }
+    public IAsyncEnumerable<LocalResource> LocalResources()
+    {
+        return _dbContext.Set<LocalResource>().AsAsyncEnumerable();
+    }
 
     /// <summary>
     /// primarily for filtering other queries
@@ -323,6 +327,7 @@ internal class CrdtRepository
     {
         return await _dbContext.Set<LocalResource>().FindAsync(resourceId);
     }
+    
 }
 
 internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) : ICrdtDbContext

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Core;
 using SIL.Harmony.Db;
+using SIL.Harmony.Helpers;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony;
@@ -125,5 +126,21 @@ public class ResourceService
     public async Task<LocalResource?> GetLocalResource(Guid resourceId)
     {
         return await _crdtRepository.GetLocalResource(resourceId);
+    }
+
+    public async Task<CrdtResource[]> AllResources()
+    {
+        var remoteResources = await _dataModel.QueryLatest<RemoteResource>().ToArrayAsync();
+        var localResources = await _crdtRepository.LocalResources().ToArrayAsync();
+        return remoteResources.FullOuterJoin<RemoteResource, LocalResource, Guid, CrdtResource>(localResources,
+            r => r.Id,
+            l => l.Id,
+            (r, l, id) => new CrdtResource
+            {
+                Id = id,
+                RemoteId = r?.RemoteId,
+                LocalPath = l?.LocalPath
+            }).ToArray();
+
     }
 }

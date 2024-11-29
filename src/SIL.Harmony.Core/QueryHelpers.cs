@@ -6,7 +6,7 @@ public static class QueryHelpers
 {
     public static async Task<SyncState> GetSyncState(this IQueryable<CommitBase> commits)
     {
-        var dict = await commits.GroupBy(c => c.ClientId)
+        var dict = await commits.AsNoTracking().GroupBy(c => c.ClientId)
             .Select(g => new { ClientId = g.Key, DateTime = g.Max(c => c.HybridDateTime.DateTime) })
             .AsAsyncEnumerable()//this is so the ticks are calculated server side instead of the db
             .ToDictionaryAsync(c => c.ClientId, c => c.DateTime.ToUnixTimeMilliseconds());

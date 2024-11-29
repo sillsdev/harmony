@@ -38,7 +38,7 @@ public class RemoteServiceMock : IRemoteResourceService
         return File.ReadAllText(remoteId);
     }
 
-    public IEnumerable<string> ListFiles()
+    public IEnumerable<string> ListRemoteFiles()
     {
         return Directory.GetFiles(RemotePath);
     }

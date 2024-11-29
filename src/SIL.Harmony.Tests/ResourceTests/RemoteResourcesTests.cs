@@ -91,7 +91,7 @@ public class RemoteResourcesTests : DataModelTestBase
         await _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock);
 
 
-        _remoteServiceMock.ListFiles()
+        _remoteServiceMock.ListRemoteFiles()
             .Select(Path.GetFileName)
             .Should()
             .Contain(["file1.txt", "file2.txt"]);

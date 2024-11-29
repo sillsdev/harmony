@@ -4,7 +4,11 @@
 //  </copyright>
 // ------------------------------------------------------------------------------
 
+using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace Ycs
 {
@@ -12,14 +16,14 @@ namespace Ycs
     {
         internal const int _ref = 2;
 
-        private readonly List<object> _content;
+        private readonly List<JsonNode> _content;
 
-        internal ContentJson(IEnumerable<object> data)
+        internal ContentJson(IEnumerable<JsonNode> data)
         {
-            _content = new List<object>(data);
+            _content = new List<JsonNode>(data);
         }
 
-        private ContentJson(List<object> other)
+        private ContentJson(List<JsonNode> other)
         {
             _content = other;
         }
@@ -29,7 +33,7 @@ namespace Ycs
         public bool Countable => true;
         public int Length => _content?.Count ?? 0;
 
-        public IReadOnlyList<object> GetContent() => _content.AsReadOnly();
+        public IReadOnlyList<object> GetContent() => new ReadOnlyCollection<object>(_content.OfType<object>().ToList());
 
         public IContent Copy() => new ContentJson(_content);
 
@@ -68,7 +72,7 @@ namespace Ycs
             encoder.WriteLength(len);
             for (int i = offset; i < len; i++)
             {
-                var jsonStr = Newtonsoft.Json.JsonConvert.SerializeObject(_content[i]);
+                var jsonStr = JsonSerializer.Serialize(_content[i]);
                 encoder.WriteString(jsonStr);
             }
         }
@@ -76,14 +80,14 @@ namespace Ycs
         internal static ContentJson Read(IUpdateDecoder decoder)
         {
             var len = decoder.ReadLength();
-            var content = new List<object>(len);
+            var content = new List<JsonNode>(len);
 
             for (int i = 0; i < len; i++)
             {
                 var jsonStr = decoder.ReadString();
-                object jsonObj = string.Equals(jsonStr, "undefined")
+                JsonNode jsonObj = string.Equals(jsonStr, "undefined")
                     ? null
-                    : Newtonsoft.Json.JsonConvert.DeserializeObject(jsonStr);
+                    : JsonSerializer.Deserialize<JsonNode>(jsonStr);
                 content.Add(jsonObj);
             }
 

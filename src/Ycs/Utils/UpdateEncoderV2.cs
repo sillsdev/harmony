@@ -5,6 +5,7 @@
 // ------------------------------------------------------------------------------
 
 using System.Diagnostics;
+using System.Text.Json;
 
 namespace Ycs
 {
@@ -201,7 +202,7 @@ namespace Ycs
 
         public void WriteJson<T>(T any)
         {
-            var jsonString = Newtonsoft.Json.JsonConvert.SerializeObject(any, typeof(T), null);
+            var jsonString = JsonSerializer.Serialize(any);
             RestWriter.WriteVarString(jsonString);
         }
 

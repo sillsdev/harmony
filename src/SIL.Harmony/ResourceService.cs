@@ -26,7 +26,10 @@ public class ResourceService
         if (!_crdtConfig.Value.RemoteResourcesEnabled) throw new RemoteResourceNotEnabledException();
     }
 
-    public async Task<Guid> AddLocalResource(string resourcePath, Guid clientId, Guid id = default, IRemoteResourceService? resourceService = null)
+    public async Task<CrdtResource> AddLocalResource(string resourcePath,
+        Guid clientId,
+        Guid id = default,
+        IRemoteResourceService? resourceService = null)
     {
         ValidateResourcesSetup();
         var localResource = new LocalResource
@@ -41,13 +44,23 @@ public class ResourceService
         {
             var uploadResult = await resourceService.UploadResource(localResource.LocalPath);
             await _dataModel.AddChange(clientId, new CreateRemoteResourceChange(localResource.Id, uploadResult.RemoteId));
+            await transaction.CommitAsync();
+            return new CrdtResource
+            {
+                Id = localResource.Id,
+                RemoteId = uploadResult.RemoteId,
+                LocalPath = localResource.LocalPath
+            };
         }
-        else
-        {
-            await _dataModel.AddChange(clientId, new CreateRemoteResourcePendingUploadChange(localResource.Id));
-        }
+
+        await _dataModel.AddChange(clientId, new CreateRemoteResourcePendingUploadChange(localResource.Id));
         await transaction.CommitAsync();
-        return localResource.Id;
+        return new CrdtResource
+        {
+            Id = localResource.Id,
+            RemoteId = null,
+            LocalPath = localResource.LocalPath
+        };
     }
 
     public async Task<LocalResource[]> ListResourcesPendingUpload()
@@ -106,7 +119,11 @@ public class ResourceService
     public async Task<LocalResource> DownloadResource(Guid resourceId, IRemoteResourceService remoteResourceService)
     {
         ValidateResourcesSetup();
-        return await DownloadResource(await _dataModel.GetLatest<RemoteResource>(resourceId) ?? throw new EntityNotFoundException("Unable to find remote resource"), remoteResourceService);
+        return await DownloadResource(
+            await _dataModel.GetLatest<RemoteResource>(resourceId) ??
+            throw new EntityNotFoundException("Unable to find remote resource"),
+            remoteResourceService
+        );
     }
 
     public async Task<LocalResource> DownloadResource(RemoteResource remoteResource, IRemoteResourceService remoteResourceService)
@@ -141,6 +158,5 @@ public class ResourceService
                 RemoteId = r?.RemoteId,
                 LocalPath = l?.LocalPath
             }).ToArray();
-
     }
 }

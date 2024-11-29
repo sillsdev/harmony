@@ -32,8 +32,8 @@ public class RemoteResourcesTests : DataModelTestBase
     {
         var file = CreateFile(contents, fileName);
         //because resource service is null the file is not uploaded
-        var resourceId = await _resourceService.AddLocalResource(file, _localClientId, resourceService: null);
-        return (resourceId, file);
+        var crdtResource = await _resourceService.AddLocalResource(file, _localClientId, resourceService: null);
+        return (crdtResource.Id, file);
     }
 
     [Fact]
@@ -69,11 +69,10 @@ public class RemoteResourcesTests : DataModelTestBase
         var localFile = CreateFile(fileContents);
 
         //act
-        var resourceId =
-            await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
+        var crdtResource = await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
 
 
-        var resource = await DataModel.GetLatest<RemoteResource>(resourceId);
+        var resource = await DataModel.GetLatest<RemoteResource>(crdtResource.Id);
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(resource.RemoteId);
         _remoteServiceMock.ReadFile(resource.RemoteId).Should().Be(fileContents);
@@ -119,10 +118,10 @@ public class RemoteResourcesTests : DataModelTestBase
     {
         var file = CreateFile("resource");
         //because resource service is null the file is not uploaded
-        var resourceId = await _resourceService.AddLocalResource(file, _localClientId, resourceService: null);
+        var crdtResource = await _resourceService.AddLocalResource(file, _localClientId, resourceService: null);
 
         //act
-        var localResource = await _resourceService.GetLocalResource(resourceId);
+        var localResource = await _resourceService.GetLocalResource(crdtResource.Id);
 
 
         localResource.Should().NotBeNull();
@@ -135,5 +134,31 @@ public class RemoteResourcesTests : DataModelTestBase
         var (resourceId, _) = await SetupRemoteResource("test");
         var localResource = await _resourceService.GetLocalResource(resourceId);
         localResource.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task CanListAllResources()
+    {
+        var (localResourceId, localResourcePath) = await SetupLocalFile("localOnly", "localOnly.txt");
+        var (remoteResourceId, remoteId) = await SetupRemoteResource("remoteOnly");
+        var localAndRemoteResource = await _resourceService.AddLocalResource(CreateFile("localAndRemove"), _localClientId, resourceService: _remoteServiceMock);
+
+        var crdtResources = await _resourceService.AllResources();
+        crdtResources.Should().BeEquivalentTo(
+            [
+                new CrdtResource
+                {
+                    Id = localResourceId,
+                    LocalPath = localResourcePath,
+                    RemoteId = null
+                },
+                new CrdtResource
+                {
+                    Id = remoteResourceId,
+                    LocalPath = null, 
+                    RemoteId = remoteId
+                },
+                localAndRemoteResource
+            ]);
     }
 }

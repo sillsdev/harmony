@@ -25,12 +25,12 @@ public class WordResourceTests: DataModelTestBase
         var imageFile = CreateFile("not image data");
         //set commit date for add local resource
         MockTimeProvider.SetNextDateTime(NextDate());
-        var resourceId = await _resourceService.AddLocalResource(imageFile, Guid.NewGuid(), resourceService: _remoteServiceMock);
-        await WriteNextChange(new AddWordImageChange(_entity1Id, resourceId));
+        var resource = await _resourceService.AddLocalResource(imageFile, Guid.NewGuid(), resourceService: _remoteServiceMock);
+        await WriteNextChange(new AddWordImageChange(_entity1Id, resource.Id));
 
         var word = await DataModel.GetLatest<Word>(_entity1Id);
         word.Should().NotBeNull();
-        word!.ImageResourceId.Should().Be(resourceId);
+        word!.ImageResourceId.Should().Be(resource.Id);
         
         
         var localResource = await _resourceService.GetLocalResource(word.ImageResourceId!.Value);

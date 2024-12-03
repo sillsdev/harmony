@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
+using SIL.Harmony.Resource;
 
 namespace SIL.Harmony;
 
@@ -87,8 +88,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task Add(Commit commit, bool deferSnapshotUpdates)
     {
         if (await _crdtRepository.HasCommit(commit.Id)) return;
-
-        await using var transaction = await _crdtRepository.BeginTransactionAsync();
+        await using var transaction = _crdtRepository.IsInTransaction ? null : await _crdtRepository.BeginTransactionAsync();
         await _crdtRepository.AddCommit(commit);
         if (!deferSnapshotUpdates)
         {
@@ -101,8 +101,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         {
             _deferredCommits.Add(commit);
         }
-
-        await transaction.CommitAsync();
+        if (transaction is not null) await transaction.CommitAsync();
     }
 
     public async ValueTask DisposeAsync()

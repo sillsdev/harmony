@@ -194,7 +194,7 @@ internal class CrdtRepository
     {
         if (_crdtConfig.Value.EnableProjectedTables)
         {
-            return _dbContext.Set<T>();
+            return _dbContext.Set<T>().AsNoTracking();
         }
         throw new NotSupportedException("GetCurrentObjects is not supported when not using projected tables");
     }

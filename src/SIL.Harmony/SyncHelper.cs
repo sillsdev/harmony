@@ -11,7 +11,7 @@ internal static class SyncHelper
         IRemoteResourceService remoteResourceService,
         Guid localClientId)
     {
-        await resourceService.UploadPendingResource(localClientId, localClientId, remoteResourceService);
+        await resourceService.UploadPendingResources(localClientId, remoteResourceService);
         return await localModel.SyncWith(remoteModel);
     }
 

@@ -25,12 +25,28 @@ public class RemoteServiceMock : IRemoteResourceService
         File.Copy(remoteId, localPath);
         return Task.FromResult(new DownloadResult(localPath));
     }
+    
+    private readonly Queue<string> _throwOnUpload = new();
 
-    public Task<UploadResult> UploadResource(string localPath)
+    public async Task<UploadResult> UploadResource(string localPath)
     {
+        await Task.Yield();//yield back to the scheduler to emulate how exceptions are thrown
+        if (_throwOnUpload.TryPeek(out var throwOnUpload))
+        {
+            if (throwOnUpload == localPath)
+            {
+                _throwOnUpload.Dequeue();
+                throw new Exception($"Simulated upload failure for {localPath}");
+            }
+        }
         var remoteId = Path.Combine(RemotePath, Path.GetFileName(localPath));
         File.Copy(localPath, remoteId);
-        return Task.FromResult(new UploadResult(remoteId));
+        return new UploadResult(remoteId);
+    }
+
+    public void ThrowOnUpload(string localPath)
+    {
+        _throwOnUpload.Enqueue(localPath);
     }
 
     public string ReadFile(string remoteId)

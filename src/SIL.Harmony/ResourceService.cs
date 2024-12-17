@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Core;
@@ -13,12 +14,14 @@ public class ResourceService
     private readonly CrdtRepository _crdtRepository;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly DataModel _dataModel;
+    private readonly ILogger<ResourceService> _logger;
 
-    internal ResourceService(CrdtRepository crdtRepository, IOptions<CrdtConfig> crdtConfig, DataModel dataModel)
+    internal ResourceService(CrdtRepository crdtRepository, IOptions<CrdtConfig> crdtConfig, DataModel dataModel, ILogger<ResourceService> logger)
     {
         _crdtRepository = crdtRepository;
         _crdtConfig = crdtConfig;
         _dataModel = dataModel;
+        _logger = logger;
     }
 
     private void ValidateResourcesSetup()
@@ -40,25 +43,34 @@ public class ResourceService
         if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
         await using var transaction = await _crdtRepository.BeginTransactionAsync();
         await _crdtRepository.AddLocalResource(localResource);
+        UploadResult? uploadResult = null;
         if (resourceService is not null)
         {
-            var uploadResult = await resourceService.UploadResource(localResource.LocalPath);
-            await _dataModel.AddChange(clientId, new CreateRemoteResourceChange(localResource.Id, uploadResult.RemoteId));
-            await transaction.CommitAsync();
-            return new HarmonyResource
+            try
             {
-                Id = localResource.Id,
-                RemoteId = uploadResult.RemoteId,
-                LocalPath = localResource.LocalPath
-            };
+
+                uploadResult = await resourceService.UploadResource(localResource.LocalPath);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error uploading resource {resourcePath}, resource will be marked as pending upload", localResource.LocalPath);
+            }
         }
 
-        await _dataModel.AddChange(clientId, new CreateRemoteResourcePendingUploadChange(localResource.Id));
+        if (uploadResult is not null)
+        {
+            await _dataModel.AddChange(clientId, new CreateRemoteResourceChange(localResource.Id, uploadResult.RemoteId));
+        }
+        else
+        {
+            await _dataModel.AddChange(clientId, new CreateRemoteResourcePendingUploadChange(localResource.Id));
+        }
+
         await transaction.CommitAsync();
         return new HarmonyResource
         {
             Id = localResource.Id,
-            RemoteId = null,
+            RemoteId = uploadResult?.RemoteId,
             LocalPath = localResource.LocalPath
         };
     }

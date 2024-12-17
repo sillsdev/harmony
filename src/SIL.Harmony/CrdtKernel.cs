@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using SIL.Harmony.Core;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Db;
 
@@ -11,6 +12,7 @@ public static class CrdtKernel
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
         Action<CrdtConfig> configureCrdt) where TContext: ICrdtDbContext
     {
+        services.AddLogging();
         services.AddOptions<CrdtConfig>().Configure(configureCrdt).PostConfigure(crdtConfig => crdtConfig.ObjectTypeListBuilder.Freeze());
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
@@ -30,7 +32,8 @@ public static class CrdtKernel
         services.AddScoped<ResourceService>(provider => new ResourceService(
             provider.GetRequiredService<CrdtRepository>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
-            provider.GetRequiredService<DataModel>()
+            provider.GetRequiredService<DataModel>(),
+            provider.GetRequiredService<ILogger<ResourceService>>()
         ));
         return services;
     }

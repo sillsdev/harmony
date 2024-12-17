@@ -81,6 +81,27 @@ public class RemoteResourcesTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task IfUploadingFailsTheResourceIsStillAddedAsPendingUpload()
+    {
+        var fileContents = "resource";
+        var localFile = CreateFile(fileContents);
+
+        //todo setup a mock that throws an exception when uploading
+        _remoteServiceMock.ThrowOnUpload(localFile);
+        
+        //act
+        var crdtResource = await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
+
+        var harmonyResource = await _resourceService.GetResource(crdtResource.Id);
+        harmonyResource.Should().NotBeNull();
+        harmonyResource.Id.Should().Be(crdtResource.Id);
+        harmonyResource.RemoteId.Should().BeNull();
+        harmonyResource.LocalPath.Should().Be(localFile);
+        var pendingUpload = await _resourceService.ListResourcesPendingUpload();
+        pendingUpload.Should().ContainSingle().Which.Id.Should().Be(crdtResource.Id);
+    }
+
+    [Fact]
     public async Task WillUploadMultiplePendingLocalFilesAtOnce()
     {
         await SetupLocalFile("file1", "file1");

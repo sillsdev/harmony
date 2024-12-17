@@ -26,7 +26,7 @@ public class ResourceService
         if (!_crdtConfig.Value.RemoteResourcesEnabled) throw new RemoteResourceNotEnabledException();
     }
 
-    public async Task<CrdtResource> AddLocalResource(string resourcePath,
+    public async Task<HarmonyResource> AddLocalResource(string resourcePath,
         Guid clientId,
         Guid id = default,
         IRemoteResourceService? resourceService = null)
@@ -45,7 +45,7 @@ public class ResourceService
             var uploadResult = await resourceService.UploadResource(localResource.LocalPath);
             await _dataModel.AddChange(clientId, new CreateRemoteResourceChange(localResource.Id, uploadResult.RemoteId));
             await transaction.CommitAsync();
-            return new CrdtResource
+            return new HarmonyResource
             {
                 Id = localResource.Id,
                 RemoteId = uploadResult.RemoteId,
@@ -55,7 +55,7 @@ public class ResourceService
 
         await _dataModel.AddChange(clientId, new CreateRemoteResourcePendingUploadChange(localResource.Id));
         await transaction.CommitAsync();
-        return new CrdtResource
+        return new HarmonyResource
         {
             Id = localResource.Id,
             RemoteId = null,
@@ -145,18 +145,29 @@ public class ResourceService
         return await _crdtRepository.GetLocalResource(resourceId);
     }
 
-    public async Task<CrdtResource[]> AllResources()
+    public async Task<HarmonyResource[]> AllResources()
+    {
+        return (await AllResourcesInternal()).ToArray();
+    }
+
+    private async Task<IEnumerable<HarmonyResource>> AllResourcesInternal()
     {
         var remoteResources = await _dataModel.QueryLatest<RemoteResource>().ToArrayAsync();
         var localResources = await _crdtRepository.LocalResources().ToArrayAsync();
-        return remoteResources.FullOuterJoin<RemoteResource, LocalResource, Guid, CrdtResource>(localResources,
+        return remoteResources.FullOuterJoin<RemoteResource, LocalResource, Guid, HarmonyResource>(localResources,
             r => r.Id,
             l => l.Id,
-            (r, l, id) => new CrdtResource
+            (r, l, id) => new HarmonyResource
             {
                 Id = id,
                 RemoteId = r?.RemoteId,
                 LocalPath = l?.LocalPath
-            }).ToArray();
+            });
+    }
+
+    public async Task<HarmonyResource?> GetResource(Guid resourceId)
+    {
+        var resources = await AllResourcesInternal();
+        return resources.FirstOrDefault(r => r.Id == resourceId);
     }
 }

@@ -146,13 +146,13 @@ public class RemoteResourcesTests : DataModelTestBase
         var crdtResources = await _resourceService.AllResources();
         crdtResources.Should().BeEquivalentTo(
             [
-                new CrdtResource
+                new HarmonyResource
                 {
                     Id = localResourceId,
                     LocalPath = localResourcePath,
                     RemoteId = null
                 },
-                new CrdtResource
+                new HarmonyResource
                 {
                     Id = remoteResourceId,
                     LocalPath = null, 
@@ -160,5 +160,30 @@ public class RemoteResourcesTests : DataModelTestBase
                 },
                 localAndRemoteResource
             ]);
+    }
+
+    [Fact]
+    public async Task CanGetAResourceGivenAnId()
+    {
+        var (localResourceId, localResourcePath) = await SetupLocalFile("localOnly", "localOnly.txt");
+        var (remoteResourceId, remoteId) = await SetupRemoteResource("remoteOnly");
+        var localAndRemoteResource = await _resourceService.AddLocalResource(CreateFile("localAndRemove"),
+            _localClientId,
+            resourceService: _remoteServiceMock);
+        
+        (await _resourceService.GetResource(localResourceId)).Should().BeEquivalentTo(new HarmonyResource
+        {
+            Id = localResourceId,
+            LocalPath = localResourcePath,
+            RemoteId = null
+        });
+        (await _resourceService.GetResource(remoteResourceId)).Should().BeEquivalentTo(new HarmonyResource
+        {
+            Id = remoteResourceId,
+            LocalPath = null,
+            RemoteId = remoteId
+        });
+        (await _resourceService.GetResource(localAndRemoteResource.Id)).Should().BeEquivalentTo(localAndRemoteResource);
+        (await _resourceService.GetResource(Guid.NewGuid())).Should().BeNull();
     }
 }

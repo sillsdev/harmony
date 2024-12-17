@@ -1,6 +1,6 @@
 namespace SIL.Harmony.Resource;
 
-public class CrdtResource
+public class HarmonyResource
 {
     public required Guid Id { get; init; }
     public string? RemoteId { get; init; }

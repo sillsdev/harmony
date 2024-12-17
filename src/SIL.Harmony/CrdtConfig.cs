@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -6,6 +6,7 @@ using SIL.Harmony.Adapters;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
+using SIL.Harmony.Resource;
 
 namespace SIL.Harmony;
 public delegate ValueTask BeforeSaveObjectDelegate(object obj, ObjectSnapshot snapshot);
@@ -67,6 +68,25 @@ public class CrdtConfig
                 typeInfo.PolymorphismOptions!.DerivedTypes.Add(type);
             }
         }
+    }
+
+    public bool RemoteResourcesEnabled { get; private set; }
+    public string LocalResourceCachePath { get; set; } = Path.GetFullPath("./localResourceCache");
+    public void AddRemoteResourceEntity(string? cachePath = null)
+    {
+        RemoteResourcesEnabled = true;
+        LocalResourceCachePath = cachePath ?? LocalResourceCachePath;
+        ObjectTypeListBuilder.DefaultAdapter().Add<RemoteResource>();
+        ChangeTypeListBuilder.Add<RemoteResourceUploadedChange>();
+        ChangeTypeListBuilder.Add<CreateRemoteResourceChange>();
+        ChangeTypeListBuilder.Add<CreateRemoteResourcePendingUploadChange>();
+        ChangeTypeListBuilder.Add<DeleteChange<RemoteResource>>();
+        ObjectTypeListBuilder.ModelConfigurations.Add((builder, config) =>
+        {
+            var entity = builder.Entity<LocalResource>();
+            entity.HasKey(lr => lr.Id);
+            entity.Property(lr => lr.LocalPath);
+        });
     }
 }
 

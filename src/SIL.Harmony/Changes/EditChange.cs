@@ -1,4 +1,4 @@
-﻿namespace SIL.Harmony.Changes;
+namespace SIL.Harmony.Changes;
 
 public abstract class EditChange<T>(Guid entityId) : Change<T>(entityId)
     where T : class

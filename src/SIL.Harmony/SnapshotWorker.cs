@@ -125,7 +125,7 @@ internal class SnapshotWorker
                 {
                     intermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
                 }
-                
+
                 await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
                 AddSnapshot(newSnapshot);
@@ -200,6 +200,11 @@ internal class SnapshotWorker
         _snapshotLookup[entityId] = snapshot?.Id;
 
         return snapshot;
+    }
+
+    internal IAsyncEnumerable<ObjectSnapshot> GetSnapshotsReferencing(Guid entityId)
+    {
+        return _crdtRepository.CurrentSnapshots().Where(e => e.References.Contains(entityId)).AsAsyncEnumerable();
     }
 
     private void AddSnapshot(ObjectSnapshot snapshot)

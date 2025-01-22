@@ -17,6 +17,7 @@ public class ChangeContext
 
     public Commit Commit { get; }
     public async ValueTask<ObjectSnapshot?> GetSnapshot(Guid entityId) => await _worker.GetSnapshot(entityId);
+    public IAsyncEnumerable<object> GetObjectsReferencing(Guid entityId) => _worker.GetSnapshotsReferencing(entityId).Select(s => s.Entity.DbObject);
     public async ValueTask<T?> GetCurrent<T>(Guid entityId) where T : class
     {
         var snapshot = await GetSnapshot(entityId);

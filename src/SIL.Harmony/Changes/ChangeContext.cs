@@ -1,9 +1,10 @@
+using SIL.Harmony.Core;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Changes;
 
-public class ChangeContext
+public class ChangeContext : IChangeContext
 {
     private readonly SnapshotWorker _worker;
     private readonly CrdtConfig _crdtConfig;
@@ -15,7 +16,7 @@ public class ChangeContext
         Commit = commit;
     }
 
-    public Commit Commit { get; }
+    public Commit Commit { get; } // PROBLEM: Interface is CommitBase. How do I do this?
     public async ValueTask<ObjectSnapshot?> GetSnapshot(Guid entityId) => await _worker.GetSnapshot(entityId);
     public async ValueTask<T?> GetCurrent<T>(Guid entityId) where T : class
     {

@@ -74,4 +74,87 @@ public class SnapshotTests : DataModelTestBase
             ]);
         DbContext.Snapshots.Should().ContainSingle();
     }
+
+    [Fact]
+    public async Task CanRecreateUniqueConstraintConflictingValueInOneCommit()
+    {
+        var entityId = Guid.NewGuid();
+        await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                SetTag(entityId, "tag-1"),
+            ]);
+        await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                DeleteTag(entityId),
+                SetTag(Guid.NewGuid(), "tag-1"),
+            ]);
+    }
+
+    [Fact]
+    public async Task CanCreateDependantAndDeleteParentInOneSetOfCommits()
+    {
+        var entityId1 = Guid.NewGuid();
+        var entityId2 = Guid.NewGuid();
+        await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                SetWord(entityId1, "my-word1"),
+                SetWord(entityId2, "my-word2"),
+            ]);
+        // first add def then delete word
+        await AddCommitsViaSync([
+            await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                NewDefinition(entityId1, "my-definition", "noun"),
+            ], add: false),
+            await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                DeleteWord(entityId1),
+            ], add: false),
+        ]);
+        // first delete word then add def
+        await AddCommitsViaSync([
+            await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                DeleteWord(entityId2),
+            ], add: false),
+            await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                NewDefinition(entityId2, "my-definition", "noun"),
+            ], add: false),
+        ]);
+    }
+
+    [Fact]
+    public async Task CanCreateDependantAndDeleteParentInOneCommit()
+    {
+        var entityId1 = Guid.NewGuid();
+        var entityId2 = Guid.NewGuid();
+        await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                SetWord(entityId1, "my-word1"),
+                SetWord(entityId2, "my-word2"),
+            ]);
+        // first add def then delete word
+        await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                NewDefinition(entityId1, "my-definition", "noun"),
+                DeleteWord(entityId1),
+            ]);
+        // first delete word then add def
+        await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                DeleteWord(entityId2),
+                NewDefinition(entityId2, "my-definition", "noun"),
+            ]);
+    }
 }

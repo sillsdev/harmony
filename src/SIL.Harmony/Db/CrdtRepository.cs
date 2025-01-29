@@ -5,8 +5,6 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Entities;
-using SIL.Harmony.Helpers;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
@@ -15,6 +13,7 @@ internal class CrdtRepository
 {
     private readonly ICrdtDbContext _dbContext;
     private readonly IOptions<CrdtConfig> _crdtConfig;
+    private SnapshotScope? _snapshotScope;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
         Commit? ignoreChangesAfter = null)
@@ -25,7 +24,6 @@ internal class CrdtRepository
         //but since we're using a custom query, we can use it directly and apply the scoped filters manually
         _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
     }
-    
 
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
 
@@ -34,6 +32,16 @@ internal class CrdtRepository
     public Task<IDbContextTransaction> BeginTransactionAsync()
     {
         return _dbContext.Database.BeginTransactionAsync();
+    }
+
+    public SnapshotScope SnapshotScope()
+    {
+        if (_snapshotScope is not null) throw new InvalidOperationException("SnapshotScope already exists");
+        return _snapshotScope = new SnapshotScope(async (snapshots) =>
+        {
+            _snapshotScope = null;
+            await SnapshotsAdded(snapshots);
+        });
     }
 
     public bool IsInTransaction => _dbContext.Database.CurrentTransaction is not null;
@@ -218,9 +226,9 @@ internal class CrdtRepository
         foreach (var objectSnapshot in snapshots)
         {
             _dbContext.Add(objectSnapshot);
-            await SnapshotAdded(objectSnapshot);
+            if (_snapshotScope is not null) _snapshotScope.AddSnapshot(objectSnapshot);
+            else await SnapshotAdded(objectSnapshot);
         }
-
         await _dbContext.SaveChangesAsync();
     }
 
@@ -231,9 +239,19 @@ internal class CrdtRepository
 
             if (_dbContext.Set<ObjectSnapshot>().Local.FindEntry(snapshot.Id) is not null) continue;
             _dbContext.Add(snapshot);
-            await SnapshotAdded(snapshot);
+            if (_snapshotScope is not null) _snapshotScope.AddSnapshot(snapshot);
+            else await SnapshotAdded(snapshot);
         }
 
+        await _dbContext.SaveChangesAsync();
+    }
+
+    private async Task SnapshotsAdded(List<ObjectSnapshot> snapshots)
+    {
+        foreach (var objectSnapshot in snapshots)
+        {
+            await SnapshotAdded(objectSnapshot);
+        }
         await _dbContext.SaveChangesAsync();
     }
 
@@ -327,7 +345,6 @@ internal class CrdtRepository
     {
         return await _dbContext.Set<LocalResource>().FindAsync(resourceId);
     }
-    
 }
 
 internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) : ICrdtDbContext
@@ -376,5 +393,40 @@ internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) 
     public EntityEntry Remove(object entity)
     {
         return inner.Remove(entity);
+    }
+}
+
+internal record SnapshotScope(Func<List<ObjectSnapshot>, Task> OnDispose) : IAsyncDisposable
+{
+    private readonly HashSet<Guid> _deletedEntities = [];
+    private readonly List<ObjectSnapshot> _nonDeletedEntitySnapshots = [];
+    private readonly Dictionary<Guid, ObjectSnapshot> _deletedEntitySnapshots = [];
+
+    public void AddSnapshot(ObjectSnapshot snapshot)
+    {
+        var entityIsDeleted = false;
+        if (snapshot.EntityIsDeleted)
+        {
+            _deletedEntities.Add(snapshot.EntityId);
+            entityIsDeleted = true;
+        }
+        entityIsDeleted = entityIsDeleted || _deletedEntities.Contains(snapshot.EntityId);
+
+        if (entityIsDeleted)
+        {
+            // prevent projecting old snapshots of deleted entities
+            // they could e.g. violate unique constraints
+            _nonDeletedEntitySnapshots.RemoveAll(s => s.EntityId == snapshot.EntityId);
+            _deletedEntitySnapshots[snapshot.EntityId] = snapshot;
+        }
+        else
+        {
+            _nonDeletedEntitySnapshots.Add(snapshot);
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await OnDispose([.. _deletedEntitySnapshots.Values, .. _nonDeletedEntitySnapshots]);
     }
 }

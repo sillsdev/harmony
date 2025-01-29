@@ -57,12 +57,15 @@ internal class SnapshotWorker
         var commits = await _crdtRepository.GetCommitsAfter(previousCommit);
         await ApplyCommitChanges(commits.UnionBy(newCommits, c => c.Id), true, previousCommit?.Hash ?? CommitBase.NullParentHash);
 
-        // First add any new entities/snapshots as they might be referenced by intermediate snapshots
-        await _crdtRepository.AddSnapshots(_rootSnapshots.Values);
-        // Then add any intermediate snapshots we're hanging onto for performance benefits
-        await _crdtRepository.AddIfNew(_newIntermediateSnapshots);
-        // And finally the up-to-date snapshots, which will be used in the projected tables
-        await _crdtRepository.AddSnapshots(_pendingSnapshots.Values);
+        await using (_crdtRepository.SnapshotScope())
+        {
+            // First add any new entities/snapshots as they might be referenced by intermediate snapshots
+            await _crdtRepository.AddSnapshots(_rootSnapshots.Values);
+            // Then add any intermediate snapshots we're hanging onto for performance benefits
+            await _crdtRepository.AddIfNew(_newIntermediateSnapshots);
+            // And finally the up-to-date snapshots, which will be used in the projected tables
+            await _crdtRepository.AddSnapshots(_pendingSnapshots.Values);
+        }
     }
 
     private async ValueTask ApplyCommitChanges(IEnumerable<Commit> commits, bool updateCommitHash, string? previousCommitHash)
@@ -151,6 +154,7 @@ internal class SnapshotWorker
             .Select(s => s.EntityId)
             .ToArrayAsync());
         //snapshots from the db might be out of date, we want to use the most up to date data in the worker as well
+        toRemoveRefFromIds.UnionWith(_rootSnapshots.Values.Where(predicate).Select(s => s.EntityId));
         toRemoveRefFromIds.UnionWith(_pendingSnapshots.Values.Where(predicate).Select(s => s.EntityId));
         foreach (var entityId in toRemoveRefFromIds)
         {

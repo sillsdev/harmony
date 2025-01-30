@@ -76,7 +76,7 @@ public class SnapshotTests : DataModelTestBase
     }
 
     [Fact]
-    public async Task DontAddCreateTheSameSnapshotTwice()
+    public async Task DontAddTheSameSnapshotTwice()
     {
         var entityId = Guid.NewGuid();
         await WriteNextChange(SetWord(entityId, "test root"));

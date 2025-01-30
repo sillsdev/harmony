@@ -210,16 +210,12 @@ internal class CrdtRepository
         return await _dbContext.Commits.GetChanges<Commit, IChange>(remoteState);
     }
 
-    public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots, bool project = true)
+    public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
-        foreach (var objectSnapshot in snapshots)
-        {
-            _dbContext.Add(objectSnapshot);
-        }
-
         var projectedEntityIds = new HashSet<Guid>();
         foreach (var snapshot in snapshots.DefaultOrderDescending())
         {
+            _dbContext.Add(snapshot);
             if (projectedEntityIds.Add(snapshot.EntityId))
             {
                 await ProjectSnapshot(snapshot);

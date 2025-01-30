@@ -13,7 +13,6 @@ internal class CrdtRepository
 {
     private readonly ICrdtDbContext _dbContext;
     private readonly IOptions<CrdtConfig> _crdtConfig;
-    private SnapshotScope? _snapshotScope;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
         Commit? ignoreChangesAfter = null)
@@ -36,12 +35,7 @@ internal class CrdtRepository
 
     public SnapshotScope SnapshotScope()
     {
-        if (_snapshotScope is not null) throw new InvalidOperationException("SnapshotScope already exists");
-        return _snapshotScope = new SnapshotScope(async (snapshots) =>
-        {
-            _snapshotScope = null;
-            await SnapshotsAdded(snapshots);
-        });
+        return new SnapshotScope(this);
     }
 
     public bool IsInTransaction => _dbContext.Database.CurrentTransaction is not null;
@@ -221,41 +215,26 @@ internal class CrdtRepository
         return await _dbContext.Commits.GetChanges<Commit, IChange>(remoteState);
     }
 
-    public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
+    public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots, bool project = true)
     {
         foreach (var objectSnapshot in snapshots)
         {
             _dbContext.Add(objectSnapshot);
-            if (_snapshotScope is not null) _snapshotScope.AddSnapshot(objectSnapshot);
-            else await SnapshotAdded(objectSnapshot);
+            if (project) await ProjectSnapshot(objectSnapshot);
         }
         await _dbContext.SaveChangesAsync();
     }
 
-    public async ValueTask AddIfNew(IEnumerable<ObjectSnapshot> snapshots)
-    {
-        foreach (var snapshot in snapshots)
-        {
-
-            if (_dbContext.Set<ObjectSnapshot>().Local.FindEntry(snapshot.Id) is not null) continue;
-            _dbContext.Add(snapshot);
-            if (_snapshotScope is not null) _snapshotScope.AddSnapshot(snapshot);
-            else await SnapshotAdded(snapshot);
-        }
-
-        await _dbContext.SaveChangesAsync();
-    }
-
-    private async Task SnapshotsAdded(List<ObjectSnapshot> snapshots)
+    internal async Task ProjectSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
         foreach (var objectSnapshot in snapshots)
         {
-            await SnapshotAdded(objectSnapshot);
+            await ProjectSnapshot(objectSnapshot);
         }
         await _dbContext.SaveChangesAsync();
     }
 
-    private async ValueTask SnapshotAdded(ObjectSnapshot objectSnapshot)
+    private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot)
     {
         if (!_crdtConfig.Value.EnableProjectedTables) return;
         if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
@@ -396,13 +375,22 @@ internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) 
     }
 }
 
-internal record SnapshotScope(Func<List<ObjectSnapshot>, Task> OnDispose) : IAsyncDisposable
+internal class SnapshotScope(CrdtRepository repository) : IAsyncDisposable
 {
     private readonly HashSet<Guid> _deletedEntities = [];
     private readonly List<ObjectSnapshot> _nonDeletedEntitySnapshots = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _deletedEntitySnapshots = [];
 
-    public void AddSnapshot(ObjectSnapshot snapshot)
+    internal async Task AddSnapshots(ICollection<ObjectSnapshot> snapshots)
+    {
+        await repository.AddSnapshots(snapshots, false);
+        foreach (var snapshot in snapshots)
+        {
+            TrackForProjection(snapshot);
+        }
+    }
+
+    private void TrackForProjection(ObjectSnapshot snapshot)
     {
         var entityIsDeleted = false;
         if (snapshot.EntityIsDeleted)
@@ -427,6 +415,6 @@ internal record SnapshotScope(Func<List<ObjectSnapshot>, Task> OnDispose) : IAsy
 
     public async ValueTask DisposeAsync()
     {
-        await OnDispose([.. _deletedEntitySnapshots.Values, .. _nonDeletedEntitySnapshots]);
+        await repository.ProjectSnapshots([.. _deletedEntitySnapshots.Values, .. _nonDeletedEntitySnapshots]);
     }
 }

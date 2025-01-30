@@ -57,14 +57,14 @@ internal class SnapshotWorker
         var commits = await _crdtRepository.GetCommitsAfter(previousCommit);
         await ApplyCommitChanges(commits.UnionBy(newCommits, c => c.Id), true, previousCommit?.Hash ?? CommitBase.NullParentHash);
 
-        await using (_crdtRepository.SnapshotScope())
+        await using (var scope = _crdtRepository.SnapshotScope())
         {
             // First add any new entities/snapshots as they might be referenced by intermediate snapshots
-            await _crdtRepository.AddSnapshots(_rootSnapshots.Values);
+            await scope.AddSnapshots(_rootSnapshots.Values);
             // Then add any intermediate snapshots we're hanging onto for performance benefits
-            await _crdtRepository.AddIfNew(_newIntermediateSnapshots);
+            await scope.AddSnapshots(_newIntermediateSnapshots);
             // And finally the up-to-date snapshots, which will be used in the projected tables
-            await _crdtRepository.AddSnapshots(_pendingSnapshots.Values);
+            await scope.AddSnapshots(_pendingSnapshots.Values);
         }
     }
 

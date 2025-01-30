@@ -76,6 +76,20 @@ public class SnapshotTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task DontAddCreateTheSameSnapshotTwice()
+    {
+        var entityId = Guid.NewGuid();
+        await WriteNextChange(SetWord(entityId, "test root"));
+        await WriteNextChange(SetWord(entityId, "test non root"));
+
+        await AddCommitsViaSync([
+            //the order here is important, the second commit was causing the snapshot for 'test non root' to attempt to be inserted again
+            await WriteNextChange(SetWord(Guid.NewGuid(), "test 1"), add: false),
+            await WriteNextChange(SetWord(entityId, "test 2"), add: false),
+        ]);
+    }
+
+    [Fact]
     public async Task CanRecreateUniqueConstraintConflictingValueInOneCommit()
     {
         var entityId = Guid.NewGuid();

@@ -124,7 +124,7 @@ internal class SnapshotWorker
                 {
                     //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
                 }
-                else if (commitIndex % 2 == 0 && !prevSnapshot.IsRoot)
+                else if (commitIndex % 2 == 0 && !prevSnapshot.IsRoot && IsNew(prevSnapshot))
                 {
                     intermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
                 }
@@ -224,5 +224,22 @@ internal class SnapshotWorker
             //if there was already a pending snapshot there's no need to store it as both may point to the same commit
             _pendingSnapshots[snapshot.Entity.Id] = snapshot;
         }
+    }
+
+    /// <summary>
+    /// snapshot is not from the database
+    /// </summary>
+    private bool IsNew(ObjectSnapshot snapshot)
+    {
+        var entityId = snapshot.EntityId;
+        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
+        {
+            return rootSnapshot.Id != snapshot.Id;
+        }
+        if (_pendingSnapshots.TryGetValue(entityId, out var pendingSnapshot))
+        {
+            return pendingSnapshot.Id != snapshot.Id;
+        }
+        return false;
     }
 }

@@ -10,4 +10,7 @@
       <ProjectReference Include="..\Ycs\Ycs.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+        <Using Include="SIL.Harmony.Core"/>
+    </ItemGroup>
 </Project>

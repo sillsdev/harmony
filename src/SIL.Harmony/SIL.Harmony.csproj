@@ -21,4 +21,8 @@
       <ProjectReference Include="..\SIL.Harmony.Core\SIL.Harmony.Core.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+        <Using Include="SIL.Harmony.Core"/>
+    </ItemGroup>
+
 </Project>

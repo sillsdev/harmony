@@ -5,8 +5,6 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Entities;
-using SIL.Harmony.Helpers;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
@@ -25,7 +23,6 @@ internal class CrdtRepository
         //but since we're using a custom query, we can use it directly and apply the scoped filters manually
         _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
     }
-    
 
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
 
@@ -215,55 +212,47 @@ internal class CrdtRepository
 
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
-        foreach (var objectSnapshot in snapshots)
+        var projectedEntityIds = new HashSet<Guid>();
+        foreach (var snapshot in snapshots.DefaultOrderDescending())
         {
-            _dbContext.Add(objectSnapshot);
-            await SnapshotAdded(objectSnapshot);
-        }
-
-        await _dbContext.SaveChangesAsync();
-    }
-
-    public async ValueTask AddIfNew(IEnumerable<ObjectSnapshot> snapshots)
-    {
-        foreach (var snapshot in snapshots)
-        {
-
-            if (_dbContext.Set<ObjectSnapshot>().Local.FindEntry(snapshot.Id) is not null) continue;
             _dbContext.Add(snapshot);
-            await SnapshotAdded(snapshot);
+            if (projectedEntityIds.Add(snapshot.EntityId))
+            {
+                await ProjectSnapshot(snapshot);
+            }
         }
 
         await _dbContext.SaveChangesAsync();
     }
 
-    private async ValueTask SnapshotAdded(ObjectSnapshot objectSnapshot)
+    private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot)
     {
         if (!_crdtConfig.Value.EnableProjectedTables) return;
         if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
         var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
-        object? entity;
-        if (existingEntry is null && objectSnapshot.IsRoot)
+        if (existingEntry is null && objectSnapshot.EntityIsDeleted) return;
+
+        if (existingEntry is null) // add
         {
+            // this is a new entity even though it might not be a root snapshot, because we only project the latest snapshot of each entity per sync
+
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
-            entity = objectSnapshot.Entity.Copy().DbObject;
+            var entity = objectSnapshot.Entity.Copy().DbObject;
             _dbContext.Add(entity)
                 .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
-            return;
         }
-
-        if (existingEntry is null) return;
-        if (objectSnapshot.EntityIsDeleted)
+        else if (objectSnapshot.EntityIsDeleted) // delete
         {
             _dbContext.Remove(existingEntry.Entity);
-            return;
         }
-
-        entity = objectSnapshot.Entity.DbObject;
-        existingEntry.CurrentValues.SetValues(entity);
-        existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
+        else // update
+        {
+            var entity = objectSnapshot.Entity.DbObject;
+            existingEntry.CurrentValues.SetValues(entity);
+            existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
+        }
     }
 
     private async ValueTask<EntityEntry?> GetEntityEntry(Type entityType, Guid entityId)
@@ -327,7 +316,6 @@ internal class CrdtRepository
     {
         return await _dbContext.Set<LocalResource>().FindAsync(resourceId);
     }
-    
 }
 
 internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) : ICrdtDbContext

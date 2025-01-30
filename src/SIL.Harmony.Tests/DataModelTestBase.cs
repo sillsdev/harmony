@@ -131,6 +131,21 @@ public class DataModelTestBase : IAsyncLifetime
         return new SetWordTextChange(entityId, value);
     }
 
+    public IChange DeleteWord(Guid entityId)
+    {
+        return new DeleteChange<Word>(entityId);
+    }
+
+    public IChange SetTag(Guid entityId, string value)
+    {
+        return new SetTagChange(entityId, value);
+    }
+
+    public IChange DeleteTag(Guid entityId)
+    {
+        return new DeleteChange<Tag>(entityId);
+    }
+
     public IChange NewDefinition(Guid wordId,
         string text,
         string partOfSpeech,

@@ -33,11 +33,6 @@ internal class CrdtRepository
         return _dbContext.Database.BeginTransactionAsync();
     }
 
-    public SnapshotScope SnapshotScope()
-    {
-        return new SnapshotScope(this);
-    }
-
     public bool IsInTransaction => _dbContext.Database.CurrentTransaction is not null;
 
 
@@ -220,17 +215,17 @@ internal class CrdtRepository
         foreach (var objectSnapshot in snapshots)
         {
             _dbContext.Add(objectSnapshot);
-            if (project) await ProjectSnapshot(objectSnapshot);
         }
-        await _dbContext.SaveChangesAsync();
-    }
 
-    internal async Task ProjectSnapshots(IEnumerable<ObjectSnapshot> snapshots)
-    {
-        foreach (var objectSnapshot in snapshots)
+        var projectedEntityIds = new HashSet<Guid>();
+        foreach (var snapshot in snapshots.Reverse())
         {
-            await ProjectSnapshot(objectSnapshot);
+            if (projectedEntityIds.Add(snapshot.EntityId))
+            {
+                await ProjectSnapshot(snapshot);
+            }
         }
+
         await _dbContext.SaveChangesAsync();
     }
 
@@ -240,27 +235,28 @@ internal class CrdtRepository
         if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
         var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
-        object? entity;
-        if (existingEntry is null && objectSnapshot.IsRoot)
+        if (existingEntry is null && objectSnapshot.EntityIsDeleted) return;
+
+        if (existingEntry is null) // add
         {
+            // this is a new entity even though it might not be a root snapshot, because we only project the latest snapshot of each entity per sync
+
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
-            entity = objectSnapshot.Entity.Copy().DbObject;
+            var entity = objectSnapshot.Entity.Copy().DbObject;
             _dbContext.Add(entity)
                 .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
-            return;
         }
-
-        if (existingEntry is null) return;
-        if (objectSnapshot.EntityIsDeleted)
+        else if (objectSnapshot.EntityIsDeleted) // delete
         {
             _dbContext.Remove(existingEntry.Entity);
-            return;
         }
-
-        entity = objectSnapshot.Entity.DbObject;
-        existingEntry.CurrentValues.SetValues(entity);
-        existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
+        else // update
+        {
+            var entity = objectSnapshot.Entity.DbObject;
+            existingEntry.CurrentValues.SetValues(entity);
+            existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
+        }
     }
 
     private async ValueTask<EntityEntry?> GetEntityEntry(Type entityType, Guid entityId)
@@ -372,49 +368,5 @@ internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) 
     public EntityEntry Remove(object entity)
     {
         return inner.Remove(entity);
-    }
-}
-
-internal class SnapshotScope(CrdtRepository repository) : IAsyncDisposable
-{
-    private readonly HashSet<Guid> _deletedEntities = [];
-    private readonly List<ObjectSnapshot> _nonDeletedEntitySnapshots = [];
-    private readonly Dictionary<Guid, ObjectSnapshot> _deletedEntitySnapshots = [];
-
-    internal async Task AddSnapshots(ICollection<ObjectSnapshot> snapshots)
-    {
-        await repository.AddSnapshots(snapshots, false);
-        foreach (var snapshot in snapshots)
-        {
-            TrackForProjection(snapshot);
-        }
-    }
-
-    private void TrackForProjection(ObjectSnapshot snapshot)
-    {
-        var entityIsDeleted = false;
-        if (snapshot.EntityIsDeleted)
-        {
-            _deletedEntities.Add(snapshot.EntityId);
-            entityIsDeleted = true;
-        }
-        entityIsDeleted = entityIsDeleted || _deletedEntities.Contains(snapshot.EntityId);
-
-        if (entityIsDeleted)
-        {
-            // prevent projecting old snapshots of deleted entities
-            // they could e.g. violate unique constraints
-            _nonDeletedEntitySnapshots.RemoveAll(s => s.EntityId == snapshot.EntityId);
-            _deletedEntitySnapshots[snapshot.EntityId] = snapshot;
-        }
-        else
-        {
-            _nonDeletedEntitySnapshots.Add(snapshot);
-        }
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        await repository.ProjectSnapshots([.. _deletedEntitySnapshots.Values, .. _nonDeletedEntitySnapshots]);
     }
 }

@@ -1,4 +1,5 @@
-﻿using SIL.Harmony.Changes;
+﻿using Microsoft.EntityFrameworkCore;
+using SIL.Harmony.Changes;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests;
@@ -64,5 +65,23 @@ public class DataModelReferenceTests : DataModelTestBase
         await WriteChangeBefore(delete, new AddAntonymReferenceChange(entityId3, _word2Id));
         var entry = await DataModel.GetLatest<Word>(entityId3);
         entry!.AntonymId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task DeleteDoesNotEffectARootSnapshotCreatedBeforeTheDelete()
+    {
+        var wordId = Guid.NewGuid();
+        var initialWordCommit = await WriteNextChange(new NewWordChange(wordId, "entity1", antonymId: _word1Id), add: false);
+        var deleteWordCommit = await WriteNextChange(DeleteWord(_word1Id), add: false);
+        await AddCommitsViaSync([
+            initialWordCommit,
+            deleteWordCommit
+        ]);
+        var snapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == initialWordCommit.Id);
+        var initialWord = (Word) snapshot.Entity;
+        initialWord.AntonymId.Should().Be(_word1Id);
+        snapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == deleteWordCommit.Id && s.EntityId == wordId);
+        var wordWithoutRef = (Word) snapshot.Entity;
+        wordWithoutRef.AntonymId.Should().BeNull();
     }
 }

@@ -202,9 +202,11 @@ internal class SnapshotWorker
         return snapshot;
     }
 
-    internal IAsyncEnumerable<ObjectSnapshot> GetSnapshotsReferencing(Guid entityId)
+    internal IAsyncEnumerable<ObjectSnapshot> GetSnapshotsReferencing(Guid entityId, bool includeDeleted = false)
     {
-        return _crdtRepository.CurrentSnapshots().Where(e => e.References.Contains(entityId)).AsAsyncEnumerable();
+        return _crdtRepository.CurrentSnapshots()
+            .Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId))
+            .AsAsyncEnumerable();
     }
 
     private void AddSnapshot(ObjectSnapshot snapshot)

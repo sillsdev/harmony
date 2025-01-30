@@ -74,6 +74,8 @@ public class CrdtConfig
 
     public bool RemoteResourcesEnabled { get; private set; }
     public string LocalResourceCachePath { get; set; } = Path.GetFullPath("./localResourceCache");
+    public string FailedSyncOutputPath { get; set; } = Path.GetFullPath("./failedSyncs");
+
     public void AddRemoteResourceEntity(string? cachePath = null)
     {
         RemoteResourcesEnabled = true;

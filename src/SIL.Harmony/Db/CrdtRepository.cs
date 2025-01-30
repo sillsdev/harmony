@@ -218,7 +218,7 @@ internal class CrdtRepository
         }
 
         var projectedEntityIds = new HashSet<Guid>();
-        foreach (var snapshot in snapshots.Reverse())
+        foreach (var snapshot in snapshots.DefaultOrderDescending())
         {
             if (projectedEntityIds.Add(snapshot.EntityId))
             {

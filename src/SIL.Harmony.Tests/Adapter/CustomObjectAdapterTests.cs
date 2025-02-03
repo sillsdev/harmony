@@ -107,7 +107,7 @@ public class CustomObjectAdapterTests
 
         public Guid[] GetReferences() => [];
 
-        public void RemoveReference(Guid id, Commit commit)
+        public void RemoveReference(Guid id, CommitBase commit)
         {
         }
 

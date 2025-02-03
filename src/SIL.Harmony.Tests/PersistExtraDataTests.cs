@@ -32,7 +32,7 @@ public class PersistExtraDataTests
             return [];
         }
 
-        public void RemoveReference(Guid id, Commit commit)
+        public void RemoveReference(Guid id, CommitBase commit)
         {
         }
 

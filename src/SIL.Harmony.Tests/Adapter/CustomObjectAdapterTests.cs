@@ -6,7 +6,6 @@ using SIL.Harmony.Adapters;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
-using SIL.Harmony.Linq2db;
 
 namespace SIL.Harmony.Tests.Adapter;
 

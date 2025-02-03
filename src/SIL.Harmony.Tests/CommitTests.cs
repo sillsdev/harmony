@@ -1,7 +1,6 @@
 using System.IO.Hashing;
 using System.Text.Json;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Core;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using Microsoft.Extensions.DependencyInjection;

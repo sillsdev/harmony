@@ -1,4 +1,3 @@
-﻿using SIL.Harmony.Core;
 using SIL.Harmony.Db;
 using SIL.Harmony.Tests.Mocks;
 

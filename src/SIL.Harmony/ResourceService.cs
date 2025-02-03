@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Core;
 using SIL.Harmony.Db;
 using SIL.Harmony.Helpers;
 using SIL.Harmony.Resource;

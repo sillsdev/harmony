@@ -1,9 +1,7 @@
 using System.Linq.Expressions;
-using SIL.Harmony.Core;
 using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
-using SIL.Harmony.Entities;
 
 namespace SIL.Harmony;
 

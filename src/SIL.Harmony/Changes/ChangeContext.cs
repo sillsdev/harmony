@@ -1,7 +1,3 @@
-using SIL.Harmony.Core;
-using SIL.Harmony.Db;
-using SIL.Harmony.Entities;
-
 namespace SIL.Harmony.Changes;
 
 public class ChangeContext : IChangeContext

@@ -1,5 +1,4 @@
-﻿using System.Text.Json.Serialization;
-using SIL.Harmony.Core;
+using System.Text.Json.Serialization;
 
 namespace SIL.Harmony.Entities;
 

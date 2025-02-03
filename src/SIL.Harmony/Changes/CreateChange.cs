@@ -1,5 +1,3 @@
-﻿using SIL.Harmony.Entities;
-
 namespace SIL.Harmony.Changes;
 
 public abstract class CreateChange<T>(Guid entityId) : Change<T>(entityId) where T : class

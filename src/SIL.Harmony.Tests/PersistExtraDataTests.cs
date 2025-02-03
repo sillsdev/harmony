@@ -1,9 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Core;
 using SIL.Harmony.Entities;
-using SIL.Harmony.Sample;
 
 namespace SIL.Harmony.Tests;
 

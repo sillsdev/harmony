@@ -8,12 +8,9 @@ using BenchmarkDotNet.Exporters.Json;
 using BenchmarkDotNet.Loggers;
 using BenchmarkDotNet.Running;
 using JetBrains.Profiler.SelfApi;
-using Microsoft.Data.Sqlite;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Core;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
-using SIL.Harmony.Sample.Models;
 using Xunit.Abstractions;
 
 namespace SIL.Harmony.Tests;

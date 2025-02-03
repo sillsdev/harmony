@@ -1,4 +1,3 @@
-﻿using SIL.Harmony.Core;
 using LinqToDB;
 using LinqToDB.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;

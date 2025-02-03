@@ -1,12 +1,9 @@
-using SIL.Harmony.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Entities;
-using SIL.Harmony.Helpers;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;

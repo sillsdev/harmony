@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
-using SIL.Harmony.Core;
 using SIL.Harmony.Entities;
 using SIL.Harmony.Helpers;
 

@@ -1,4 +1,3 @@
-using SIL.Harmony.Core;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Entities;
 

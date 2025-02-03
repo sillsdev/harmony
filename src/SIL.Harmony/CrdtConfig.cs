@@ -1,7 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SIL.Harmony.Adapters;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;

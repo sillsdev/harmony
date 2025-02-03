@@ -1,5 +1,3 @@
-using SIL.Harmony.Entities;
-
 namespace SIL.Harmony.Tests;
 
 public static class ObjectBaseTestingHelpers

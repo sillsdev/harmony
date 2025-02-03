@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
@@ -19,17 +20,20 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly IHybridDateTimeProvider _timeProvider;
     private readonly IOptions<CrdtConfig> _crdtConfig;
+    private readonly ILogger<DataModel> _logger;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepository crdtRepository,
         JsonSerializerOptions serializerOptions,
         IHybridDateTimeProvider timeProvider,
-        IOptions<CrdtConfig> crdtConfig)
+        IOptions<CrdtConfig> crdtConfig,
+        ILogger<DataModel> logger)
     {
         _crdtRepository = crdtRepository;
         _serializerOptions = serializerOptions;
         _timeProvider = timeProvider;
         _crdtConfig = crdtConfig;
+        _logger = logger;
     }
 
 
@@ -128,19 +132,48 @@ public class DataModel : ISyncable, IAsyncDisposable
     async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits)
     {
         commits = commits.ToArray();
-        _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
-        var (oldestChange, newCommits) = await _crdtRepository.FilterExistingCommits(commits.ToArray());
-        //no changes added
-        if (oldestChange is null || newCommits is []) return;
+        try
+        {
+            _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
+            var (oldestChange, newCommits) = await _crdtRepository.FilterExistingCommits(commits.ToArray());
+            //no changes added
+            if (oldestChange is null || newCommits is []) return;
 
-        await using var transaction = await _crdtRepository.BeginTransactionAsync();
-        //if there are deferred commits, update snapshots with them first
-        if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
-        //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
-        await _crdtRepository.AddCommits(newCommits, false);
-        await UpdateSnapshots(oldestChange, newCommits);
-        await ValidateCommits();
-        await transaction.CommitAsync();
+            await using var transaction = await _crdtRepository.BeginTransactionAsync();
+            //if there are deferred commits, update snapshots with them first
+            if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
+            //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
+            await _crdtRepository.AddCommits(newCommits, false);
+            await UpdateSnapshots(oldestChange, newCommits);
+            await ValidateCommits();
+            await transaction.CommitAsync();
+        }
+        catch (DbUpdateException e)
+        {
+            _logger.LogError(e, "Failed to sync commits, check {FailedImportPath} for more details", _crdtConfig.Value.FailedSyncOutputPath);
+            await DumpFailedSync(new
+            {
+                ExceptionMessage = e.ToString(),
+                Commits = commits.DefaultOrder(),
+                Objects = e.Entries.Select(entry => entry.Entity)
+            });
+            throw;
+        }
+    }
+
+    private async Task DumpFailedSync(object data)
+    {
+        try
+        {
+            Directory.CreateDirectory(_crdtConfig.Value.FailedSyncOutputPath);
+            await using var failedImport =
+                File.Create(Path.Combine(_crdtConfig.Value.FailedSyncOutputPath, "last-failed-import.json"));
+            await JsonSerializer.SerializeAsync(failedImport, data, _serializerOptions);
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, "Failed to dump failed import");
+        }
     }
 
     ValueTask<bool> ISyncable.ShouldSync()

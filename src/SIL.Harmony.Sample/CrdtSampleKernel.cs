@@ -47,9 +47,11 @@ public static class CrdtSampleKernel
                 .Add<AddWordImageChange>()
                 .Add<SetOrderChange<Definition>>()
                 .Add<SetDefinitionPartOfSpeechChange>()
+                .Add<SetTagChange>()
                 .Add<DeleteChange<Word>>()
                 .Add<DeleteChange<Definition>>()
                 .Add<DeleteChange<Example>>()
+                .Add<DeleteChange<Tag>>()
                 ;
             config.ObjectTypeListBuilder.DefaultAdapter()
                 .Add<Word>()
@@ -60,7 +62,11 @@ public static class CrdtSampleKernel
                         .HasForeignKey(d => d.WordId)
                         .OnDelete(DeleteBehavior.Cascade);
                 })
-                .Add<Example>();
+                .Add<Example>()
+                .Add<Tag>(builder =>
+                {
+                    builder.HasIndex(tag => tag.Text).IsUnique();
+                });
         });
         return services;
     }

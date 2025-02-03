@@ -22,7 +22,9 @@ public class CrdtConfig
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
+    public IEnumerable<Type> ChangeTypes => ChangeTypeListBuilder.Types.Select(t => t.DerivedType);
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
+    public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
     private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
 
@@ -71,6 +73,8 @@ public class CrdtConfig
 
     public bool RemoteResourcesEnabled { get; private set; }
     public string LocalResourceCachePath { get; set; } = Path.GetFullPath("./localResourceCache");
+    public string FailedSyncOutputPath { get; set; } = Path.GetFullPath("./failedSyncs");
+
     public void AddRemoteResourceEntity(string? cachePath = null)
     {
         RemoteResourcesEnabled = true;

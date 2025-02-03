@@ -55,12 +55,11 @@ internal class SnapshotWorker
         var commits = await _crdtRepository.GetCommitsAfter(previousCommit);
         await ApplyCommitChanges(commits.UnionBy(newCommits, c => c.Id), true, previousCommit?.Hash ?? CommitBase.NullParentHash);
 
-        // First add any new entities/snapshots as they might be referenced by intermediate snapshots
-        await _crdtRepository.AddSnapshots(_rootSnapshots.Values);
-        // Then add any intermediate snapshots we're hanging onto for performance benefits
-        await _crdtRepository.AddIfNew(_newIntermediateSnapshots);
-        // And finally the up-to-date snapshots, which will be used in the projected tables
-        await _crdtRepository.AddSnapshots(_pendingSnapshots.Values);
+        await _crdtRepository.AddSnapshots([
+            .._rootSnapshots.Values,
+            .._newIntermediateSnapshots,
+            .._pendingSnapshots.Values
+        ]);
     }
 
     private async ValueTask ApplyCommitChanges(IEnumerable<Commit> commits, bool updateCommitHash, string? previousCommitHash)
@@ -119,11 +118,11 @@ internal class SnapshotWorker
                 {
                     //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
                 }
-                else if (commitIndex % 2 == 0 && !prevSnapshot.IsRoot)
+                else if (commitIndex % 2 == 0 && !prevSnapshot.IsRoot && IsNew(prevSnapshot))
                 {
                     intermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
                 }
-                
+
                 await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
                 AddSnapshot(newSnapshot);
@@ -149,6 +148,7 @@ internal class SnapshotWorker
             .Select(s => s.EntityId)
             .ToArrayAsync());
         //snapshots from the db might be out of date, we want to use the most up to date data in the worker as well
+        toRemoveRefFromIds.UnionWith(_rootSnapshots.Values.Where(predicate).Select(s => s.EntityId));
         toRemoveRefFromIds.UnionWith(_pendingSnapshots.Values.Where(predicate).Select(s => s.EntityId));
         foreach (var entityId in toRemoveRefFromIds)
         {
@@ -200,6 +200,13 @@ internal class SnapshotWorker
         return snapshot;
     }
 
+    internal IAsyncEnumerable<ObjectSnapshot> GetSnapshotsReferencing(Guid entityId, bool includeDeleted = false)
+    {
+        return _crdtRepository.CurrentSnapshots()
+            .Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId))
+            .AsAsyncEnumerable();
+    }
+
     private void AddSnapshot(ObjectSnapshot snapshot)
     {
         if (snapshot.IsRoot)
@@ -211,5 +218,22 @@ internal class SnapshotWorker
             //if there was already a pending snapshot there's no need to store it as both may point to the same commit
             _pendingSnapshots[snapshot.Entity.Id] = snapshot;
         }
+    }
+
+    /// <summary>
+    /// snapshot is not from the database
+    /// </summary>
+    private bool IsNew(ObjectSnapshot snapshot)
+    {
+        var entityId = snapshot.EntityId;
+        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
+        {
+            return rootSnapshot.Id != snapshot.Id;
+        }
+        if (_pendingSnapshots.TryGetValue(entityId, out var pendingSnapshot))
+        {
+            return pendingSnapshot.Id != snapshot.Id;
+        }
+        return false;
     }
 }

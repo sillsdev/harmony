@@ -162,6 +162,27 @@
       Relational:TableName: Example
       Relational:ViewName: 
       Relational:ViewSchema: 
+  EntityType: Tag
+    Properties: 
+      Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
+      DeletedAt (DateTimeOffset?)
+      SnapshotId (no field, Guid?) Shadow FK Index
+      Text (string) Required Index
+    Keys: 
+      Id PK
+    Foreign keys: 
+      Tag {'SnapshotId'} -> ObjectSnapshot {'Id'} Unique SetNull
+    Indexes: 
+      SnapshotId Unique
+      Text Unique
+    Annotations: 
+      DiscriminatorProperty: 
+      Relational:FunctionName: 
+      Relational:Schema: 
+      Relational:SqlQuery: 
+      Relational:TableName: Tag
+      Relational:ViewName: 
+      Relational:ViewSchema: 
   EntityType: Word
     Properties: 
       Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd

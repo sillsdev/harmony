@@ -12,8 +12,12 @@ public class ChangeContext : IChangeContext
         Commit = commit;
     }
 
-    public CommitBase Commit { get; } // PROBLEM: Interface is CommitBase. How do I do this?
+    public CommitBase Commit { get; }
     public async ValueTask<IObjectSnapshot?> GetSnapshot(Guid entityId) => await _worker.GetSnapshot(entityId);
+    public IAsyncEnumerable<object> GetObjectsReferencing(Guid entityId, bool includeDeleted = false)
+    {
+        return _worker.GetSnapshotsReferencing(entityId, includeDeleted).Select(s => s.Entity.DbObject);
+    }
     public async ValueTask<T?> GetCurrent<T>(Guid entityId) where T : class
     {
         var snapshot = await GetSnapshot(entityId);

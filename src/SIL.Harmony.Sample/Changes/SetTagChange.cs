@@ -8,7 +8,7 @@ public class SetTagChange(Guid entityId, string text) : Change<Tag>(entityId), I
 {
     public string Text { get; } = text;
 
-    public override ValueTask<Tag> NewEntity(Commit commit, ChangeContext context)
+    public override ValueTask<Tag> NewEntity(Commit commit, IChangeContext context)
     {
         return new(new Tag()
         {
@@ -18,7 +18,7 @@ public class SetTagChange(Guid entityId, string text) : Change<Tag>(entityId), I
     }
 
 
-    public override ValueTask ApplyChange(Tag entity, ChangeContext context)
+    public override ValueTask ApplyChange(Tag entity, IChangeContext context)
     {
         entity.Text = Text;
         return ValueTask.CompletedTask;

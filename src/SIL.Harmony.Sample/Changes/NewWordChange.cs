@@ -9,7 +9,7 @@ public class NewWordChange(Guid entityId, string text, string? note = null) : Cr
     public string Text { get; } = text;
     public string? Note { get; } = note;
 
-    public override ValueTask<Word> NewEntity(Commit commit, ChangeContext context)
+    public override ValueTask<Word> NewEntity(Commit commit, IChangeContext context)
     {
         return new(new Word { Text = Text, Note = Note, Id = EntityId });
     }

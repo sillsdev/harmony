@@ -123,7 +123,7 @@ public class CustomObjectAdapterTests
             _entity = entity;
         }
 
-        public override ValueTask<MyClass> NewEntity(Commit commit, ChangeContext context)
+        public override ValueTask<MyClass> NewEntity(Commit commit, IChangeContext context)
         {
             return ValueTask.FromResult(_entity);
         }
@@ -138,7 +138,7 @@ public class CustomObjectAdapterTests
             _entity = entity;
         }
 
-        public override ValueTask<MyClass2> NewEntity(Commit commit, ChangeContext context)
+        public override ValueTask<MyClass2> NewEntity(Commit commit, IChangeContext context)
         {
             return ValueTask.FromResult(_entity);
         }

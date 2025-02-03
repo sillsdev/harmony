@@ -34,7 +34,7 @@ public class SetOrderChange<T> : EditChange<T>, IPolyType
     public double Order { get; init; }
     public static string TypeName => "setOrder:" + T.TypeName;
 
-    public override ValueTask ApplyChange(T entity, ChangeContext context)
+    public override ValueTask ApplyChange(T entity, IChangeContext context)
     {
         entity.Order = Order;
         return ValueTask.CompletedTask;

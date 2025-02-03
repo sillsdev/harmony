@@ -10,7 +10,7 @@ public class PersistExtraDataTests
 
     public class CreateExtraDataModelChange(Guid entityId) : CreateChange<ExtraDataModel>(entityId), ISelfNamedType<CreateExtraDataModelChange>
     {
-        public override ValueTask<ExtraDataModel> NewEntity(Commit commit, ChangeContext context)
+        public override ValueTask<ExtraDataModel> NewEntity(Commit commit, IChangeContext context)
         {
             return ValueTask.FromResult(new ExtraDataModel()
             {

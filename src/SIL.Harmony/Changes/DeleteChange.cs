@@ -7,7 +7,7 @@ public class DeleteChange<T>(Guid entityId) : EditChange<T>(entityId), IPolyType
 {
     public static string TypeName => "delete:" + typeof(T).Name;
 
-    public override ValueTask ApplyChange(T entity, ChangeContext context)
+    public override ValueTask ApplyChange(T entity, IChangeContext context)
     {
         context.Adapt(entity).DeletedAt = context.Commit.DateTime;
         return ValueTask.CompletedTask;

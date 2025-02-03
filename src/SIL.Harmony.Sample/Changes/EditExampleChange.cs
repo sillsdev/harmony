@@ -26,7 +26,7 @@ public class EditExampleChange : EditChange<Example>, ISelfNamedType<EditExample
 
     public string UpdateBlob { get; set; }
 
-    public override ValueTask ApplyChange(Example entity, ChangeContext context)
+    public override ValueTask ApplyChange(Example entity, IChangeContext context)
     {
         entity.YText.Doc.ApplyUpdateV2(Convert.FromBase64String(UpdateBlob));
         return ValueTask.CompletedTask;

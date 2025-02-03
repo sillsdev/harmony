@@ -13,7 +13,7 @@ public class RemoteResourceUploadedChange(Guid entityId, string remoteId) : Edit
     public string RemoteId { get; set; } = remoteId;
     public static string TypeName => "uploaded:RemoteResource";
 
-    public override ValueTask ApplyChange(RemoteResource entity, ChangeContext context)
+    public override ValueTask ApplyChange(RemoteResource entity, IChangeContext context)
     {
         entity.RemoteId = RemoteId;
         return ValueTask.CompletedTask;

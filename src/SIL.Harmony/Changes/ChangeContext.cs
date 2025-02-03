@@ -16,8 +16,8 @@ public class ChangeContext : IChangeContext
         Commit = commit;
     }
 
-    public Commit Commit { get; } // PROBLEM: Interface is CommitBase. How do I do this?
-    public async ValueTask<ObjectSnapshot?> GetSnapshot(Guid entityId) => await _worker.GetSnapshot(entityId);
+    public CommitBase Commit { get; } // PROBLEM: Interface is CommitBase. How do I do this?
+    public async ValueTask<IObjectSnapshot?> GetSnapshot(Guid entityId) => await _worker.GetSnapshot(entityId);
     public async ValueTask<T?> GetCurrent<T>(Guid entityId) where T : class
     {
         var snapshot = await GetSnapshot(entityId);
@@ -26,5 +26,5 @@ public class ChangeContext : IChangeContext
     }
 
     public async ValueTask<bool> IsObjectDeleted(Guid entityId) => (await GetSnapshot(entityId))?.EntityIsDeleted ?? true;
-    internal IObjectBase Adapt(object obj) => _crdtConfig.ObjectTypeListBuilder.Adapt(obj);
+    IObjectBase IChangeContext.Adapt(object obj) => _crdtConfig.ObjectTypeListBuilder.Adapt(obj);
 }

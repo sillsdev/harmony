@@ -3,7 +3,7 @@ namespace SIL.Harmony.Core;
 public interface IChangeContext
 {
     public CommitBase Commit { get; }
-    ValueTask<ObjectSnapshot?> GetSnapshot(Guid entityId);
+    ValueTask<IObjectSnapshot?> GetSnapshot(Guid entityId);
     public async ValueTask<T?> GetCurrent<T>(Guid entityId) where T : class
     {
         var snapshot = await GetSnapshot(entityId);

@@ -2,7 +2,6 @@ using System.Runtime.Serialization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Db.EntityConfig;
 

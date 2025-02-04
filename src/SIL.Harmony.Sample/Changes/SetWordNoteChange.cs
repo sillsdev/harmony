@@ -8,7 +8,7 @@ public class SetWordNoteChange(Guid entityId, string note) : EditChange<Word>(en
 {
     public string Note { get; } = note;
 
-    public override ValueTask ApplyChange(Word entity, ChangeContext context)
+    public override ValueTask ApplyChange(Word entity, IChangeContext context)
     {
         entity.Note = Note;
         return ValueTask.CompletedTask;

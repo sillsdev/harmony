@@ -1,9 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Core;
 using SIL.Harmony.Entities;
-using SIL.Harmony.Sample;
 
 namespace SIL.Harmony.Tests;
 
@@ -13,7 +10,7 @@ public class PersistExtraDataTests
 
     public class CreateExtraDataModelChange(Guid entityId) : CreateChange<ExtraDataModel>(entityId), ISelfNamedType<CreateExtraDataModelChange>
     {
-        public override ValueTask<ExtraDataModel> NewEntity(Commit commit, ChangeContext context)
+        public override ValueTask<ExtraDataModel> NewEntity(Commit commit, IChangeContext context)
         {
             return ValueTask.FromResult(new ExtraDataModel()
             {
@@ -35,7 +32,7 @@ public class PersistExtraDataTests
             return [];
         }
 
-        public void RemoveReference(Guid id, Commit commit)
+        public void RemoveReference(Guid id, CommitBase commit)
         {
         }
 

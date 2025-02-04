@@ -1,4 +1,3 @@
-﻿using System.Data.Common;
 using System.Diagnostics;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Linq2db;

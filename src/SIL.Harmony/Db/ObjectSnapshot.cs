@@ -1,6 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Serialization;
-using SIL.Harmony.Core;
 using SIL.Harmony.Entities;
 using SIL.Harmony.Helpers;
 
@@ -30,7 +29,7 @@ public record SimpleSnapshot(
     }
 }
 
-public class ObjectSnapshot
+public class ObjectSnapshot : IObjectSnapshot
 {
     public static ObjectSnapshot ForTesting(Commit commit)
     {
@@ -76,5 +75,6 @@ public class ObjectSnapshot
     public required bool EntityIsDeleted { get; init; }
     public required Guid CommitId { get; init; }
     public required Commit Commit { get; init; }
+    CommitBase IObjectSnapshot.Commit => Commit;
     public required bool IsRoot { get; init; }
 }

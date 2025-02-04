@@ -1,6 +1,4 @@
 using System.Text.Json.Serialization;
-using SIL.Harmony.Core;
-using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Changes;
 
@@ -16,8 +14,8 @@ public interface IChange
     [JsonIgnore]
     Type EntityType { get; }
 
-    ValueTask ApplyChange(IObjectBase entity, ChangeContext context);
-    ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context);
+    ValueTask ApplyChange(IObjectBase entity, IChangeContext context);
+    ValueTask<IObjectBase> NewEntity(Commit commit, IChangeContext context);
 }
 
 /// <summary>
@@ -36,15 +34,15 @@ public abstract class Change<T> : IChange where T : class
 
     public Guid EntityId { get; set; }
 
-    async ValueTask<IObjectBase> IChange.NewEntity(Commit commit, ChangeContext context)
+    async ValueTask<IObjectBase> IChange.NewEntity(Commit commit, IChangeContext context)
     {
         return context.Adapt(await NewEntity(commit, context));
     }
 
-    public abstract ValueTask<T> NewEntity(Commit commit, ChangeContext context);
-    public abstract ValueTask ApplyChange(T entity, ChangeContext context);
+    public abstract ValueTask<T> NewEntity(Commit commit, IChangeContext context);
+    public abstract ValueTask ApplyChange(T entity, IChangeContext context);
 
-    public async ValueTask ApplyChange(IObjectBase entity, ChangeContext context)
+    public async ValueTask ApplyChange(IObjectBase entity, IChangeContext context)
     {
         if (this is CreateChange<T>)
             return; // skip attempting to apply changes on CreateChange as it does not support apply changes

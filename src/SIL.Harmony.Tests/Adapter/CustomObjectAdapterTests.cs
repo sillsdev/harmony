@@ -6,7 +6,6 @@ using SIL.Harmony.Adapters;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
-using SIL.Harmony.Linq2db;
 
 namespace SIL.Harmony.Tests.Adapter;
 
@@ -108,7 +107,7 @@ public class CustomObjectAdapterTests
 
         public Guid[] GetReferences() => [];
 
-        public void RemoveReference(Guid id, Commit commit)
+        public void RemoveReference(Guid id, CommitBase commit)
         {
         }
 
@@ -124,7 +123,7 @@ public class CustomObjectAdapterTests
             _entity = entity;
         }
 
-        public override ValueTask<MyClass> NewEntity(Commit commit, ChangeContext context)
+        public override ValueTask<MyClass> NewEntity(Commit commit, IChangeContext context)
         {
             return ValueTask.FromResult(_entity);
         }
@@ -139,7 +138,7 @@ public class CustomObjectAdapterTests
             _entity = entity;
         }
 
-        public override ValueTask<MyClass2> NewEntity(Commit commit, ChangeContext context)
+        public override ValueTask<MyClass2> NewEntity(Commit commit, IChangeContext context)
         {
             return ValueTask.FromResult(_entity);
         }

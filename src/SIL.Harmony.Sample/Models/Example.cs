@@ -31,7 +31,7 @@ public class Example: IObjectBase<Example>
         return [DefinitionId];
     }
 
-    public void RemoveReference(Guid id, Commit commit)
+    public void RemoveReference(Guid id, CommitBase commit)
     {
         if (DefinitionId == id)
         {

@@ -8,7 +8,7 @@ public class SetDefinitionPartOfSpeechChange(Guid entityId, string partOfSpeech)
 {
     public string PartOfSpeech { get; } = partOfSpeech;
 
-    public override ValueTask ApplyChange(Definition entity, ChangeContext context)
+    public override ValueTask ApplyChange(Definition entity, IChangeContext context)
     {
         entity.PartOfSpeech = PartOfSpeech;
         return ValueTask.CompletedTask;

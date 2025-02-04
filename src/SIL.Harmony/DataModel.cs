@@ -1,12 +1,9 @@
 using System.Text.Json;
-using SIL.Harmony.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
-using SIL.Harmony.Entities;
-using SIL.Harmony.Resource;
 
 namespace SIL.Harmony;
 

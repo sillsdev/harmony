@@ -18,13 +18,5 @@ public class ChangeContext : IChangeContext
     {
         return _worker.GetSnapshotsReferencing(entityId, includeDeleted).Select(s => s.Entity.DbObject);
     }
-    public async ValueTask<T?> GetCurrent<T>(Guid entityId) where T : class
-    {
-        var snapshot = await GetSnapshot(entityId);
-        if (snapshot is null) return null;
-        return (T) snapshot.Entity.DbObject;
-    }
-
-    public async ValueTask<bool> IsObjectDeleted(Guid entityId) => (await GetSnapshot(entityId))?.EntityIsDeleted ?? true;
     IObjectBase IChangeContext.Adapt(object obj) => _crdtConfig.ObjectTypeListBuilder.Adapt(obj);
 }

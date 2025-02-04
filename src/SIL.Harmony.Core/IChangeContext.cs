@@ -13,4 +13,5 @@ public interface IChangeContext
 
     public async ValueTask<bool> IsObjectDeleted(Guid entityId) => (await GetSnapshot(entityId))?.EntityIsDeleted ?? true;
     internal IObjectBase Adapt(object obj);
+    IAsyncEnumerable<object> GetObjectsReferencing(Guid entityId, bool includeDeleted = false);
 }

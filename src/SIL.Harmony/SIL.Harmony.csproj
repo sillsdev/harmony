@@ -15,6 +15,7 @@
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
       <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+      <PackageReference Include="Nito.AsyncEx.Coordination" />
     </ItemGroup>
 
     <ItemGroup>

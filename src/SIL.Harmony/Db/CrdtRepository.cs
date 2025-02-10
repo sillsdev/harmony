@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using SIL.Harmony.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -22,6 +23,21 @@ internal class CrdtRepository
         //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
         //but since we're using a custom query, we can use it directly and apply the scoped filters manually
         _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
+    }
+
+    /// <summary>
+    /// used to ensure that multiple instances of the same database don't try to access the same lock
+    /// may be the connection string so it could contain sensitive information
+    /// if it's in memory we'll just use a random guid
+    /// </summary>
+    internal string DatabaseIdentifier
+    {
+        get
+        {
+            var connection = _dbContext.Database.GetDbConnection();
+            if (connection.ConnectionString is ":memory:") return Guid.NewGuid().ToString();
+            return connection.ConnectionString;
+        }
     }
 
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();

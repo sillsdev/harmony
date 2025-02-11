@@ -75,7 +75,7 @@ public class DataModelSimpleChanges : DataModelTestBase
         await WriteNextChange(SetWord(Guid.NewGuid(), "change 1"));
         await WriteNextChange(SetWord(Guid.NewGuid(), "change 2"));
         DbContext.Snapshots.Should().HaveCount(2);
-        await Verify(DbContext.Commits);
+        await Verify(DbContext.Commits.DefaultOrder().Include(c => c.ChangeEntities).Include(c => c.Snapshots));
 
         await WriteNextChange(SetWord(Guid.NewGuid(), "change 3"));
         DbContext.Snapshots.Should().HaveCount(3);

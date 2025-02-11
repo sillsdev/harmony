@@ -83,28 +83,12 @@
   },
   {
     $type: Commit,
-    Snapshots: [
-      {
-        $type: ObjectSnapshot,
-        Id: Guid_6,
-        TypeName: Word,
-        Entity: {
-          $type: Word,
-          Text: second,
-          Id: Guid_2
-        },
-        EntityId: Guid_2,
-        EntityIsDeleted: false,
-        CommitId: Guid_7,
-        IsRoot: false
-      }
-    ],
     Hash: Hash_3,
     ParentHash: Hash_2,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
-        CommitId: Guid_7,
+        CommitId: Guid_6,
         EntityId: Guid_2,
         Change: {
           $type: SetWordTextChange,
@@ -117,9 +101,9 @@
     CompareKey: {
       $type: ValueTuple<DateTimeOffset, long,
       Item1: DateTimeOffset_3,
-      Item3: Guid_7
+      Item3: Guid_6
     },
-    Id: Guid_7,
+    Id: Guid_6,
     HybridDateTime: {
       $type: HybridDateTime,
       DateTime: DateTimeOffset_3
@@ -135,7 +119,7 @@
     Snapshots: [
       {
         $type: ObjectSnapshot,
-        Id: Guid_8,
+        Id: Guid_7,
         TypeName: Word,
         Entity: {
           $type: Word,
@@ -145,7 +129,7 @@
         },
         EntityId: Guid_2,
         EntityIsDeleted: false,
-        CommitId: Guid_9,
+        CommitId: Guid_8,
         IsRoot: false
       }
     ],
@@ -154,7 +138,7 @@
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
-        CommitId: Guid_9,
+        CommitId: Guid_8,
         EntityId: Guid_2,
         Change: {
           $type: SetWordTextChange,
@@ -167,9 +151,9 @@
     CompareKey: {
       $type: ValueTuple<DateTimeOffset, long,
       Item1: DateTimeOffset_4,
-      Item3: Guid_9
+      Item3: Guid_8
     },
-    Id: Guid_9,
+    Id: Guid_8,
     HybridDateTime: {
       $type: HybridDateTime,
       DateTime: DateTimeOffset_4

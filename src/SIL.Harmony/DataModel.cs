@@ -217,7 +217,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task ValidateCommits()
     {
         Commit? parentCommit = null;
-        await foreach (var commit in _crdtRepository.CurrentCommits().AsNoTracking().Include(c => c.Snapshots).AsAsyncEnumerable())
+        await foreach (var commit in _crdtRepository.CurrentCommits().AsNoTracking().AsAsyncEnumerable())
         {
             var parentHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
             var expectedHash = commit.GenerateHash(parentHash);
@@ -228,9 +228,9 @@ public class DataModel : ISyncable, IAsyncDisposable
             }
 
             var actualParentCommit = await _crdtRepository.FindCommitByHash(commit.ParentHash);
-
+            var commitWithSnapshots = await _crdtRepository.CurrentCommits().Include(c => c.Snapshots).SingleAsync(c => c.Id == commit.Id);
             throw new CommitValidationException(
-                $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit?.ToString() ?? "null"} and actual parent {actualParentCommit?.ToString() ?? "null"}, with snapshots: {string.Join(", ", commit.Snapshots.Select(s => s.Entity.DbObject))}");
+                $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit?.ToString() ?? "null"} and actual parent {actualParentCommit?.ToString() ?? "null"}, with snapshots: {string.Join(", ", commitWithSnapshots.Snapshots.Select(s => s.Entity.DbObject))}");
         }
     }
 

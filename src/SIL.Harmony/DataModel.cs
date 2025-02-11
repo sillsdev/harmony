@@ -99,6 +99,8 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         if (await _crdtRepository.HasCommit(commit.Id)) return;
         using var locked = await _lock.LockAsync();
+        _crdtRepository.ClearChangeTracker();
+
         await using var transaction = _crdtRepository.IsInTransaction ? null : await _crdtRepository.BeginTransactionAsync();
         await _crdtRepository.AddCommit(commit);
         if (!deferSnapshotUpdates)
@@ -146,6 +148,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         try
         {
             using var locked = await _lock.LockAsync();
+            _crdtRepository.ClearChangeTracker();
             _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
             var (oldestChange, newCommits) = await _crdtRepository.FilterExistingCommits(commits.ToArray());
             //no changes added
@@ -217,7 +220,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task ValidateCommits()
     {
         Commit? parentCommit = null;
-        await foreach (var commit in _crdtRepository.CurrentCommits().Include(c => c.Snapshots).AsAsyncEnumerable())
+        await foreach (var commit in _crdtRepository.CurrentCommits().AsNoTracking().Include(c => c.Snapshots).AsAsyncEnumerable())
         {
             var parentHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
             var expectedHash = commit.GenerateHash(parentHash);

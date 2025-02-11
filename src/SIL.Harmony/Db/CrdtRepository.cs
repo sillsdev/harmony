@@ -40,6 +40,11 @@ internal class CrdtRepository
         }
     }
 
+    internal void ClearChangeTracker()
+    {
+        _dbContext.ChangeTracker.Clear();
+    }
+
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
 
     private IQueryable<Commit> Commits => _dbContext.Commits;
@@ -356,6 +361,7 @@ internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) 
     }
 
     public DatabaseFacade Database => inner.Database;
+    public ChangeTracker ChangeTracker => inner.ChangeTracker;
 
     public EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class
     {

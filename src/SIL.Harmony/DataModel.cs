@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Nito.AsyncEx;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 
@@ -15,6 +17,9 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
     private bool AlwaysValidate => _crdtConfig.Value.AlwaysValidateCommits;
+
+    private static readonly ConcurrentDictionary<string, AsyncLock> Locks = new();
+    private AsyncLock _lock;
 
     private readonly CrdtRepository _crdtRepository;
     private readonly JsonSerializerOptions _serializerOptions;
@@ -34,6 +39,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         _timeProvider = timeProvider;
         _crdtConfig = crdtConfig;
         _logger = logger;
+        _lock = Locks.GetOrAdd(crdtRepository.DatabaseIdentifier, new AsyncLock());
     }
 
 
@@ -89,6 +95,9 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task Add(Commit commit, bool deferSnapshotUpdates)
     {
         if (await _crdtRepository.HasCommit(commit.Id)) return;
+        using var locked = await _lock.LockAsync();
+        _crdtRepository.ClearChangeTracker();
+
         await using var transaction = _crdtRepository.IsInTransaction ? null : await _crdtRepository.BeginTransactionAsync();
         await _crdtRepository.AddCommit(commit);
         if (!deferSnapshotUpdates)
@@ -96,6 +105,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             //if there are deferred commits, update snapshots with them first
             if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
             await UpdateSnapshots(commit, [commit]);
+
             if (AlwaysValidate) await ValidateCommits();
         }
         else
@@ -134,6 +144,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         commits = commits.ToArray();
         try
         {
+            using var locked = await _lock.LockAsync();
+            _crdtRepository.ClearChangeTracker();
             _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
             var (oldestChange, newCommits) = await _crdtRepository.FilterExistingCommits(commits.ToArray());
             //no changes added
@@ -205,7 +217,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task ValidateCommits()
     {
         Commit? parentCommit = null;
-        await foreach (var commit in _crdtRepository.CurrentCommits().AsAsyncEnumerable())
+        await foreach (var commit in _crdtRepository.CurrentCommits().AsNoTracking().AsAsyncEnumerable())
         {
             var parentHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
             var expectedHash = commit.GenerateHash(parentHash);
@@ -216,12 +228,19 @@ public class DataModel : ISyncable, IAsyncDisposable
             }
 
             var actualParentCommit = await _crdtRepository.FindCommitByHash(commit.ParentHash);
-
+            var commitWithSnapshots = await _crdtRepository.CurrentCommits().Include(c => c.Snapshots).SingleAsync(c => c.Id == commit.Id);
             throw new CommitValidationException(
-                $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit?.ToString() ?? "null"} and actual parent {actualParentCommit?.ToString() ?? "null"}");
+                $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit?.ToString() ?? "null"} and actual parent {actualParentCommit?.ToString() ?? "null"}, with snapshots: {string.Join(", ", commitWithSnapshots.Snapshots.Select(s => s.Entity.DbObject))}");
         }
     }
 
+    public async Task RegenerateSnapshots()
+    {
+        await _crdtRepository.DeleteSnapshotsAndProjectedTables();
+        _crdtRepository.ClearChangeTracker();
+        var allCommits = await _crdtRepository.CurrentCommits().AsNoTracking().ToArrayAsync();
+        await UpdateSnapshots(allCommits.First(), allCommits);
+    }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
     {

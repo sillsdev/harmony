@@ -105,4 +105,25 @@ public class SnapshotTests : DataModelTestBase
                 SetTag(Guid.NewGuid(), "tag-1"),
             ]);
     }
+
+    [Fact]
+    public async Task RegenerateSnapshots_WillArriveAtTheSameState()
+    {
+        var entityId = Guid.NewGuid();
+        await WriteNextChange(SetWord(entityId, "test root"));
+        await WriteNextChange(SetWord(entityId, "test1"));
+        await WriteNextChange(SetWord(entityId, "test2"));
+        await WriteNextChange(SetWord(entityId, "test3"));
+        var beforeSnapshotIds = await DbContext.Snapshots.Select(s => s.Id).ToArrayAsync();
+        var beforeRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync();
+
+        await DataModel.RegenerateSnapshots();
+
+        var afterRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync();
+        var afterSnapshotsIds = await DbContext.Snapshots.Select(s => s.Id).ToArrayAsync();
+        afterRegenerate.Should().BeEquivalentTo(beforeRegenerate);
+
+        //we probably won't have the same number of snapshots, which is ok. but none of the ids should be the same
+        afterSnapshotsIds.Should().NotIntersectWith(beforeSnapshotIds);
+    }
 }

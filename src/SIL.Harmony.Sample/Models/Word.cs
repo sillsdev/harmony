@@ -39,4 +39,10 @@ public class Word : IObjectBase<Word>
             DeletedAt = DeletedAt
         };
     }
+
+    public override string ToString()
+    {
+        return
+            $"{nameof(Text)}: {Text}, {nameof(Id)}: {Id}, {nameof(Note)}: {Note}, {nameof(DeletedAt)}: {DeletedAt}, {nameof(AntonymId)}: {AntonymId}, {nameof(ImageResourceId)}: {ImageResourceId}";
+    }
 }

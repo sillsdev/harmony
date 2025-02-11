@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -21,6 +22,26 @@ internal class CrdtRepository
         //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
         //but since we're using a custom query, we can use it directly and apply the scoped filters manually
         _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
+    }
+
+    /// <summary>
+    /// used to ensure that multiple instances of the same database don't try to access the same lock
+    /// may be the connection string so it could contain sensitive information
+    /// if it's in memory we'll just use a random guid
+    /// </summary>
+    internal string DatabaseIdentifier
+    {
+        get
+        {
+            var connection = _dbContext.Database.GetDbConnection();
+            if (connection.ConnectionString is ":memory:") return Guid.NewGuid().ToString();
+            return connection.ConnectionString;
+        }
+    }
+
+    internal void ClearChangeTracker()
+    {
+        _dbContext.ChangeTracker.Clear();
     }
 
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
@@ -64,6 +85,25 @@ internal class CrdtRepository
         await Snapshots
             .WhereAfter(oldestChange)
             .ExecuteDeleteAsync();
+    }
+
+    public async Task DeleteSnapshotsAndProjectedTables()
+    {
+        if (_crdtConfig.Value.EnableProjectedTables)
+        {
+            foreach (var objectType in _crdtConfig.Value.ObjectTypes)
+            {
+                deleteProjectedTableMethod.MakeGenericMethod(objectType).Invoke(null, [_dbContext]);
+            }
+        }
+        await Snapshots.ExecuteDeleteAsync();
+    }
+
+    private static readonly MethodInfo deleteProjectedTableMethod = new Func<ICrdtDbContext, Task>(DeleteProjectedTable<object>).Method.GetGenericMethodDefinition();
+
+    private static async Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class
+    {
+        await dbContext.Set<T>().ExecuteDeleteAsync();
     }
 
     public IQueryable<Commit> CurrentCommits()
@@ -339,6 +379,7 @@ internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) 
     }
 
     public DatabaseFacade Database => inner.Database;
+    public ChangeTracker ChangeTracker => inner.ChangeTracker;
 
     public EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class
     {

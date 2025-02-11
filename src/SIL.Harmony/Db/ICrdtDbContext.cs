@@ -12,6 +12,7 @@ public interface ICrdtDbContext
     ValueTask<object?> FindAsync(Type entityType, params object?[]? keyValues);
     DbSet<TEntity> Set<TEntity>() where TEntity : class;
     DatabaseFacade Database { get; }
+    ChangeTracker ChangeTracker { get; }
     EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class;
     EntityEntry Entry(object entity);
     EntityEntry Add(object entity);

@@ -234,6 +234,13 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
     }
 
+    public async Task RegenerateSnapshots()
+    {
+        await _crdtRepository.DeleteSnapshotsAndProjectedTables();
+        _crdtRepository.ClearChangeTracker();
+        var allCommits = await _crdtRepository.CurrentCommits().AsNoTracking().ToArrayAsync();
+        await UpdateSnapshots(allCommits.First(), allCommits);
+    }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
     {

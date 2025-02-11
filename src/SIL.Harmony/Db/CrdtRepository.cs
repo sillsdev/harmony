@@ -1,3 +1,4 @@
+using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -84,6 +85,25 @@ internal class CrdtRepository
         await Snapshots
             .WhereAfter(oldestChange)
             .ExecuteDeleteAsync();
+    }
+
+    public async Task DeleteSnapshotsAndProjectedTables()
+    {
+        if (_crdtConfig.Value.EnableProjectedTables)
+        {
+            foreach (var objectType in _crdtConfig.Value.ObjectTypes)
+            {
+                deleteProjectedTableMethod.MakeGenericMethod(objectType).Invoke(null, [_dbContext]);
+            }
+        }
+        await Snapshots.ExecuteDeleteAsync();
+    }
+
+    private static readonly MethodInfo deleteProjectedTableMethod = new Func<ICrdtDbContext, Task>(DeleteProjectedTable<object>).Method.GetGenericMethodDefinition();
+
+    private static async Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class
+    {
+        await dbContext.Set<T>().ExecuteDeleteAsync();
     }
 
     public IQueryable<Commit> CurrentCommits()

@@ -8,7 +8,7 @@ public class AddWordImageChange(Guid entityId, Guid imageId) : EditChange<Word>(
 {
     public Guid ImageId { get; } = imageId;
 
-    public override async ValueTask ApplyChange(Word entity, ChangeContext context)
+    public override async ValueTask ApplyChange(Word entity, IChangeContext context)
     {
         if (!await context.IsObjectDeleted(ImageId)) entity.ImageResourceId = ImageId;
     }

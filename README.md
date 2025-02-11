@@ -69,7 +69,7 @@ public class SetWordTextChange(Guid entityId, string text) : Change<Word>(entity
 {
     public string Text { get; } = text;
 
-    public override ValueTask<IObjectBase> NewEntity(Commit commit, ChangeContext context)
+    public override ValueTask<IObjectBase> NewEntity(Commit commit, IChangeContext context)
     {
         return new(new Word()
         {
@@ -79,7 +79,7 @@ public class SetWordTextChange(Guid entityId, string text) : Change<Word>(entity
     }
 
 
-    public override ValueTask ApplyChange(Word entity, ChangeContext context)
+    public override ValueTask ApplyChange(Word entity, IChangeContext context)
     {
         entity.Text = Text;
         return ValueTask.CompletedTask;

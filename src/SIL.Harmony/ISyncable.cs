@@ -1,5 +1,3 @@
-﻿using SIL.Harmony.Core;
-
 namespace SIL.Harmony;
 
 public interface ISyncable

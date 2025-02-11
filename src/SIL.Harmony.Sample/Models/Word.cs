@@ -23,7 +23,7 @@ public class Word : IObjectBase<Word>
         }
     }
 
-    public void RemoveReference(Guid id, Commit commit)
+    public void RemoveReference(Guid id, CommitBase commit)
     {
         if (AntonymId == id) AntonymId = null;
     }

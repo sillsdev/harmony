@@ -9,7 +9,7 @@ public class AddAntonymReferenceChange(Guid entityId, Guid antonymId)
 {
     public Guid AntonymId { get; set; } = antonymId;
 
-    public override async ValueTask ApplyChange(Word entity, ChangeContext context)
+    public override async ValueTask ApplyChange(Word entity, IChangeContext context)
     {
         //if the word being referenced was deleted before this change was applied (could happen after a sync)
         //then we don't want to apply the change

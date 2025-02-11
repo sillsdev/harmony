@@ -1,5 +1,3 @@
-﻿using SIL.Harmony.Core;
-
 namespace SIL.Harmony.Tests.ResourceTests;
 
 public class RemoteServiceMock : IRemoteResourceService

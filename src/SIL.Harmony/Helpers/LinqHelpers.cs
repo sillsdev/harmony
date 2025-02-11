@@ -1,5 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
-
 namespace SIL.Harmony.Helpers;
 
 public static class LinqHelpers

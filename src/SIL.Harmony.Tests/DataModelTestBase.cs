@@ -1,7 +1,5 @@
-using System.Data.Common;
 using Microsoft.Data.Sqlite;
 using SIL.Harmony.Changes;
-using SIL.Harmony.Core;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
@@ -9,7 +7,6 @@ using SIL.Harmony.Tests.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Tests;

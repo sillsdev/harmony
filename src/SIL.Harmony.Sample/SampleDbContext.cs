@@ -1,5 +1,4 @@
 using SIL.Harmony.Changes;
-using SIL.Harmony.Core;
 using SIL.Harmony.Db;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;

@@ -9,7 +9,7 @@ public class CreateRemoteResourcePendingUploadChange: CreateChange<RemoteResourc
     {
     }
 
-    public override ValueTask<RemoteResource> NewEntity(Commit commit, ChangeContext context)
+    public override ValueTask<RemoteResource> NewEntity(Commit commit, IChangeContext context)
     {
         return ValueTask.FromResult(new RemoteResource
         {

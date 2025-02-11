@@ -18,7 +18,7 @@ public class Definition : IObjectBase<Definition>, IOrderableCrdt
         return [WordId];
     }
 
-    public void RemoveReference(Guid id, Commit commit)
+    public void RemoveReference(Guid id, CommitBase commit)
     {
         if (WordId == id)
         {

@@ -139,23 +139,14 @@ internal class SnapshotWorker
     /// <param name="commit"></param>
     private async ValueTask MarkDeleted(Guid deletedEntityId, Commit commit)
     {
-        Expression<Func<ObjectSnapshot, bool>> predicateExpression =
-            snapshot => snapshot.References.Contains(deletedEntityId);
-        var predicate = predicateExpression.Compile();
-
-        var toRemoveRefFromIds = new HashSet<Guid>(await _crdtRepository.CurrentSnapshots()
-            .Where(predicateExpression)
+        var toRemoveRefFromIds = await GetSnapshotsReferencing(deletedEntityId, true)
             .Select(s => s.EntityId)
-            .ToArrayAsync());
-        //snapshots from the db might be out of date, we want to use the most up to date data in the worker as well
-        toRemoveRefFromIds.UnionWith(_rootSnapshots.Values.Where(predicate).Select(s => s.EntityId));
-        toRemoveRefFromIds.UnionWith(_pendingSnapshots.Values.Where(predicate).Select(s => s.EntityId));
+            .ToArrayAsync();
+
         foreach (var entityId in toRemoveRefFromIds)
         {
-            var snapshot = await GetSnapshot(entityId);
+            var snapshot = await GetSnapshot(entityId); // AsTracking
             if (snapshot is null) throw new NullReferenceException("unable to find snapshot for entity " + entityId);
-            //could be different from what's in the db if a previous change has already updated it
-            if (!predicate(snapshot)) continue;
             var hasBeenApplied = snapshot.CommitId == commit.Id;
             var updatedEntry = snapshot.Entity.Copy();
             var wasDeleted = updatedEntry.DeletedAt.HasValue;
@@ -202,9 +193,35 @@ internal class SnapshotWorker
 
     internal IAsyncEnumerable<ObjectSnapshot> GetSnapshotsReferencing(Guid entityId, bool includeDeleted = false)
     {
-        return _crdtRepository.CurrentSnapshots()
-            .Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId))
-            .AsAsyncEnumerable();
+        return GetSnapshotsWhere(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
+    }
+
+    internal async IAsyncEnumerable<ObjectSnapshot> GetSnapshotsWhere(Expression<Func<ObjectSnapshot, bool>> predicateExpression)
+    {
+        var predicate = predicateExpression.Compile();
+
+        // foreaches ordered by most to least up-to-date, so we don't return snapshots that are out of date
+        foreach (var snapshot in _pendingSnapshots.Values
+            .Where(predicate))
+        {
+            yield return snapshot;
+        }
+
+        foreach (var snapshot in _rootSnapshots.Values
+            .Where(predicate)
+            .Where(s => !_pendingSnapshots.ContainsKey(s.EntityId)))
+        {
+            yield return snapshot;
+        }
+
+        await foreach (var snapshot in _crdtRepository.CurrentSnapshots()
+            .Where(predicateExpression)
+            .AsAsyncEnumerable())
+        {
+            if (_pendingSnapshots.ContainsKey(snapshot.EntityId) || _rootSnapshots.ContainsKey(snapshot.EntityId))
+                continue;
+            yield return snapshot;
+        }
     }
 
     private void AddSnapshot(ObjectSnapshot snapshot)

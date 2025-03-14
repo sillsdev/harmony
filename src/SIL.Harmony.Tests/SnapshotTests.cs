@@ -123,6 +123,11 @@ public class SnapshotTests : DataModelTestBase
                 TagWord(wordId, tagId),
                 TagWord(wordId, tagId),
             ]);
+
+        var word = await DataModel.QueryLatest<Word>().Include(w => w.Tags)
+            .Where(w => w.Id == wordId).FirstOrDefaultAsync();
+        word.Should().NotBeNull();
+        word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);
     }
 
     [Fact]

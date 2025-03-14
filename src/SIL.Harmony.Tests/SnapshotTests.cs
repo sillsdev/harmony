@@ -107,6 +107,25 @@ public class SnapshotTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task DuplicatePreventionHandlesDuplicatesInSingleCommit()
+    {
+        var wordId = Guid.NewGuid();
+        var tagId = Guid.NewGuid();
+        await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                SetWord(wordId, "test root"),
+                SetTag(tagId, "tag-1"),
+            ]);
+        await WriteChange(_localClientId,
+            DateTimeOffset.Now,
+            [
+                TagWord(wordId, tagId),
+                TagWord(wordId, tagId),
+            ]);
+    }
+
+    [Fact]
     public async Task RegenerateSnapshots_WillArriveAtTheSameState()
     {
         var entityId = Guid.NewGuid();

@@ -138,6 +138,11 @@ public class DataModelTestBase : IAsyncLifetime
         return new SetTagChange(entityId, value);
     }
 
+    public IChange TagWord(Guid wordId, Guid tagId)
+    {
+        return new TagWordChange(new WordTag { WordId = wordId, TagId = tagId });
+    }
+
     public IChange DeleteTag(Guid entityId)
     {
         return new DeleteChange<Tag>(entityId);

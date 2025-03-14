@@ -11,6 +11,7 @@ public class Word : IObjectBase<Word>
     public DateTimeOffset? DeletedAt { get; set; }
     public Guid? AntonymId { get; set; }
     public Guid? ImageResourceId { get; set; }
+    public List<Tag> Tags { get; set; } = new();
 
     public Guid[] GetReferences()
     {

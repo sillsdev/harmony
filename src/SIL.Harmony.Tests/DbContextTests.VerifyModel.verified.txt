@@ -168,6 +168,8 @@
       DeletedAt (DateTimeOffset?)
       SnapshotId (no field, Guid?) Shadow FK Index
       Text (string) Required Index
+    Skip navigations: 
+      Word (no field, IEnumerable<Word>) CollectionWord Inverse: Tags
     Keys: 
       Id PK
     Foreign keys: 
@@ -192,6 +194,8 @@
       Note (string)
       SnapshotId (no field, Guid?) Shadow FK Index
       Text (string) Required
+    Skip navigations: 
+      Tags (List<Tag>) CollectionTag Inverse: Word
     Keys: 
       Id PK
     Foreign keys: 
@@ -204,6 +208,31 @@
       Relational:Schema: 
       Relational:SqlQuery: 
       Relational:TableName: Word
+      Relational:ViewName: 
+      Relational:ViewSchema: 
+  EntityType: WordTag
+    Properties: 
+      Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
+      DeletedAt (DateTimeOffset?)
+      SnapshotId (no field, Guid?) Shadow FK Index
+      TagId (Guid) Required FK Index
+      WordId (Guid) Required FK Index
+    Keys: 
+      Id PK
+    Foreign keys: 
+      WordTag {'SnapshotId'} -> ObjectSnapshot {'Id'} Unique SetNull
+      WordTag {'TagId'} -> Tag {'Id'} Required Cascade
+      WordTag {'WordId'} -> Word {'Id'} Required Cascade
+    Indexes: 
+      SnapshotId Unique
+      TagId
+      WordId, TagId Unique
+    Annotations: 
+      DiscriminatorProperty: 
+      Relational:FunctionName: 
+      Relational:Schema: 
+      Relational:SqlQuery: 
+      Relational:TableName: WordTag
       Relational:ViewName: 
       Relational:ViewSchema: 
 Annotations: 

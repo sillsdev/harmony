@@ -17,7 +17,7 @@ public class TagWordChange(WordTag wordTag) : CreateChange<WordTag>(wordTag.Id =
             Id = EntityId,
             WordId = WordId,
             TagId = TagId,
-            DeletedAt = isDuplicate ? DateTimeOffset.UtcNow : null
+            DeletedAt = isDuplicate ? commit.DateTime : null
         };
     }
 

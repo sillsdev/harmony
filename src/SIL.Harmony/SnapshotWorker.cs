@@ -139,14 +139,11 @@ internal class SnapshotWorker
     /// <param name="commit"></param>
     private async ValueTask MarkDeleted(Guid deletedEntityId, Commit commit)
     {
-        var toRemoveRefFromIds = await GetSnapshotsReferencing(deletedEntityId, true)
-            .Select(s => s.EntityId)
+        var toRemoveRefFrom = await GetSnapshotsReferencing(deletedEntityId, true)
             .ToArrayAsync();
 
-        foreach (var entityId in toRemoveRefFromIds)
+        foreach (var snapshot in toRemoveRefFrom)
         {
-            var snapshot = await GetSnapshot(entityId); // AsTracking
-            if (snapshot is null) throw new NullReferenceException("unable to find snapshot for entity " + entityId);
             var hasBeenApplied = snapshot.CommitId == commit.Id;
             var updatedEntry = snapshot.Entity.Copy();
             var wasDeleted = updatedEntry.DeletedAt.HasValue;

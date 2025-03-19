@@ -146,17 +146,17 @@ internal class SnapshotWorker
 
         foreach (var snapshot in toRemoveRefFrom)
         {
-            var hasBeenApplied = snapshot.CommitId == commit.Id;
+            var commited = snapshot.CommitId != commit.Id;
             var updatedEntry = snapshot.Entity.Copy();
             var wasDeleted = updatedEntry.DeletedAt.HasValue;
 
             updatedEntry.RemoveReference(deletedEntityId, commit);
             var deletedByRemoveRef = !wasDeleted && updatedEntry.DeletedAt.HasValue;
 
-            //this snapshot has already been applied, we don't need to add it again
-            //but we did need to run apply again because we may need to mark other entities as deleted
-            if (!hasBeenApplied)
+            if (commited) // add a new snapshot
                 AddSnapshot(new ObjectSnapshot(updatedEntry, commit, false));
+            else // replace the uncommited one
+                AddSnapshot(new ObjectSnapshot(updatedEntry, commit, snapshot.IsRoot));
 
             //we need to do this after we add the snapshot above otherwise we might get stuck in a loop of deletions
             if (deletedByRemoveRef)

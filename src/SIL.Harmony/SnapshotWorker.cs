@@ -80,7 +80,7 @@ internal class SnapshotWorker
             {
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
-                var changeContext = new ChangeContext(commit, this, _crdtConfig);
+                var changeContext = new ChangeContext(commit, commitIndex, intermediateSnapshots, this, _crdtConfig);
                 bool wasDeleted;
                 if (prevSnapshot is not null)
                 {
@@ -98,34 +98,10 @@ internal class SnapshotWorker
                 var deletedByChange = !wasDeleted && entity.DeletedAt.HasValue;
                 if (deletedByChange)
                 {
-                    await MarkDeleted(entity.Id, commit);
+                    await MarkDeleted(entity.Id, changeContext);
                 }
-
-                //to get the state in a point in time we would have to find a snapshot before that time, then apply any commits that came after that snapshot but still before the point in time.
-                //we would probably want the most recent snapshot to always follow current, so we might need to track the number of changes a given snapshot represents so we can
-                //decide when to create a new snapshot instead of replacing one inline. This would be done by using the current snapshots parent, instead of the snapshot itself.
-                // s0 -> s1 -> sCurrent
-                // if always taking snapshots would become
-                // s0 -> s1 -> sCurrent -> sNew
-                //but but to not snapshot every change we could do this instead
-                // s0 -> s1 -> sNew
-
-                //when both snapshots are for the same commit we don't want to keep the previous, therefore the new snapshot should be root
-                var isRoot = prevSnapshot is null || (prevSnapshot.IsRoot && prevSnapshot.CommitId == commit.Id);
-                var newSnapshot = new ObjectSnapshot(entity, commit, isRoot);
-                //if both snapshots are for the same commit then we don't want to keep the previous snapshot
-                if (prevSnapshot is null || prevSnapshot.CommitId == commit.Id)
-                {
-                    //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
-                }
-                else if (commitIndex % 2 == 0 && !prevSnapshot.IsRoot && IsNew(prevSnapshot))
-                {
-                    intermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
-                }
-
-                await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
-
-                AddSnapshot(newSnapshot);
+                
+                await GenerateSnapshotForEntity(entity, prevSnapshot, changeContext);
             }
             _newIntermediateSnapshots.AddRange(intermediateSnapshots.Values);
             intermediateSnapshots.Clear();
@@ -137,31 +113,28 @@ internal class SnapshotWorker
     /// </summary>
     /// <param name="deletedEntityId"></param>
     /// <param name="commit"></param>
-    private async ValueTask MarkDeleted(Guid deletedEntityId, Commit commit)
+    private async ValueTask MarkDeleted(Guid deletedEntityId, ChangeContext context)
     {
         // Including deleted shouldn't be necessary, because change objects are responsible for not adding references to deleted entities.
         // But maybe it's a good fallback.
         var toRemoveRefFrom = await GetSnapshotsReferencing(deletedEntityId, true)
             .ToArrayAsync();
 
+        var commit = context.Commit;
         foreach (var snapshot in toRemoveRefFrom)
         {
-            var commited = snapshot.CommitId != commit.Id;
             var updatedEntry = snapshot.Entity.Copy();
             var wasDeleted = updatedEntry.DeletedAt.HasValue;
 
             updatedEntry.RemoveReference(deletedEntityId, commit);
             var deletedByRemoveRef = !wasDeleted && updatedEntry.DeletedAt.HasValue;
 
-            if (commited) // add a new snapshot
-                AddSnapshot(new ObjectSnapshot(updatedEntry, commit, false));
-            else // replace the uncommited one
-                AddSnapshot(new ObjectSnapshot(updatedEntry, commit, snapshot.IsRoot));
+            await GenerateSnapshotForEntity(updatedEntry, snapshot, context);
 
             //we need to do this after we add the snapshot above otherwise we might get stuck in a loop of deletions
             if (deletedByRemoveRef)
             {
-                await MarkDeleted(updatedEntry.Id, commit);
+                await MarkDeleted(updatedEntry.Id, context);
             }
         }
     }
@@ -221,6 +194,35 @@ internal class SnapshotWorker
                 continue;
             yield return snapshot;
         }
+    }
+
+    private async Task GenerateSnapshotForEntity(IObjectBase entity, ObjectSnapshot? prevSnapshot, ChangeContext context)
+    {
+        //to get the state in a point in time we would have to find a snapshot before that time, then apply any commits that came after that snapshot but still before the point in time.
+        //we would probably want the most recent snapshot to always follow current, so we might need to track the number of changes a given snapshot represents so we can
+        //decide when to create a new snapshot instead of replacing one inline. This would be done by using the current snapshots parent, instead of the snapshot itself.
+        // s0 -> s1 -> sCurrent
+        // if always taking snapshots would become
+        // s0 -> s1 -> sCurrent -> sNew
+        //but but to not snapshot every change we could do this instead
+        // s0 -> s1 -> sNew
+
+        //when both snapshots are for the same commit we don't want to keep the previous, therefore the new snapshot should be root
+        var isRoot = prevSnapshot is null || (prevSnapshot.IsRoot && prevSnapshot.CommitId == context.Commit.Id);
+        var newSnapshot = new ObjectSnapshot(entity, context.Commit, isRoot);
+        //if both snapshots are for the same commit then we don't want to keep the previous snapshot
+        if (prevSnapshot is null || prevSnapshot.CommitId == context.Commit.Id)
+        {
+            //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
+        }
+        else if (context.CommitIndex % 2 == 0 && !prevSnapshot.IsRoot && IsNew(prevSnapshot))
+        {
+            context.IntermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
+        }
+
+        await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
+
+        AddSnapshot(newSnapshot);
     }
 
     private void AddSnapshot(ObjectSnapshot snapshot)

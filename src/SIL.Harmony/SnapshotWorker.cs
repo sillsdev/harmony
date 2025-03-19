@@ -139,6 +139,8 @@ internal class SnapshotWorker
     /// <param name="commit"></param>
     private async ValueTask MarkDeleted(Guid deletedEntityId, Commit commit)
     {
+        // Including deleted shouldn't be necessary, because change objects are responsible for not adding references to deleted entities.
+        // But maybe it's a good fallback.
         var toRemoveRefFrom = await GetSnapshotsReferencing(deletedEntityId, true)
             .ToArrayAsync();
 

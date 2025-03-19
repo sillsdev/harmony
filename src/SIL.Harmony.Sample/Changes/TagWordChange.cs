@@ -11,13 +11,15 @@ public class TagWordChange(WordTag wordTag) : CreateChange<WordTag>(wordTag.Id =
 
     public async override ValueTask<WordTag> NewEntity(Commit commit, IChangeContext context)
     {
-        var isDuplicate = await IsDuplicate(context);
+        bool delete = await IsDuplicate(context)
+            || await context.IsObjectDeleted(WordId)
+            || await context.IsObjectDeleted(TagId);
         return new WordTag()
         {
             Id = EntityId,
             WordId = WordId,
             TagId = TagId,
-            DeletedAt = isDuplicate ? commit.DateTime : null
+            DeletedAt = delete ? commit.DateTime : null
         };
     }
 

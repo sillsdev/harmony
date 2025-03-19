@@ -76,9 +76,9 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(_localClientId, NextDate(), change, add);
     }
 
-    public async ValueTask<Commit> WriteNextChange(IEnumerable<IChange> changes)
+    public async ValueTask<Commit> WriteNextChange(IEnumerable<IChange> changes, bool add = true)
     {
-        return await WriteChange(_localClientId, NextDate(), changes);
+        return await WriteChange(_localClientId, NextDate(), changes, add);
     }
 
     public async ValueTask<Commit> WriteChangeAfter(Commit after, IChange change)

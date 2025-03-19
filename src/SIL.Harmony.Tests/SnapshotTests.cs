@@ -65,8 +65,7 @@ public class SnapshotTests : DataModelTestBase
     public async Task OnlySaveTheLastSnapshotWhenThereAreMultipleChangesToAnEntityInOneCommit()
     {
         var entityId = Guid.NewGuid();
-        await WriteChange(_localClientId,
-            DateTimeOffset.Now,
+        await WriteNextChange(
             [
                 SetWord(entityId, "change1"),
                 SetWord(entityId, "change2"),
@@ -93,13 +92,8 @@ public class SnapshotTests : DataModelTestBase
     public async Task CanRecreateUniqueConstraintConflictingValueInOneCommit()
     {
         var entityId = Guid.NewGuid();
-        await WriteChange(_localClientId,
-            DateTimeOffset.Now,
-            [
-                SetTag(entityId, "tag-1"),
-            ]);
-        await WriteChange(_localClientId,
-            DateTimeOffset.Now,
+        await WriteNextChange(SetTag(entityId, "tag-1"));
+        await WriteNextChange(
             [
                 DeleteTag(entityId),
                 SetTag(Guid.NewGuid(), "tag-1"),
@@ -111,14 +105,12 @@ public class SnapshotTests : DataModelTestBase
     {
         var wordId = Guid.NewGuid();
         var tagId = Guid.NewGuid();
-        await WriteChange(_localClientId,
-            DateTimeOffset.Now,
+        await WriteNextChange(
             [
                 SetWord(wordId, "test root"),
                 SetTag(tagId, "tag-1"),
             ]);
-        await WriteChange(_localClientId,
-            DateTimeOffset.Now,
+        await WriteNextChange(
             [
                 TagWord(wordId, tagId),
                 TagWord(wordId, tagId),

@@ -138,9 +138,9 @@ public class DataModelTestBase : IAsyncLifetime
         return new SetTagChange(entityId, value);
     }
 
-    public IChange TagWord(Guid wordId, Guid tagId)
+    public IChange TagWord(Guid wordId, Guid tagId, Guid entityId = default)
     {
-        return new TagWordChange(new WordTag { WordId = wordId, TagId = tagId });
+        return new TagWordChange(new WordTag { Id = entityId, WordId = wordId, TagId = tagId });
     }
 
     public IChange DeleteTag(Guid entityId)

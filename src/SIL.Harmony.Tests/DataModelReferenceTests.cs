@@ -84,4 +84,28 @@ public class DataModelReferenceTests : DataModelTestBase
         var wordWithoutRef = (Word) snapshot.Entity;
         wordWithoutRef.AntonymId.Should().BeNull();
     }
+
+    [Fact]
+    public async Task AddAndDeleteInSameSyncDeletesRefs()
+    {
+        var wordId = Guid.NewGuid();
+        var definitionId = Guid.NewGuid();
+
+        var initialCommit = await WriteNextChange(
+            [
+                SetWord(wordId, "original"),
+                NewDefinition(wordId, "the shiny one everything started with", "adj", 0, definitionId),
+            ], add: false);
+        var deleteCommit = await WriteNextChange(
+                new DeleteChange<Word>(wordId),
+            add: false);
+        await AddCommitsViaSync([
+            initialCommit,
+            deleteCommit
+        ]);
+
+        var def = await DataModel.GetLatest<Definition>(definitionId);
+        def.Should().NotBeNull();
+        def.DeletedAt.Should().NotBeNull();
+    }
 }

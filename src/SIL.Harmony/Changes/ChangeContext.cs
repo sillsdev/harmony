@@ -2,7 +2,7 @@ using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Changes;
 
-public class ChangeContext : IChangeContext
+internal class ChangeContext : IChangeContext
 {
     private readonly SnapshotWorker _worker;
     private readonly CrdtConfig _crdtConfig;

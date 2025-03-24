@@ -50,12 +50,29 @@
   },
   {
     $type: Commit,
+    Snapshots: [
+      {
+        $type: ObjectSnapshot,
+        Id: Guid_5,
+        TypeName: Word,
+        Entity: {
+          $type: Word,
+          Text: first,
+          Note: a word note,
+          Id: Guid_2
+        },
+        EntityId: Guid_2,
+        EntityIsDeleted: false,
+        CommitId: Guid_6,
+        IsRoot: false
+      }
+    ],
     Hash: Hash_2,
     ParentHash: Hash_1,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
-        CommitId: Guid_5,
+        CommitId: Guid_6,
         EntityId: Guid_2,
         Change: {
           $type: SetWordNoteChange,
@@ -68,9 +85,9 @@
     CompareKey: {
       $type: ValueTuple<DateTimeOffset, long,
       Item1: DateTimeOffset_2,
-      Item3: Guid_5
+      Item3: Guid_6
     },
-    Id: Guid_5,
+    Id: Guid_6,
     HybridDateTime: {
       $type: HybridDateTime,
       DateTime: DateTimeOffset_2
@@ -88,7 +105,7 @@
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
-        CommitId: Guid_6,
+        CommitId: Guid_7,
         EntityId: Guid_2,
         Change: {
           $type: SetWordTextChange,
@@ -101,9 +118,9 @@
     CompareKey: {
       $type: ValueTuple<DateTimeOffset, long,
       Item1: DateTimeOffset_3,
-      Item3: Guid_6
+      Item3: Guid_7
     },
-    Id: Guid_6,
+    Id: Guid_7,
     HybridDateTime: {
       $type: HybridDateTime,
       DateTime: DateTimeOffset_3
@@ -119,7 +136,7 @@
     Snapshots: [
       {
         $type: ObjectSnapshot,
-        Id: Guid_7,
+        Id: Guid_8,
         TypeName: Word,
         Entity: {
           $type: Word,
@@ -129,7 +146,7 @@
         },
         EntityId: Guid_2,
         EntityIsDeleted: false,
-        CommitId: Guid_8,
+        CommitId: Guid_9,
         IsRoot: false
       }
     ],
@@ -138,7 +155,7 @@
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
-        CommitId: Guid_8,
+        CommitId: Guid_9,
         EntityId: Guid_2,
         Change: {
           $type: SetWordTextChange,
@@ -151,9 +168,9 @@
     CompareKey: {
       $type: ValueTuple<DateTimeOffset, long,
       Item1: DateTimeOffset_4,
-      Item3: Guid_8
+      Item3: Guid_9
     },
-    Id: Guid_8,
+    Id: Guid_9,
     HybridDateTime: {
       $type: HybridDateTime,
       DateTime: DateTimeOffset_4

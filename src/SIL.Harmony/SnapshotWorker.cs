@@ -242,13 +242,13 @@ internal class SnapshotWorker
     private bool IsNew(ObjectSnapshot snapshot)
     {
         var entityId = snapshot.EntityId;
-        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
-        {
-            return rootSnapshot.Id != snapshot.Id;
-        }
         if (_pendingSnapshots.TryGetValue(entityId, out var pendingSnapshot))
         {
-            return pendingSnapshot.Id != snapshot.Id;
+            return pendingSnapshot.Id == snapshot.Id;
+        }
+        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
+        {
+            return rootSnapshot.Id == snapshot.Id;
         }
         return false;
     }

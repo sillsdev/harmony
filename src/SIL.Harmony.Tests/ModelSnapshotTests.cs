@@ -98,6 +98,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var addNew = new List<Commit>(changeCount);
         for (var i = 0; i < changeCount; i++)
         {
+            // todo: these commits all have an odd index, so no intermediate snapshots will be persisted i.e. the snapshot count checking is somewhat deceptive
             changes.Add(await WriteNextChange(SetWord(entityId, $"change {i}"), false).AsTask());
             addNew.Add(await WriteNextChange(SetWord(Guid.NewGuid(), $"add {i}"), false).AsTask());
         }

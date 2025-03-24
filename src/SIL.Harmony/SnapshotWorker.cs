@@ -132,7 +132,7 @@ internal class SnapshotWorker
             {
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
-                var changeContext = new ChangeContext(commit, commitIndex, intermediateSnapshots, this, _crdtConfig);
+                var changeContext = new ChangeContext(commit, this, _crdtConfig);
                 bool wasDeleted;
                 if (prevSnapshot is not null)
                 {

@@ -48,13 +48,19 @@ public static class CrdtSampleKernel
                 .Add<SetOrderChange<Definition>>()
                 .Add<SetDefinitionPartOfSpeechChange>()
                 .Add<SetTagChange>()
+                .Add<TagWordChange>()
                 .Add<DeleteChange<Word>>()
                 .Add<DeleteChange<Definition>>()
                 .Add<DeleteChange<Example>>()
                 .Add<DeleteChange<Tag>>()
                 ;
             config.ObjectTypeListBuilder.DefaultAdapter()
-                .Add<Word>()
+                .Add<Word>(builder =>
+                {
+                    builder.HasMany(w => w.Tags)
+                        .WithMany()
+                        .UsingEntity<WordTag>();
+                })
                 .Add<Definition>(builder =>
                 {
                     builder.HasOne<Word>()
@@ -66,6 +72,11 @@ public static class CrdtSampleKernel
                 .Add<Tag>(builder =>
                 {
                     builder.HasIndex(tag => tag.Text).IsUnique();
+                })
+                .Add<WordTag>(builder =>
+                {
+                    builder.HasKey(wt => wt.Id);
+                    builder.HasIndex(wt => new { wt.WordId, wt.TagId }).IsUnique();
                 });
         });
         return services;

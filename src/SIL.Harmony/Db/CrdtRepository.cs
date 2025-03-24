@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Resource;
@@ -13,12 +14,15 @@ internal class CrdtRepository
 {
     private readonly ICrdtDbContext _dbContext;
     private readonly IOptions<CrdtConfig> _crdtConfig;
+    private readonly ILogger<CrdtRepository> _logger;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
+        ILogger<CrdtRepository> logger,
         Commit? ignoreChangesAfter = null)
     {
         _crdtConfig = crdtConfig;
         _dbContext = ignoreChangesAfter is not null ? new ScopedDbContext(dbContext, ignoreChangesAfter) : dbContext;
+        _logger = logger;
         //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
         //but since we're using a custom query, we can use it directly and apply the scoped filters manually
         _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
@@ -261,7 +265,17 @@ internal class CrdtRepository
             }
         }
 
-        await _dbContext.SaveChangesAsync();
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException e)
+        {
+            var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
+            var message = $"Error saving snapshots: {e.Message}{Environment.NewLine}{entries}";
+            _logger.LogError(e, message);
+            throw new DbUpdateException(message, e);
+        }
     }
 
     private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot)
@@ -303,7 +317,7 @@ internal class CrdtRepository
 
     public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
     {
-        return new CrdtRepository(_dbContext, _crdtConfig, excludeChangesAfterCommit);
+        return new CrdtRepository(_dbContext, _crdtConfig, _logger, excludeChangesAfterCommit);
     }
 
     public async Task AddCommit(Commit commit)

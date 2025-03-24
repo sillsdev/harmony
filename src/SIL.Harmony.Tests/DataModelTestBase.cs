@@ -76,9 +76,9 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(_localClientId, NextDate(), change, add);
     }
 
-    public async ValueTask<Commit> WriteNextChange(IEnumerable<IChange> changes)
+    public async ValueTask<Commit> WriteNextChange(IEnumerable<IChange> changes, bool add = true)
     {
-        return await WriteChange(_localClientId, NextDate(), changes);
+        return await WriteChange(_localClientId, NextDate(), changes, add);
     }
 
     public async ValueTask<Commit> WriteChangeAfter(Commit after, IChange change)
@@ -136,6 +136,11 @@ public class DataModelTestBase : IAsyncLifetime
     public IChange SetTag(Guid entityId, string value)
     {
         return new SetTagChange(entityId, value);
+    }
+
+    public IChange TagWord(Guid wordId, Guid tagId, Guid entityId = default)
+    {
+        return new TagWordChange(new WordTag { Id = entityId, WordId = wordId, TagId = tagId });
     }
 
     public IChange DeleteTag(Guid entityId)

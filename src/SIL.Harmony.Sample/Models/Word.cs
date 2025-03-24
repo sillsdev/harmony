@@ -11,6 +11,7 @@ public class Word : IObjectBase<Word>
     public DateTimeOffset? DeletedAt { get; set; }
     public Guid? AntonymId { get; set; }
     public Guid? ImageResourceId { get; set; }
+    public List<Tag> Tags { get; set; } = new();
 
     public Guid[] GetReferences()
     {
@@ -36,13 +37,16 @@ public class Word : IObjectBase<Word>
             Text = Text,
             Note = Note,
             AntonymId = AntonymId,
-            DeletedAt = DeletedAt
+            DeletedAt = DeletedAt,
+            ImageResourceId = ImageResourceId,
+            Tags = Tags.Select(t => t.Copy()).Cast<Tag>().ToList(),
         };
     }
 
     public override string ToString()
     {
         return
-            $"{nameof(Text)}: {Text}, {nameof(Id)}: {Id}, {nameof(Note)}: {Note}, {nameof(DeletedAt)}: {DeletedAt}, {nameof(AntonymId)}: {AntonymId}, {nameof(ImageResourceId)}: {ImageResourceId}";
+            $"{nameof(Text)}: {Text}, {nameof(Id)}: {Id}, {nameof(Note)}: {Note}, {nameof(DeletedAt)}: {DeletedAt}, {nameof(AntonymId)}: {AntonymId}, {nameof(ImageResourceId)}: {ImageResourceId}" +
+            $", {nameof(Tags)}: {string.Join(", ", Tags.Select(t => t.Text))}";
     }
 }

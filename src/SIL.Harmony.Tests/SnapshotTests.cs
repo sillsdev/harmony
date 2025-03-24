@@ -65,8 +65,7 @@ public class SnapshotTests : DataModelTestBase
     public async Task OnlySaveTheLastSnapshotWhenThereAreMultipleChangesToAnEntityInOneCommit()
     {
         var entityId = Guid.NewGuid();
-        await WriteChange(_localClientId,
-            DateTimeOffset.Now,
+        await WriteNextChange(
             [
                 SetWord(entityId, "change1"),
                 SetWord(entityId, "change2"),
@@ -93,17 +92,34 @@ public class SnapshotTests : DataModelTestBase
     public async Task CanRecreateUniqueConstraintConflictingValueInOneCommit()
     {
         var entityId = Guid.NewGuid();
-        await WriteChange(_localClientId,
-            DateTimeOffset.Now,
-            [
-                SetTag(entityId, "tag-1"),
-            ]);
-        await WriteChange(_localClientId,
-            DateTimeOffset.Now,
+        await WriteNextChange(SetTag(entityId, "tag-1"));
+        await WriteNextChange(
             [
                 DeleteTag(entityId),
                 SetTag(Guid.NewGuid(), "tag-1"),
             ]);
+    }
+
+    [Fact]
+    public async Task DuplicatePreventionHandlesDuplicatesInSingleCommit()
+    {
+        var wordId = Guid.NewGuid();
+        var tagId = Guid.NewGuid();
+        await WriteNextChange(
+            [
+                SetWord(wordId, "test root"),
+                SetTag(tagId, "tag-1"),
+            ]);
+        await WriteNextChange(
+            [
+                TagWord(wordId, tagId),
+                TagWord(wordId, tagId),
+            ]);
+
+        var word = await DataModel.QueryLatest<Word>().Include(w => w.Tags)
+            .Where(w => w.Id == wordId).FirstOrDefaultAsync();
+        word.Should().NotBeNull();
+        word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);
     }
 
     [Fact]

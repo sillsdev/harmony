@@ -86,6 +86,48 @@ public class DataModelReferenceTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task AddAndDeleteInSameCommitDeletesRefs()
+    {
+        var wordId = Guid.NewGuid();
+        var definitionId = Guid.NewGuid();
+
+        await WriteNextChange(
+            [
+                SetWord(wordId, "original"),
+                NewDefinition(wordId, "the shiny one everything started with", "adj", 0, definitionId),
+                new DeleteChange<Word>(wordId),
+            ]);
+
+        var def = await DataModel.GetLatest<Definition>(definitionId);
+        def.Should().NotBeNull();
+        def.DeletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task UpdateAndDeleteParentInSameCommitWorks()
+    {
+        var wordId = Guid.NewGuid();
+        var definitionId = Guid.NewGuid();
+
+        await WriteNextChange(
+            [
+                SetWord(wordId, "original"),
+                NewDefinition(wordId, "the shiny one everything started with", "adj", 0, definitionId),
+            ]);
+
+        await WriteNextChange(
+            [
+                new SetDefinitionPartOfSpeechChange(definitionId, "pos2"),
+                new DeleteChange<Word>(wordId),
+            ]);
+
+        var def = await DataModel.GetLatest<Definition>(definitionId);
+        def.Should().NotBeNull();
+        def.PartOfSpeech.Should().Be("pos2");
+        def.DeletedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task AddAndDeleteInSameSyncDeletesRefs()
     {
         var wordId = Guid.NewGuid();

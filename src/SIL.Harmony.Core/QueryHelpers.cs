@@ -25,16 +25,18 @@ public static class QueryHelpers
     public static async IAsyncEnumerable<TCommit> GetMissingCommits<TCommit, TChange>(
         this IQueryable<TCommit> commits,
         SyncState localState,
-        SyncState remoteState) where TCommit : CommitBase<TChange>
+        SyncState remoteState, bool includeChangeEntities = true) where TCommit : CommitBase<TChange>
     {
         commits = commits.AsNoTracking();
+        if (includeChangeEntities) commits = commits.Include(c => c.ChangeEntities);
         foreach (var (clientId, localTimestamp) in localState.ClientHeads)
         {
             //client is new to the other history
             if (!remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp))
             {
                 //todo slow, it would be better if we could query on client id and get latest changes per client
-                await foreach (var commit in commits.Include(c => c.ChangeEntities).DefaultOrder()
+                await foreach (var commit in commits
+                                   .DefaultOrder()
                                    .Where(c => c.ClientId == clientId)
                                    .AsAsyncEnumerable())
                 {
@@ -46,7 +48,7 @@ public static class QueryHelpers
             {
                 var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(otherTimestamp);
                 //todo even slower because we need to filter out changes that are already in the other history
-                await foreach (var commit in commits.Include(c => c.ChangeEntities)
+                await foreach (var commit in commits
                                    .DefaultOrder()
                                    .Where(c => c.ClientId == clientId && c.HybridDateTime.DateTime > otherDt)
                                    .AsAsyncEnumerable())

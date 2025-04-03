@@ -23,7 +23,7 @@ public abstract class CommitBase
     }
 
     public (DateTimeOffset, long, Guid) CompareKey => (HybridDateTime.DateTime, HybridDateTime.Counter, Id);
-    public Guid Id { get; }
+    public Guid Id { get; init; }
     public required HybridDateTime HybridDateTime { get; init; }
     public DateTimeOffset DateTime => HybridDateTime.DateTime;
     public CommitMetadata Metadata { get; init; } = new();

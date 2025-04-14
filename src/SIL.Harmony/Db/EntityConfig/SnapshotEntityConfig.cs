@@ -12,6 +12,7 @@ public class SnapshotEntityConfig(JsonSerializerOptions jsonSerializerOptions) :
         builder.ToTable("Snapshots");
         builder.HasKey(s => s.Id);
         builder.HasIndex(s => new { s.CommitId, s.EntityId }).IsUnique();
+        builder.HasIndex(s => s.EntityId);
         builder
             .HasOne(s => s.Commit)
             .WithMany(c => c.Snapshots)

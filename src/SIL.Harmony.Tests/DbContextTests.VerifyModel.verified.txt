@@ -72,6 +72,7 @@
     Foreign keys: 
       ObjectSnapshot {'CommitId'} -> Commit {'Id'} Required Cascade ToDependent: Snapshots ToPrincipal: Commit
     Indexes: 
+      EntityId
       CommitId, EntityId Unique
     Annotations: 
       DiscriminatorProperty: 

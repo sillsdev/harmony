@@ -103,7 +103,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         if (!deferSnapshotUpdates)
         {
             //if there are deferred commits, update snapshots with them first
-            if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
+            if (_deferredCommits is not []) await FlushDeferredCommits();
             await UpdateSnapshots(commit, [commit]);
 
             if (AlwaysValidate) await ValidateCommits();
@@ -118,10 +118,10 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         if (_deferredCommits is []) return;
-        await UpdateSnapshotsByDeferredCommits();
+        await FlushDeferredCommits();
     }
 
-    private async Task UpdateSnapshotsByDeferredCommits()
+    public async Task FlushDeferredCommits()
     {
         var commits = Interlocked.Exchange(ref _deferredCommits, []);
         var oldestChange = commits.MinBy(c => c.CompareKey);
@@ -153,7 +153,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
             await using var transaction = await _crdtRepository.BeginTransactionAsync();
             //if there are deferred commits, update snapshots with them first
-            if (_deferredCommits is not []) await UpdateSnapshotsByDeferredCommits();
+            if (_deferredCommits is not []) await FlushDeferredCommits();
             //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
             await _crdtRepository.AddCommits(newCommits, false);
             await UpdateSnapshots(oldestChange, newCommits);

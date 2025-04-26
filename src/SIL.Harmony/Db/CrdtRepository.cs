@@ -256,32 +256,35 @@ internal class CrdtRepository
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
         var projectedEntityIds = new HashSet<Guid>();
-        foreach (var snapshot in snapshots.DefaultOrderDescending())
+        foreach (var grouping in snapshots.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
         {
-            _dbContext.Add(snapshot);
-            if (projectedEntityIds.Add(snapshot.EntityId))
+            foreach (var snapshot in grouping.DefaultOrderDescending())
             {
-                await ProjectSnapshot(snapshot);
+                _dbContext.Add(snapshot);
+                if (projectedEntityIds.Add(snapshot.EntityId))
+                {
+                    await ProjectSnapshot(snapshot);
+                }
             }
-        }
 
-        try
-        {
-            await _dbContext.SaveChangesAsync();
-        }
-        catch (DbUpdateException e)
-        {
-            var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
-            var message = $"Error saving snapshots: {e.Message}{Environment.NewLine}{entries}";
-            _logger.LogError(e, message);
-            throw new DbUpdateException(message, e);
+            try
+            {
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException e)
+            {
+                var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
+                var message = $"Error saving snapshots: {e.Message}{Environment.NewLine}{entries}";
+                _logger.LogError(e, message);
+                throw new DbUpdateException(message, e);
+            }
         }
     }
 
     private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot)
     {
         if (!_crdtConfig.Value.EnableProjectedTables) return;
-        if (objectSnapshot.IsRoot && objectSnapshot.EntityIsDeleted) return;
+
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
         var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
         if (existingEntry is null && objectSnapshot.EntityIsDeleted) return;

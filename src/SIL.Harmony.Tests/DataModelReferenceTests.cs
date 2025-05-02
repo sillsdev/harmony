@@ -150,4 +150,24 @@ public class DataModelReferenceTests : DataModelTestBase
         def.Should().NotBeNull();
         def.DeletedAt.Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task CanCreate2TagsWithTheSameNameOutOfOrder()
+    {
+        var tagText = "tag1";
+        var commitA = await WriteNextChange(SetTag(Guid.NewGuid(), tagText));
+        //represents someone syncing in a tag with the same name
+        await WriteChangeBefore(commitA, SetTag(Guid.NewGuid(), tagText));
+    }
+
+    [Fact]
+    public async Task CanUpdateTagWithTheSameNameOutOfOrder()
+    {
+        var tagText = "tag1";
+        var renameTagId = Guid.NewGuid();
+        await WriteNextChange(SetTag(renameTagId, "tag2"));
+        var commitA = await WriteNextChange(SetTag(Guid.NewGuid(), tagText));
+        //represents someone syncing in a tag with the same name
+        await WriteNextChange(SetTag(renameTagId, tagText));
+    }
 }

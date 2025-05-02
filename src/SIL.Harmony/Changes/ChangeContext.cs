@@ -25,5 +25,13 @@ internal class ChangeContext : IChangeContext
     {
         return _worker.GetSnapshotsReferencing(entityId, includeDeleted).Select(s => s.Entity.DbObject);
     }
+
+    public IAsyncEnumerable<T> GetObjectsOfType<T>(string jsonTypeName, bool includeDeleted = false) where T : class
+    {
+        return _worker.GetSnapshotsWhere(s => (includeDeleted || !s.EntityIsDeleted) && s.TypeName == jsonTypeName)
+            .Select(s => s.Entity.DbObject)
+            .OfType<T>();
+    }
+
     IObjectBase IChangeContext.Adapt(object obj) => _crdtConfig.ObjectTypeListBuilder.Adapt(obj);
 }

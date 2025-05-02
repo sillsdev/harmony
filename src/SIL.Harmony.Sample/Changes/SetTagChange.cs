@@ -8,19 +8,26 @@ public class SetTagChange(Guid entityId, string text) : Change<Tag>(entityId), I
 {
     public string Text { get; } = text;
 
-    public override ValueTask<Tag> NewEntity(Commit commit, IChangeContext context)
+    public override async ValueTask<Tag> NewEntity(Commit commit, IChangeContext context)
     {
-        return new(new Tag()
+        var tagExists = await context.GetObjectsOfType<Tag>(nameof(Tag)).AnyAsync(t => t.Text == Text);
+        return new Tag()
         {
             Id = EntityId,
-            Text = Text
-        });
+            Text = Text,
+            DeletedAt = tagExists ?  commit.DateTime : null
+        };
     }
 
 
-    public override ValueTask ApplyChange(Tag entity, IChangeContext context)
+    public override async ValueTask ApplyChange(Tag entity, IChangeContext context)
     {
+        if (entity.Text == Text) return;
+        var tagExists = await context.GetObjectsOfType<Tag>(nameof(Tag)).AnyAsync(t => t.Id != EntityId && t.Text == Text);
+        if (tagExists)
+        {
+            entity.DeletedAt = context.Commit.DateTime;
+        }
         entity.Text = Text;
-        return ValueTask.CompletedTask;
     }
 }

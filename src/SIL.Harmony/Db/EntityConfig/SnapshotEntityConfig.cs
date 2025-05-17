@@ -17,17 +17,32 @@ public class SnapshotEntityConfig(JsonSerializerOptions jsonSerializerOptions) :
             .HasOne(s => s.Commit)
             .WithMany(c => c.Snapshots)
             .HasForeignKey(s => s.CommitId);
-        builder.Property(s => s.Entity)
-            .HasColumnType("jsonb")
-            .HasConversion(
-                entry => JsonSerializer.Serialize(entry, jsonSerializerOptions),
-                json => DeserializeObject(json)
+        var entityProperty = builder.Property(s => s.Entity)
+            .HasColumnType("jsonb");
+        if (EF.IsDesignTime)
+        {
+            entityProperty.HasConversion(
+                entry => Serialize(entry, null),
+                json => DeserializeObject(json, null)
             );
+        }
+        else
+        {
+            entityProperty.HasConversion(
+                entry => Serialize(entry, jsonSerializerOptions),
+                json => DeserializeObject(json, jsonSerializerOptions)
+            );
+        }
     }
 
-    private IObjectBase DeserializeObject(string json)
+    public static IObjectBase DeserializeObject(string json, JsonSerializerOptions? jsonSerializerOptions)
     {
         return JsonSerializer.Deserialize<IObjectBase>(json, jsonSerializerOptions) ??
                throw new SerializationException($"Could not deserialize Entry: {json}");
+    }
+
+    public static string Serialize(IObjectBase change, JsonSerializerOptions? jsonSerializerOptions)
+    {
+        return JsonSerializer.Serialize(change, jsonSerializerOptions);
     }
 }

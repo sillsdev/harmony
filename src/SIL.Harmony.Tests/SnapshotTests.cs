@@ -123,6 +123,25 @@ public class SnapshotTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task DuplicatePreventionHandlesADuplicateBeingCreatedBeforeTheCurrentVersion()
+    {
+        var wordId = Guid.NewGuid();
+        var tagId = Guid.NewGuid();
+        await WriteNextChange(
+            [
+                SetWord(wordId, "test root"),
+                SetTag(tagId, "tag-1"),
+            ]);
+        var tagCreation = await WriteNextChange(TagWord(wordId, tagId));
+        await WriteChangeBefore(tagCreation, TagWord(wordId, tagId));
+
+        var word = await DataModel.QueryLatest<Word>().Include(w => w.Tags)
+            .Where(w => w.Id == wordId).FirstOrDefaultAsync();
+        word.Should().NotBeNull();
+        word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);
+    }
+
+    [Fact]
     public async Task RegenerateSnapshots_WillArriveAtTheSameState()
     {
         var entityId = Guid.NewGuid();

@@ -1,13 +1,27 @@
-﻿using SIL.Harmony.Changes;
+﻿using System.Text.Json.Serialization;
+using SIL.Harmony.Changes;
 using SIL.Harmony.Entities;
 using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Sample.Changes;
 
-public class TagWordChange(WordTag wordTag) : CreateChange<WordTag>(wordTag.Id == Guid.Empty ? Guid.NewGuid() : wordTag.Id), ISelfNamedType<TagWordChange>
+public class TagWordChange : CreateChange<WordTag>, ISelfNamedType<TagWordChange>
 {
-    public Guid WordId { get; } = wordTag.WordId;
-    public Guid TagId { get; } = wordTag.TagId;
+    public TagWordChange(WordTag wordTag) : base(wordTag.Id == Guid.Empty ? Guid.NewGuid() : wordTag.Id)
+    {
+        WordId = wordTag.WordId;
+        TagId = wordTag.TagId;
+    }
+
+    [JsonConstructor]
+    protected TagWordChange(Guid entityId, Guid wordId, Guid tagId) : base(entityId)
+    {
+        WordId = wordId;
+        TagId = tagId;
+    }
+
+    public Guid WordId { get; }
+    public Guid TagId { get; }
 
     public async override ValueTask<WordTag> NewEntity(Commit commit, IChangeContext context)
     {

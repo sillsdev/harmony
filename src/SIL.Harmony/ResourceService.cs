@@ -77,7 +77,7 @@ public class ResourceService
     public async Task<LocalResource[]> ListResourcesPendingUpload()
     {
         ValidateResourcesSetup();
-        var remoteResources = await _dataModel.QueryLatest<RemoteResource>().Where(r => r.RemoteId == null).ToArrayAsync();
+        var remoteResources = await _dataModel.QueryLatest<RemoteResource>(q => q.Where(r => r.RemoteId == null)).ToArrayAsync();
         var localResource = _crdtRepository.LocalResourcesByIds(remoteResources.Select(r => r.Id));
         return await localResource.ToArrayAsync();
     }
@@ -121,8 +121,8 @@ public class ResourceService
     {
         ValidateResourcesSetup();
         var localResourceIds = _crdtRepository.LocalResourceIds();
-        var remoteResources = await _dataModel.QueryLatest<RemoteResource>()
-            .Where(r => r.RemoteId != null && !localResourceIds.Contains(r.Id))
+        var remoteResources = await _dataModel
+            .QueryLatest<RemoteResource>(q => q.Where(r => r.RemoteId != null && !localResourceIds.Contains(r.Id)))
             .ToArrayAsync();
         return remoteResources;
     }

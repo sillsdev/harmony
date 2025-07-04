@@ -19,27 +19,28 @@ public class DataModel : ISyncable, IAsyncDisposable
     private bool AlwaysValidate => _crdtConfig.Value.AlwaysValidateCommits;
 
     private static readonly ConcurrentDictionary<string, AsyncLock> Locks = new();
-    private AsyncLock _lock;
+    // private AsyncLock _lock;
 
-    private readonly CrdtRepository _crdtRepository;
+    // private readonly CrdtRepository _crdtRepository;
+    private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly IHybridDateTimeProvider _timeProvider;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
 
     //constructor must be internal because CrdtRepository is internal
-    internal DataModel(CrdtRepository crdtRepository,
+    internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
         JsonSerializerOptions serializerOptions,
         IHybridDateTimeProvider timeProvider,
         IOptions<CrdtConfig> crdtConfig,
         ILogger<DataModel> logger)
     {
-        _crdtRepository = crdtRepository;
+        _crdtRepositoryFactory = crdtRepositoryFactory;
         _serializerOptions = serializerOptions;
         _timeProvider = timeProvider;
         _crdtConfig = crdtConfig;
         _logger = logger;
-        _lock = Locks.GetOrAdd(crdtRepository.DatabaseIdentifier, new AsyncLock());
+        // _lock = Locks.GetOrAdd(crdtRepository.DatabaseIdentifier, new AsyncLock());
     }
 
 
@@ -70,66 +71,70 @@ public class DataModel : ISyncable, IAsyncDisposable
         return await AddChanges(clientId, [change], commitId, commitMetadata);
     }
 
+    public async Task AddManyChanges(Guid clientId,
+        IEnumerable<IChange> changes,
+        Func<CommitMetadata?> commitMetadata,
+        int changesPerCommitMax = 100)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        var commits = changes
+            .Chunk(changesPerCommitMax)
+            .Select(chunk => NewCommit(Guid.NewGuid(), clientId, commitMetadata(), chunk))
+            .ToArray();
+        if (commits is []) return;
+        using var locked = await repo.Lock();
+
+        await using var transaction = await repo.BeginTransactionAsync();
+        await repo.AddCommits(commits);
+        await UpdateSnapshots(repo, commits.First(), commits);
+        await ValidateCommits(repo);
+        await transaction.CommitAsync();
+    }
+
     /// <inheritdoc cref="AddChange"/>
     public async Task<Commit> AddChanges(
         Guid clientId,
         IEnumerable<IChange> changes,
         Guid commitId = default,
-        CommitMetadata? commitMetadata = null,
-        bool deferCommit = false)
+        CommitMetadata? commitMetadata = null)
+    {
+        var commit = NewCommit(commitId, clientId, commitMetadata, changes);
+        await Add(commit);
+        return commit;
+    }
+
+    private Commit NewCommit(Guid commitId, Guid clientId, CommitMetadata? commitMetadata, IEnumerable<IChange> changes)
     {
         commitId = commitId == default ? Guid.NewGuid() : commitId;
-        var commit = new Commit(commitId)
+        return new Commit(commitId)
         {
             ClientId = clientId,
             HybridDateTime = _timeProvider.GetDateTime(),
             ChangeEntities = [..changes.Select(ToChangeEntity)],
             Metadata = commitMetadata ?? new()
         };
-        await Add(commit, deferCommit);
-        return commit;
     }
 
-    private List<Commit> _deferredCommits = [];
-
-    private async Task Add(Commit commit, bool deferSnapshotUpdates)
+    private async Task Add(Commit commit)
     {
-        if (await _crdtRepository.HasCommit(commit.Id)) return;
-        using var locked = await _lock.LockAsync();
-        _crdtRepository.ClearChangeTracker();
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        if (await repo.HasCommit(commit.Id)) return;
+        using var locked = await repo.Lock();
 
-        await using var transaction = _crdtRepository.IsInTransaction ? null : await _crdtRepository.BeginTransactionAsync();
-        await _crdtRepository.AddCommit(commit);
-        if (!deferSnapshotUpdates)
-        {
-            //if there are deferred commits, update snapshots with them first
-            if (_deferredCommits is not []) await FlushDeferredCommits();
-            await UpdateSnapshots(commit, [commit]);
+        await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
+        await repo.AddCommit(commit);
+        await UpdateSnapshots(repo, commit, [commit]);
 
-            if (AlwaysValidate) await ValidateCommits();
-        }
-        else
-        {
-            _deferredCommits.Add(commit);
-        }
+        if (AlwaysValidate) await ValidateCommits(repo);
+
+
         if (transaction is not null) await transaction.CommitAsync();
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_deferredCommits is []) return;
-        await FlushDeferredCommits();
+        return ValueTask.CompletedTask;
     }
-
-    public async Task FlushDeferredCommits()
-    {
-        var commits = Interlocked.Exchange(ref _deferredCommits, []);
-        var oldestChange = commits.MinBy(c => c.CompareKey);
-        if (oldestChange is null) return;
-        await UpdateSnapshots(oldestChange, commits.ToArray());
-        if (AlwaysValidate) await ValidateCommits();
-    }
-
 
     private static ChangeEntity<IChange> ToChangeEntity(IChange change, int index)
     {
@@ -144,20 +149,19 @@ public class DataModel : ISyncable, IAsyncDisposable
         commits = commits.ToArray();
         try
         {
-            using var locked = await _lock.LockAsync();
-            _crdtRepository.ClearChangeTracker();
+            await using var repo = await _crdtRepositoryFactory.CreateRepository();
+            using var locked = await repo.Lock();
+            repo.ClearChangeTracker();
             _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
-            var (oldestChange, newCommits) = await _crdtRepository.FilterExistingCommits(commits.ToArray());
+            var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
             //no changes added
             if (oldestChange is null || newCommits is []) return;
 
-            await using var transaction = await _crdtRepository.BeginTransactionAsync();
-            //if there are deferred commits, update snapshots with them first
-            if (_deferredCommits is not []) await FlushDeferredCommits();
+            await using var transaction = await repo.BeginTransactionAsync();
             //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
-            await _crdtRepository.AddCommits(newCommits, false);
-            await UpdateSnapshots(oldestChange, newCommits);
-            await ValidateCommits();
+            await repo.AddCommits(newCommits, false);
+            await UpdateSnapshots(repo, oldestChange, newCommits);
+            await ValidateCommits(repo);
             await transaction.CommitAsync();
         }
         catch (DbUpdateException e)
@@ -193,14 +197,14 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private async Task UpdateSnapshots(Commit oldestAddedCommit, Commit[] newCommits)
+    private async Task UpdateSnapshots(CrdtRepository repo, Commit oldestAddedCommit, Commit[] newCommits)
     {
-        await _crdtRepository.DeleteStaleSnapshots(oldestAddedCommit);
+        await repo.DeleteStaleSnapshots(oldestAddedCommit);
         Dictionary<Guid, Guid?> snapshotLookup;
         if (newCommits.Length > 10)
         {
             var entityIds = newCommits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId));
-            snapshotLookup = await _crdtRepository.CurrentSnapshots()
+            snapshotLookup = await repo.CurrentSnapshots()
                 .Where(s => entityIds.Contains(s.EntityId))
                 .Select(s => new KeyValuePair<Guid, Guid?>(s.EntityId, s.Id))
                 .ToDictionaryAsync(s => s.Key, s => s.Value);
@@ -210,14 +214,14 @@ public class DataModel : ISyncable, IAsyncDisposable
             snapshotLookup = [];
         }
 
-        var snapshotWorker = new SnapshotWorker(snapshotLookup, _crdtRepository, _crdtConfig.Value);
+        var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
         await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
     }
 
-    private async Task ValidateCommits()
+    private async Task ValidateCommits(CrdtRepository repo)
     {
         Commit? parentCommit = null;
-        await foreach (var commit in _crdtRepository.CurrentCommits().AsNoTracking().AsAsyncEnumerable())
+        await foreach (var commit in repo.CurrentCommits().AsNoTracking().AsAsyncEnumerable())
         {
             var parentHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
             var expectedHash = commit.GenerateHash(parentHash);
@@ -227,8 +231,8 @@ public class DataModel : ISyncable, IAsyncDisposable
                 continue;
             }
 
-            var actualParentCommit = await _crdtRepository.FindCommitByHash(commit.ParentHash);
-            var commitWithSnapshots = await _crdtRepository.CurrentCommits().Include(c => c.Snapshots).SingleAsync(c => c.Id == commit.Id);
+            var actualParentCommit = await repo.FindCommitByHash(commit.ParentHash);
+            var commitWithSnapshots = await repo.CurrentCommits().Include(c => c.Snapshots).SingleAsync(c => c.Id == commit.Id);
             throw new CommitValidationException(
                 $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit?.ToString() ?? "null"} and actual parent {actualParentCommit?.ToString() ?? "null"}, with snapshots: {string.Join(", ", commitWithSnapshots.Snapshots.Select(s => s.Entity.DbObject))}");
         }
@@ -236,48 +240,65 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task RegenerateSnapshots()
     {
-        await _crdtRepository.DeleteSnapshotsAndProjectedTables();
-        _crdtRepository.ClearChangeTracker();
-        var allCommits = await _crdtRepository.CurrentCommits().AsNoTracking().ToArrayAsync();
-        await UpdateSnapshots(allCommits.First(), allCommits);
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await repo.DeleteSnapshotsAndProjectedTables();
+        repo.ClearChangeTracker();
+        var allCommits = await repo.CurrentCommits().AsNoTracking().ToArrayAsync();
+        await UpdateSnapshots(repo, allCommits.First(), allCommits);
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
     {
-        return await _crdtRepository.GetCurrentSnapshotByObjectId(entityId) ??
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await repo.GetCurrentSnapshotByObjectId(entityId) ??
                throw new ArgumentException($"unable to find snapshot for entity {entityId}");
     }
 
     public async Task<T?> GetLatest<T>(Guid objectId) where T : class
     {
-        return await _crdtRepository.GetCurrent<T>(objectId);
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await repo.GetCurrent<T>(objectId);
     }
 
-    public async Task<ModelSnapshot> GetProjectSnapshot(bool includeDeleted = false)
+
+    public IAsyncEnumerable<T> QueryLatest<T>(Func<IQueryable<T>, IQueryable<T>>? apply = null)
+        where T : class
     {
-        return new ModelSnapshot(await _crdtRepository.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
+        return QueryLatest<T, T>(apply ?? (static q => q));
     }
 
-    public IQueryable<T> QueryLatest<T>() where T : class
+    public async IAsyncEnumerable<TResult> QueryLatest<T, TResult>(Func<IQueryable<T>, IQueryable<TResult>> apply) where T : class
     {
-        var q = _crdtRepository.GetCurrentObjects<T>();
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        var q = repo.GetCurrentObjects<T>();
         if (q is IQueryable<IOrderableCrdt>)
         {
             q = q.OrderBy(o => EF.Property<double>(o, nameof(IOrderableCrdt.Order)))
                 .ThenBy(o => EF.Property<Guid>(o, nameof(IOrderableCrdt.Id)));
         }
 
-        return q;
+        await foreach (var result in apply(q).AsAsyncEnumerable())
+        {
+            yield return result;
+        }
+    }
+
+    public async Task<ModelSnapshot> GetProjectSnapshot(bool includeDeleted = false)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return new ModelSnapshot(await repo.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
     }
 
     public async Task<T> GetBySnapshotId<T>(Guid snapshotId)
     {
-        return await _crdtRepository.GetObjectBySnapshotId<T>(snapshotId);
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await repo.GetObjectBySnapshotId<T>(snapshotId);
     }
 
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAtCommit(Commit commit)
     {
-        var repository = _crdtRepository.GetScopedRepository(commit);
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        var repository = repo.GetScopedRepository(commit);
         var (snapshots, pendingCommits) = await repository.GetCurrentSnapshotsAndPendingCommits();
 
         if (pendingCommits.Length != 0)
@@ -293,20 +314,23 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<T> GetAtTime<T>(DateTimeOffset time, Guid entityId)
     {
-        var commitBefore = await _crdtRepository.CurrentCommits().LastOrDefaultAsync(c => c.HybridDateTime.DateTime <= time);
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        var commitBefore = await repo.CurrentCommits().LastOrDefaultAsync(c => c.HybridDateTime.DateTime <= time);
         if (commitBefore is null) throw new ArgumentException("unable to find any commits");
         return await GetAtCommit<T>(commitBefore, entityId);
     }
 
     public async Task<T> GetAtCommit<T>(Guid commitId, Guid entityId)
     {
-        return await GetAtCommit<T>(await _crdtRepository.CurrentCommits().SingleAsync(c => c.Id == commitId),
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await GetAtCommit<T>(await repo.CurrentCommits().SingleAsync(c => c.Id == commitId),
             entityId);
     }
 
     public async Task<T> GetAtCommit<T>(Commit commit, Guid entityId)
     {
-        var repository = _crdtRepository.GetScopedRepository(commit);
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        var repository = repo.GetScopedRepository(commit);
         var snapshot = await repository.GetCurrentSnapshotByObjectId(entityId, false);
         ArgumentNullException.ThrowIfNull(snapshot);
         var newCommits = await repository.CurrentCommits()
@@ -330,12 +354,14 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<SyncState> GetSyncState()
     {
-        return await _crdtRepository.GetCurrentSyncState();
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await repo.GetCurrentSyncState();
     }
 
     public async Task<ChangesResult<Commit>> GetChanges(SyncState remoteState)
     {
-        return await _crdtRepository.GetChanges(remoteState);
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await repo.GetChanges(remoteState);
     }
 
     public async Task<SyncResults> SyncWith(ISyncable remoteModel)

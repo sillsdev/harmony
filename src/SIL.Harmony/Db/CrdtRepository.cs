@@ -24,6 +24,18 @@ internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbCo
     {
         return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContextFactory.CreateDbContext());
     }
+
+    public async Task<T> Execute<T>(Func<CrdtRepository, Task<T>> func)
+    {
+        await using var repo = await CreateRepository();
+        return await func(repo);
+    }
+
+    public async ValueTask<T> Execute<T>(Func<CrdtRepository, ValueTask<T>> func)
+    {
+        await using var repo = await CreateRepository();
+        return await func(repo);
+    }
 }
 
 internal class CrdtRepository : IDisposable, IAsyncDisposable
@@ -66,11 +78,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             if (connection.ConnectionString is ":memory:") return Guid.NewGuid().ToString();
             return connection.ConnectionString;
         }
-    }
-
-    internal void ClearChangeTracker()
-    {
-        _dbContext.ChangeTracker.Clear();
     }
 
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();

@@ -18,10 +18,6 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// </summary>
     private bool AlwaysValidate => _crdtConfig.Value.AlwaysValidateCommits;
 
-    private static readonly ConcurrentDictionary<string, AsyncLock> Locks = new();
-    // private AsyncLock _lock;
-
-    // private readonly CrdtRepository _crdtRepository;
     private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly IHybridDateTimeProvider _timeProvider;
@@ -40,7 +36,6 @@ public class DataModel : ISyncable, IAsyncDisposable
         _timeProvider = timeProvider;
         _crdtConfig = crdtConfig;
         _logger = logger;
-        // _lock = Locks.GetOrAdd(crdtRepository.DatabaseIdentifier, new AsyncLock());
     }
 
 
@@ -151,7 +146,6 @@ public class DataModel : ISyncable, IAsyncDisposable
         {
             await using var repo = await _crdtRepositoryFactory.CreateRepository();
             using var locked = await repo.Lock();
-            repo.ClearChangeTracker();
             _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
             var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
             //no changes added
@@ -242,7 +236,6 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.DeleteSnapshotsAndProjectedTables();
-        repo.ClearChangeTracker();
         var allCommits = await repo.CurrentCommits().AsNoTracking().ToArrayAsync();
         await UpdateSnapshots(repo, allCommits.First(), allCommits);
     }
@@ -256,8 +249,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<T?> GetLatest<T>(Guid objectId) where T : class
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        return await repo.GetCurrent<T>(objectId);
+        return await _crdtRepositoryFactory.Execute(repo => repo.GetCurrent<T>(objectId));
     }
 
 
@@ -285,14 +277,13 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<ModelSnapshot> GetProjectSnapshot(bool includeDeleted = false)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        return new ModelSnapshot(await repo.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
+        var snapshots = await _crdtRepositoryFactory.Execute(repo => repo.CurrenSimpleSnapshots(includeDeleted).ToArrayAsync());
+        return new ModelSnapshot(snapshots);
     }
 
     public async Task<T> GetBySnapshotId<T>(Guid snapshotId)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        return await repo.GetObjectBySnapshotId<T>(snapshotId);
+        return await _crdtRepositoryFactory.Execute(repo => repo.GetObjectBySnapshotId<T>(snapshotId));
     }
 
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAtCommit(Commit commit)

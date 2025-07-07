@@ -2,9 +2,8 @@
 using SIL.Harmony.Changes;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
-using SIL.Harmony.Tests;
 
-namespace Tests;
+namespace SIL.Harmony.Tests;
 
 public class DataModelReferenceTests : DataModelTestBase
 {

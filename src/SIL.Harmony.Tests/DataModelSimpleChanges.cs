@@ -1,12 +1,10 @@
-using SIL.Harmony;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
-using SIL.Harmony.Tests;
 using Microsoft.EntityFrameworkCore;
 
-namespace Tests;
+namespace SIL.Harmony.Tests;
 
 public class DataModelSimpleChanges : DataModelTestBase
 {

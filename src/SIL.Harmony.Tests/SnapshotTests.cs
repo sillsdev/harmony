@@ -116,8 +116,8 @@ public class SnapshotTests : DataModelTestBase
                 TagWord(wordId, tagId),
             ]);
 
-        var word = await DataModel.QueryLatest<Word>().Include(w => w.Tags)
-            .Where(w => w.Id == wordId).FirstOrDefaultAsync();
+        var word = await DataModel.QueryLatest<Word>(q => q.Include(w => w.Tags)
+            .Where(w => w.Id == wordId)).FirstOrDefaultAsync();
         word.Should().NotBeNull();
         word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);
     }
@@ -135,8 +135,8 @@ public class SnapshotTests : DataModelTestBase
         var tagCreation = await WriteNextChange(TagWord(wordId, tagId));
         await WriteChangeBefore(tagCreation, TagWord(wordId, tagId));
 
-        var word = await DataModel.QueryLatest<Word>().Include(w => w.Tags)
-            .Where(w => w.Id == wordId).FirstOrDefaultAsync();
+        var word = await DataModel.QueryLatest<Word>(q=> q.Include(w => w.Tags)
+            .Where(w => w.Id == wordId)).FirstOrDefaultAsync();
         word.Should().NotBeNull();
         word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);
     }

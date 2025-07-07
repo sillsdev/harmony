@@ -194,6 +194,6 @@ public class CustomObjectAdapterTests
         myClass2.MyNumber.Should().Be(123.45m);
         myClass2.DeletedTime.Should().BeNull();
 
-        dataModel.QueryLatest<MyClass>().Should().NotBeEmpty();
+        dataModel.QueryLatest<MyClass>().ToBlockingEnumerable().Should().NotBeEmpty();
     }
 }

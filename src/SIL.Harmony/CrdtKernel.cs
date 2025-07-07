@@ -44,7 +44,7 @@ public static class CrdtKernel
         ));
         //must use factory method because ResourceService constructor is internal
         services.AddScoped<ResourceService>(provider => new ResourceService(
-            provider.GetRequiredService<CrdtRepository>(),
+            provider.GetRequiredService<CrdtRepositoryFactory>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
             provider.GetRequiredService<DataModel>(),
             provider.GetRequiredService<ILogger<ResourceService>>()

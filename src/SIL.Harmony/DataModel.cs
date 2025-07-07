@@ -78,6 +78,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             .ToArray();
         if (commits is []) return;
         using var locked = await repo.Lock();
+        repo.ClearChangeTracker();
 
         await using var transaction = await repo.BeginTransactionAsync();
         await repo.AddCommits(commits);
@@ -115,6 +116,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         if (await repo.HasCommit(commit.Id)) return;
         using var locked = await repo.Lock();
+        repo.ClearChangeTracker();
 
         await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
         await repo.AddCommit(commit);

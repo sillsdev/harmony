@@ -80,6 +80,13 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         }
     }
 
+    //doesn't really do anything when using a dbcontext factory since it will likely just have been created
+    //but when not using the factory it is still useful
+    internal void ClearChangeTracker()
+    {
+        _dbContext.ChangeTracker.Clear();
+    }
+
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
 
     private IQueryable<Commit> Commits => _dbContext.Commits;

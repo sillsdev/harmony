@@ -146,6 +146,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         {
             await using var repo = await _crdtRepositoryFactory.CreateRepository();
             using var locked = await repo.Lock();
+            repo.ClearChangeTracker();
             _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
             var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
             //no changes added
@@ -236,6 +237,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.DeleteSnapshotsAndProjectedTables();
+        repo.ClearChangeTracker();
         var allCommits = await repo.CurrentCommits().AsNoTracking().ToArrayAsync();
         await UpdateSnapshots(repo, allCommits.First(), allCommits);
     }

@@ -34,6 +34,7 @@ public class RepositoryTests : IAsyncLifetime
 
     public async Task DisposeAsync()
     {
+        await _repository.DisposeAsync();
         await _services.DisposeAsync();
     }
 

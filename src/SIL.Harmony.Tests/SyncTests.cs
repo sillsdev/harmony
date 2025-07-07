@@ -116,7 +116,7 @@ public class SyncTests : IAsyncLifetime
 
         await _client2.DataModel.SyncWith(_client1.DataModel);
 
-        _client2.DataModel.QueryLatest<Definition>().Should()
-            .BeEquivalentTo(_client1.DataModel.QueryLatest<Definition>());
+        _client2.DataModel.QueryLatest<Definition>().ToBlockingEnumerable().Should()
+            .BeEquivalentTo(_client1.DataModel.QueryLatest<Definition>().ToBlockingEnumerable());
     }
 }

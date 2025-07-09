@@ -21,6 +21,14 @@ public static class DbSetExtensions
             .ThenByDescending(c => c.Commit.Id);
     }
 
+    public static IEnumerable<ObjectSnapshot> DefaultOrder(this IEnumerable<ObjectSnapshot> queryable)
+    {
+        return queryable
+            .OrderBy(c => c.Commit.HybridDateTime.DateTime)
+            .ThenBy(c => c.Commit.HybridDateTime.Counter)
+            .ThenBy(c => c.Commit.Id);
+    }
+
     public static IEnumerable<ObjectSnapshot> DefaultOrderDescending(this IEnumerable<ObjectSnapshot> queryable)
     {
         return queryable

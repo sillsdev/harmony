@@ -24,7 +24,7 @@ public interface ICrdtDbContextFactory
     ICrdtDbContext CreateDbContext();
 }
 
-public class CrdtDbContextFactoryNoContextFactory<TContext>(TContext dbContext) : ICrdtDbContextFactory
+public class CrdtDbContextNoDisposeFactory<TContext>(TContext dbContext) : ICrdtDbContextFactory
     where TContext : ICrdtDbContext
 {
     public Task<ICrdtDbContext> CreateDbContextAsync(CancellationToken cancellationToken = new CancellationToken())

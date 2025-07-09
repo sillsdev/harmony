@@ -22,7 +22,7 @@ public static class CrdtKernel
         Action<CrdtConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
     {
         services.AddCrdtDataCore(configureCrdt);
-        services.AddScoped<ICrdtDbContextFactory, CrdtDbContextFactoryNoContextFactory<TContext>>();
+        services.AddScoped<ICrdtDbContextFactory, CrdtDbContextNoDisposeFactory<TContext>>();
         return services;
     }
     public static IServiceCollection AddCrdtDataCore(this IServiceCollection services, Action<CrdtConfig> configureCrdt)

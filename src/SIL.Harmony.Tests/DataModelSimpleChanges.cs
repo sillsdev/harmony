@@ -1,12 +1,10 @@
-using SIL.Harmony;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
-using SIL.Harmony.Tests;
 using Microsoft.EntityFrameworkCore;
 
-namespace Tests;
+namespace SIL.Harmony.Tests;
 
 public class DataModelSimpleChanges : DataModelTestBase
 {
@@ -79,7 +77,7 @@ public class DataModelSimpleChanges : DataModelTestBase
 
         await WriteNextChange(SetWord(Guid.NewGuid(), "change 3"));
         DbContext.Snapshots.Should().HaveCount(3);
-        DataModel.QueryLatest<Word>().Should().HaveCount(3);
+        DataModel.QueryLatest<Word>().ToBlockingEnumerable().Should().HaveCount(3);
     }
 
     [Fact]

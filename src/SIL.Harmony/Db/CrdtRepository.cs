@@ -1,17 +1,48 @@
+using System.Collections.Concurrent;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Nito.AsyncEx;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
-internal class CrdtRepository
+internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory)
 {
+    public async Task<CrdtRepository> CreateRepository()
+    {
+        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
+    }
+
+    public CrdtRepository CreateRepositorySync()
+    {
+        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContextFactory.CreateDbContext());
+    }
+
+    public async Task<T> Execute<T>(Func<CrdtRepository, Task<T>> func)
+    {
+        await using var repo = await CreateRepository();
+        return await func(repo);
+    }
+
+    public async ValueTask<T> Execute<T>(Func<CrdtRepository, ValueTask<T>> func)
+    {
+        await using var repo = await CreateRepository();
+        return await func(repo);
+    }
+}
+
+internal class CrdtRepository : IDisposable, IAsyncDisposable
+{
+    private static readonly ConcurrentDictionary<string, AsyncLock> Locks = new();
+
+    private readonly AsyncLock _lock;
     private readonly ICrdtDbContext _dbContext;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<CrdtRepository> _logger;
@@ -26,6 +57,12 @@ internal class CrdtRepository
         //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
         //but since we're using a custom query, we can use it directly and apply the scoped filters manually
         _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
+        _lock = Locks.GetOrAdd(DatabaseIdentifier, _ => new AsyncLock());
+    }
+
+    public AwaitableDisposable<IDisposable> Lock()
+    {
+        return _lock.LockAsync();
     }
 
     /// <summary>
@@ -33,7 +70,7 @@ internal class CrdtRepository
     /// may be the connection string so it could contain sensitive information
     /// if it's in memory we'll just use a random guid
     /// </summary>
-    internal string DatabaseIdentifier
+    private string DatabaseIdentifier
     {
         get
         {
@@ -43,6 +80,8 @@ internal class CrdtRepository
         }
     }
 
+    //doesn't really do anything when using a dbcontext factory since it will likely just have been created
+    //but when not using the factory it is still useful
     internal void ClearChangeTracker()
     {
         _dbContext.ChangeTracker.Clear();
@@ -372,6 +411,16 @@ internal class CrdtRepository
     {
         return await _dbContext.Set<LocalResource>().FindAsync(resourceId);
     }
+
+    public void Dispose()
+    {
+        _dbContext.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _dbContext.DisposeAsync();
+    }
 }
 
 internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) : ICrdtDbContext
@@ -421,5 +470,15 @@ internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) 
     public EntityEntry Remove(object entity)
     {
         return inner.Remove(entity);
+    }
+
+    public void Dispose()
+    {
+        inner.Dispose();
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return inner.DisposeAsync();
     }
 }

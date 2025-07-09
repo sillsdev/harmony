@@ -2,9 +2,8 @@
 using SIL.Harmony.Changes;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
-using SIL.Harmony.Tests;
 
-namespace Tests;
+namespace SIL.Harmony.Tests;
 
 public class DataModelReferenceTests : DataModelTestBase
 {
@@ -158,7 +157,7 @@ public class DataModelReferenceTests : DataModelTestBase
         var commitA = await WriteNextChange(SetTag(Guid.NewGuid(), tagText));
         //represents someone syncing in a tag with the same name
         await WriteChangeBefore(commitA, SetTag(Guid.NewGuid(), tagText));
-        DataModel.QueryLatest<Tag>().Where(t => t.Text == tagText).Should().ContainSingle();
+        DataModel.QueryLatest<Tag>().ToBlockingEnumerable().Where(t => t.Text == tagText).Should().ContainSingle();
     }
 
     [Fact]
@@ -170,6 +169,6 @@ public class DataModelReferenceTests : DataModelTestBase
         var commitA = await WriteNextChange(SetTag(Guid.NewGuid(), tagText));
         //represents someone syncing in a tag with the same name
         await WriteNextChange(SetTag(renameTagId, tagText));
-        DataModel.QueryLatest<Tag>().Where(t => t.Text == tagText).Should().ContainSingle();
+        DataModel.QueryLatest<Tag>().ToBlockingEnumerable().Where(t => t.Text == tagText).Should().ContainSingle();
     }
 }

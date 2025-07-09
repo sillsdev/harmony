@@ -76,7 +76,7 @@ public class PersistExtraDataTests
     {
         var entityId = Guid.NewGuid();
         var commit = await _dataModelTestBase.WriteNextChange(new CreateExtraDataModelChange(entityId));
-        var extraDataModel = _dataModelTestBase.DataModel.QueryLatest<ExtraDataModel>().Should().ContainSingle().Subject;
+        var extraDataModel = _dataModelTestBase.DataModel.QueryLatest<ExtraDataModel>().ToBlockingEnumerable().Should().ContainSingle().Subject;
         extraDataModel.Id.Should().Be(entityId);
         extraDataModel.CommitId.Should().Be(commit.Id);
         extraDataModel.DateTime.Should().Be(commit.HybridDateTime.DateTime);

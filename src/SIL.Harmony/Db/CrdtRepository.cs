@@ -390,6 +390,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await _dbContext.SaveChangesAsync();
     }
 
+    public async Task DeleteLocalResource(Guid id)
+    {
+        await _dbContext.Set<LocalResource>().Where(r => r.Id == id).ExecuteDeleteAsync();
+    }
+
     public IAsyncEnumerable<LocalResource> LocalResourcesByIds(IEnumerable<Guid> resourceIds)
     {
         return _dbContext.Set<LocalResource>().Where(r => resourceIds.Contains(r.Id)).AsAsyncEnumerable();

@@ -15,12 +15,14 @@ public interface IRemoteResourceService
     /// <param name="localResourceCachePath">path defined by the CRDT config where the resource should be stored</param>
     /// <returns>download result containing the path to the downloaded file, this is stored in the local db and not synced</returns>
     Task<DownloadResult> DownloadResource(string remoteId, string localResourceCachePath);
+
     /// <summary>
     /// upload a resource to the remote server
     /// </summary>
+    /// <param name="resourceId">id of the resource in the CRDT</param>
     /// <param name="localPath">full path to the resource on the local machine</param>
     /// <returns>an upload result with the remote id, the id will be stored and transmitted to other clients so they can also download the resource</returns>
-    Task<UploadResult> UploadResource(string localPath);
+    Task<UploadResult> UploadResource(Guid resourceId, string localPath);
 }
 
 public record DownloadResult(string LocalPath);

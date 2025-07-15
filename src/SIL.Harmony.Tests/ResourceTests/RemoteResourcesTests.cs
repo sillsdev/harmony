@@ -207,4 +207,38 @@ public class RemoteResourcesTests : DataModelTestBase
         (await _resourceService.GetResource(localAndRemoteResource.Id)).Should().BeEquivalentTo(localAndRemoteResource);
         (await _resourceService.GetResource(Guid.NewGuid())).Should().BeNull();
     }
+
+    [Fact]
+    public async Task DeleteResource_RemovesLocalResource()
+    {
+        // Arrange: create a local resource
+        var (resourceId, localPath) = await SetupLocalFile("delete-local");
+        (await _resourceService.GetResource(resourceId)).Should().NotBeNull();
+        (await _resourceService.GetLocalResource(resourceId)).Should().NotBeNull();
+
+        // Act: delete the resource
+        await _resourceService.DeleteResource(_localClientId, resourceId);
+
+        // Assert: resource is gone from all APIs
+        (await _resourceService.GetResource(resourceId)).Should().BeNull();
+        (await _resourceService.GetLocalResource(resourceId)).Should().BeNull();
+        (await _resourceService.AllResources()).Should().NotContain(r => r.Id == resourceId);
+    }
+
+    [Fact]
+    public async Task DeleteResource_RemovesRemoteResource()
+    {
+        // Arrange: create a remote resource
+        var (resourceId, remoteId) = await SetupRemoteResource("delete-remote");
+        (await _resourceService.GetResource(resourceId)).Should().NotBeNull();
+        (await _resourceService.GetLocalResource(resourceId)).Should().BeNull();
+
+        // Act: delete the resource
+        await _resourceService.DeleteResource(_localClientId, resourceId);
+
+        // Assert: resource is gone from all APIs
+        (await _resourceService.GetResource(resourceId)).Should().BeNull();
+        (await _resourceService.GetLocalResource(resourceId)).Should().BeNull();
+        (await _resourceService.AllResources()).Should().NotContain(r => r.Id == resourceId);
+    }
 }

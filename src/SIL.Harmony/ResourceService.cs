@@ -217,7 +217,7 @@ public class ResourceService
     public async Task DeleteResource(Guid clientId, Guid resourceId)
     {
         await _dataModel.AddChange(clientId, new DeleteChange<RemoteResource>(resourceId));
-        var repo = await _crdtRepositoryFactory.CreateRepository();
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.DeleteLocalResource(resourceId);
     }
 }

@@ -51,15 +51,12 @@ public class ResourceService
         IRemoteResourceService? resourceService = null)
     {
         ValidateResourcesSetup();
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var localResource = new LocalResource
         {
             Id = id == default ? Guid.NewGuid() : id,
             LocalPath = Path.GetFullPath(resourcePath)
         };
         if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
-        await using var transaction = await repo.BeginTransactionAsync();
-        await repo.AddLocalResource(localResource);
         UploadResult? uploadResult = null;
         if (resourceService is not null)
         {
@@ -83,7 +80,7 @@ public class ResourceService
             await _dataModel.AddChange(clientId, new CreateRemoteResourcePendingUploadChange(localResource.Id));
         }
 
-        await transaction.CommitAsync();
+        await _crdtRepositoryFactory.Execute(repo => repo.AddLocalResource(localResource));
         return new HarmonyResource
         {
             Id = localResource.Id,

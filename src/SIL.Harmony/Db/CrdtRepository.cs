@@ -30,6 +30,11 @@ internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbCo
         await using var repo = await CreateRepository();
         return await func(repo);
     }
+    public async Task Execute(Func<CrdtRepository, Task> func)
+    {
+        await using var repo = await CreateRepository();
+        await func(repo);
+    }
 
     public async ValueTask<T> Execute<T>(Func<CrdtRepository, ValueTask<T>> func)
     {

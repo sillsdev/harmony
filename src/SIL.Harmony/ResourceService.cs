@@ -102,6 +102,7 @@ public class ResourceService
     {
         ValidateResourcesSetup();
         var pendingUploads = await ListResourcesPendingUpload();
+        if (pendingUploads is []) return;
         var changes = new List<IChange>(pendingUploads.Length);
         try
         {

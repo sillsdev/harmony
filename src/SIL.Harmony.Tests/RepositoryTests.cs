@@ -21,7 +21,7 @@ public class RepositoryTests : IAsyncLifetime
             .AddCrdtDataSample(":memory:")
             .BuildServiceProvider();
 
-        _repository = _services.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
+        _repository = _services.GetRequiredService<ICrdtRepositoryFactory>().CreateRepositorySync();
         _crdtDbContext = _services.GetRequiredService<SampleDbContext>();
     }
 

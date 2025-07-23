@@ -33,10 +33,10 @@ public static class CrdtKernel
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
-        services.AddScoped<CrdtRepositoryFactory>();
+        services.AddScoped<ICrdtRepositoryFactory, CrdtRepositoryFactory>();
         //must use factory method because DataModel constructor is internal
         services.AddScoped<DataModel>(provider => new DataModel(
-            provider.GetRequiredService<CrdtRepositoryFactory>(),
+            provider.GetRequiredService<ICrdtRepositoryFactory>(),
             provider.GetRequiredService<JsonSerializerOptions>(),
             provider.GetRequiredService<IHybridDateTimeProvider>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
@@ -44,7 +44,7 @@ public static class CrdtKernel
         ));
         //must use factory method because ResourceService constructor is internal
         services.AddScoped<ResourceService>(provider => new ResourceService(
-            provider.GetRequiredService<CrdtRepositoryFactory>(),
+            provider.GetRequiredService<ICrdtRepositoryFactory>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
             provider.GetRequiredService<DataModel>(),
             provider.GetRequiredService<ILogger<ResourceService>>()
@@ -57,7 +57,7 @@ public static class CrdtKernel
         //todo, if this causes issues getting the order correct, we can update the last date time after the db is created
         //as long as it's before we get a date time from the provider
         //todo use IMemoryCache to store the last date time, possibly based on the current project
-        using var repo = serviceProvider.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
+        using var repo = serviceProvider.GetRequiredService<ICrdtRepositoryFactory>().CreateRepositorySync();
         var hybridDateTime = repo.GetLatestDateTime();
         hybridDateTime ??= HybridDateTimeProvider.DefaultLastDateTime;
         return ActivatorUtilities.CreateInstance<HybridDateTimeProvider>(serviceProvider, hybridDateTime);

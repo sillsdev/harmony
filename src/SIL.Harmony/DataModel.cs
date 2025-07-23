@@ -18,14 +18,14 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// </summary>
     private bool AlwaysValidate => _crdtConfig.Value.AlwaysValidateCommits;
 
-    private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
+    private readonly ICrdtRepositoryFactory _crdtRepositoryFactory;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly IHybridDateTimeProvider _timeProvider;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
 
     //constructor must be internal because CrdtRepository is internal
-    internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
+    internal DataModel(ICrdtRepositoryFactory crdtRepositoryFactory,
         JsonSerializerOptions serializerOptions,
         IHybridDateTimeProvider timeProvider,
         IOptions<CrdtConfig> crdtConfig,

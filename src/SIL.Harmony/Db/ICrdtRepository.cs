@@ -4,7 +4,7 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
-internal interface ICrdtRepository : IAsyncDisposable, IDisposable
+public interface ICrdtRepository : IAsyncDisposable, IDisposable
 {
     AwaitableDisposable<IDisposable> Lock();
     void ClearChangeTracker();

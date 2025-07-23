@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
@@ -13,32 +12,7 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
-internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory)
-{
-    public async Task<ICrdtRepository> CreateRepository()
-    {
-        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
-    }
-
-    public ICrdtRepository CreateRepositorySync()
-    {
-        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContextFactory.CreateDbContext());
-    }
-
-    public async Task<T> Execute<T>(Func<ICrdtRepository, Task<T>> func)
-    {
-        await using var repo = await CreateRepository();
-        return await func(repo);
-    }
-
-    public async ValueTask<T> Execute<T>(Func<ICrdtRepository, ValueTask<T>> func)
-    {
-        await using var repo = await CreateRepository();
-        return await func(repo);
-    }
-}
-
-internal class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
+public class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
 {
     private static readonly ConcurrentDictionary<string, AsyncLock> Locks = new();
 

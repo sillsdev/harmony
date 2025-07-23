@@ -38,4 +38,9 @@ public static class Linq2dbKernel
                 optionsBuilder.AddCustomOptions(dataOptions => dataOptions.UseLoggerFactory(loggerFactory));
         });
     }
+
+    public static IServiceCollection AddLinq2DbRepository(this IServiceCollection services)
+    {
+        return services;
+    }
 }

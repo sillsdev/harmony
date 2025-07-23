@@ -149,7 +149,7 @@ public class ResourceService
         return await DownloadResourceInternal(repo, remoteResource, remoteResourceService);
     }
 
-    private async Task<LocalResource> DownloadResourceInternal(CrdtRepository repo,
+    private async Task<LocalResource> DownloadResourceInternal(ICrdtRepository repo,
         RemoteResource remoteResource,
         IRemoteResourceService remoteResourceService)
     {

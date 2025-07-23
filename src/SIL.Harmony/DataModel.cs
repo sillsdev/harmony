@@ -194,7 +194,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private async Task UpdateSnapshots(CrdtRepository repo, Commit oldestAddedCommit, Commit[] newCommits)
+    private async Task UpdateSnapshots(ICrdtRepository repo, Commit oldestAddedCommit, Commit[] newCommits)
     {
         await repo.DeleteStaleSnapshots(oldestAddedCommit);
         Dictionary<Guid, Guid?> snapshotLookup;
@@ -215,7 +215,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
     }
 
-    private async Task ValidateCommits(CrdtRepository repo)
+    private async Task ValidateCommits(ICrdtRepository repo)
     {
         Commit? parentCommit = null;
         await foreach (var commit in repo.CurrentCommits().AsNoTracking().AsAsyncEnumerable())

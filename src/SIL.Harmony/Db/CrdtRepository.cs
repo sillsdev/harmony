@@ -15,30 +15,30 @@ namespace SIL.Harmony.Db;
 
 internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory)
 {
-    public async Task<CrdtRepository> CreateRepository()
+    public async Task<ICrdtRepository> CreateRepository()
     {
         return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
     }
 
-    public CrdtRepository CreateRepositorySync()
+    public ICrdtRepository CreateRepositorySync()
     {
         return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContextFactory.CreateDbContext());
     }
 
-    public async Task<T> Execute<T>(Func<CrdtRepository, Task<T>> func)
+    public async Task<T> Execute<T>(Func<ICrdtRepository, Task<T>> func)
     {
         await using var repo = await CreateRepository();
         return await func(repo);
     }
 
-    public async ValueTask<T> Execute<T>(Func<CrdtRepository, ValueTask<T>> func)
+    public async ValueTask<T> Execute<T>(Func<ICrdtRepository, ValueTask<T>> func)
     {
         await using var repo = await CreateRepository();
         return await func(repo);
     }
 }
 
-internal class CrdtRepository : IDisposable, IAsyncDisposable
+internal class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
 {
     private static readonly ConcurrentDictionary<string, AsyncLock> Locks = new();
 
@@ -82,7 +82,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     //doesn't really do anything when using a dbcontext factory since it will likely just have been created
     //but when not using the factory it is still useful
-    internal void ClearChangeTracker()
+    public void ClearChangeTracker()
     {
         _dbContext.ChangeTracker.Clear();
     }

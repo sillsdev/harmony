@@ -1,6 +1,7 @@
 ﻿using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Db;
@@ -33,7 +34,7 @@ public static class CrdtKernel
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
-        services.AddScoped<ICrdtRepositoryFactory, CrdtRepositoryFactory>();
+        services.TryAddScoped<ICrdtRepositoryFactory, CrdtRepositoryFactory>();
         //must use factory method because DataModel constructor is internal
         services.AddScoped<DataModel>(provider => new DataModel(
             provider.GetRequiredService<ICrdtRepositoryFactory>(),

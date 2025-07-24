@@ -6,21 +6,6 @@ public interface ICrdtRepositoryFactory
 {
     Task<ICrdtRepository> CreateRepository();
     ICrdtRepository CreateRepositorySync();
-    Task<T> Execute<T>(Func<ICrdtRepository, Task<T>> func);
-    ValueTask<T> Execute<T>(Func<ICrdtRepository, ValueTask<T>> func);
-}
-
-public class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory) : ICrdtRepositoryFactory
-{
-    public async Task<ICrdtRepository> CreateRepository()
-    {
-        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
-    }
-
-    public ICrdtRepository CreateRepositorySync()
-    {
-        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContextFactory.CreateDbContext());
-    }
 
     public async Task<T> Execute<T>(Func<ICrdtRepository, Task<T>> func)
     {
@@ -32,5 +17,23 @@ public class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbCont
     {
         await using var repo = await CreateRepository();
         return await func(repo);
+    }
+}
+
+public class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory) : ICrdtRepositoryFactory
+{
+    public async Task<ICrdtRepository> CreateRepository()
+    {
+        return CreateInstance(await dbContextFactory.CreateDbContextAsync());
+    }
+
+    public ICrdtRepository CreateRepositorySync()
+    {
+        return CreateInstance(dbContextFactory.CreateDbContext());
+    }
+
+    public CrdtRepository CreateInstance(ICrdtDbContext dbContext)
+    {
+        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContext);
     }
 }

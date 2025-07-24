@@ -20,6 +20,8 @@ public class DataModelTestBase : IAsyncLifetime
     public readonly SampleDbContext DbContext;
     protected readonly MockTimeProvider MockTimeProvider = new();
 
+    public IServiceProvider Services => _services;
+
     public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true,
         Action<IServiceCollection>? configure = null, bool performanceTest = false) : this(saveToDisk
         ? new SqliteConnection("Data Source=test.db")

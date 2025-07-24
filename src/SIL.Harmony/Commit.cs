@@ -14,7 +14,7 @@ public class Commit : CommitBase<IChange>
         ParentHash = parentHash;
     }
 
-    internal Commit(Guid id) : base(id)
+    public Commit(Guid id) : base(id)
     {
         Hash = GenerateHash(NullParentHash);
         ParentHash = NullParentHash;

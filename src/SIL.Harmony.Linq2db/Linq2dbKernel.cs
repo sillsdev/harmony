@@ -1,10 +1,13 @@
-﻿using SIL.Harmony.Core;
+﻿using System.Text.Json;
+using SIL.Harmony.Core;
 using LinqToDB.AspNet.Logging;
 using LinqToDB.EntityFrameworkCore;
 using LinqToDB.Mapping;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Linq2db;
 
@@ -31,6 +34,10 @@ public static class Linq2dbKernel
                 //need to use ticks here because the DateTime is stored as UTC, but the db records it as unspecified
                 .Property(commit => commit.HybridDateTime.DateTime).HasConversionFunc(dt => dt.UtcDateTime,
                     dt => new DateTimeOffset(dt.Ticks, TimeSpan.Zero))
+                .Entity<ObjectSnapshot>().Property(s => s.References).HasConversionFunc(
+                    guids => JsonSerializer.Serialize(guids),
+                    s => JsonSerializer.Deserialize<Guid[]>(s) ?? []
+                )
                 .Build();
 
             var loggerFactory = provider.GetService<ILoggerFactory>();
@@ -41,6 +48,9 @@ public static class Linq2dbKernel
 
     public static IServiceCollection AddLinq2DbRepository(this IServiceCollection services)
     {
+        services.RemoveAll<ICrdtRepositoryFactory>();
+        services.AddScoped<CrdtRepositoryFactory>();
+        services.AddScoped<ICrdtRepositoryFactory, Linq2DbCrdtRepoFactory>();
         return services;
     }
 }

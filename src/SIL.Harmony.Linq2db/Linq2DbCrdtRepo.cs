@@ -73,8 +73,8 @@ public class Linq2DbCrdtRepo : ICrdtRepository
         var projectedEntityIds = new HashSet<Guid>();
         var linqToDbTable = _dbContext.Set<ObjectSnapshot>().ToLinqToDBTable();
         var dataContext = linqToDbTable.DataContext;
-        foreach (var grouping in
-                 snapshots.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key)) //execute deletes first
+        foreach (var grouping in snapshots.GroupBy(s => s.EntityIsDeleted)
+                     .OrderByDescending(g => g.Key)) //execute deletes first
         {
             var objectSnapshots = grouping.ToArray();
 
@@ -86,12 +86,10 @@ public class Linq2DbCrdtRepo : ICrdtRepository
             await linqToDbTable.BulkCopyAsync(objectSnapshots);
 
             //descending to insert the most recent snapshots first, only keep the last objects by ordering by descending
-            //then distinct by, but lastly reverse so we insert objects in the order they should be created
-            foreach (var objectSnapshot in objectSnapshots.DefaultOrderDescending().DistinctBy(s => s.EntityId).Reverse())
+            //don't want to change the objectSnapshot order to preserve the order of the changes
+            var snapshotsToProject = objectSnapshots.DefaultOrderDescending().DistinctBy(s => s.EntityId).Select(s => s.Id).ToHashSet();
+            foreach (var objectSnapshot in objectSnapshots.IntersectBy(snapshotsToProject, s => s.Id))
             {
-                //match how ef core works by adding the snapshot to it's parent commit
-                objectSnapshot.Commit.Snapshots.Add(objectSnapshot);
-
                 //ensure we skip projecting the same entity multiple times
                 if (!projectedEntityIds.Add(objectSnapshot.EntityId)) continue;
                 try

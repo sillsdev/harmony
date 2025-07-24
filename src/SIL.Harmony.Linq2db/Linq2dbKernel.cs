@@ -1,8 +1,7 @@
 ﻿using System.Text.Json;
-using LinqToDB;
 using SIL.Harmony.Core;
-using LinqToDB.AspNet.Logging;
 using LinqToDB.EntityFrameworkCore;
+using LinqToDB.Extensions.Logging;
 using LinqToDB.Mapping;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

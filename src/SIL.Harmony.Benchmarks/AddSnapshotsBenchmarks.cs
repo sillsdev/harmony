@@ -44,7 +44,7 @@ public class AddSnapshotsBenchmarks
     }
 
     [Benchmark(OperationsPerInvoke = 1000)]
-    public void AddSnapshots()
+    public void AddSnapshotsOneAtATime()
     {
         for (var i = 0; i < SnapshotCount; i++)
         {
@@ -56,6 +56,22 @@ public class AddSnapshotsBenchmarks
                     }, _commit, true)
             ]).GetAwaiter().GetResult();
         }
+    }
+
+    [Benchmark(OperationsPerInvoke = 1000)]
+    public void AddSnapshotsAllAtOnce()
+    {
+        var snapshots = Enumerable.Range(0, SnapshotCount)
+            .Select(i => new ObjectSnapshot(new Word()
+                {
+                    Id = Guid.NewGuid(),
+                    Text = "test",
+                },
+                _commit,
+                true))
+            .ToArray();
+
+        _repository.AddSnapshots(snapshots).GetAwaiter().GetResult();
     }
 
     [IterationCleanup]

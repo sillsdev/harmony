@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using LinqToDB;
 using SIL.Harmony.Core;
 using LinqToDB.AspNet.Logging;
 using LinqToDB.EntityFrameworkCore;
@@ -25,7 +26,6 @@ public static class Linq2dbKernel
                 mappingSchema = new MappingSchema();
                 optionsBuilder.AddMappingSchema(mappingSchema);
             }
-
             new FluentMappingBuilder(mappingSchema).HasAttribute<Commit>(new ColumnAttribute("DateTime",
                     nameof(Commit.HybridDateTime) + "." + nameof(HybridDateTime.DateTime)))
                 .HasAttribute<Commit>(new ColumnAttribute(nameof(HybridDateTime.Counter),
@@ -35,7 +35,7 @@ public static class Linq2dbKernel
                 .Property(commit => commit.HybridDateTime.DateTime).HasConversionFunc(dt => dt.UtcDateTime,
                     dt => new DateTimeOffset(dt.Ticks, TimeSpan.Zero))
                 .Entity<ObjectSnapshot>().Property(s => s.References).HasConversionFunc(
-                    guids => JsonSerializer.Serialize(guids),
+                    guids => JsonSerializer.Serialize(guids).ToUpper(),//uppercase matches EF and is required for querying by refs
                     s => JsonSerializer.Deserialize<Guid[]>(s) ?? []
                 )
                 .Build();

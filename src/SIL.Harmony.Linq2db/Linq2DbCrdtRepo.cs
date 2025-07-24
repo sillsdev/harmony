@@ -2,6 +2,7 @@ using System.Reflection;
 using LinqToDB;
 using LinqToDB.Data;
 using LinqToDB.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Nito.AsyncEx;
@@ -13,7 +14,8 @@ namespace SIL.Harmony.Linq2db;
 
 public class Linq2DbCrdtRepoFactory(
     IServiceProvider serviceProvider,
-    ICrdtDbContextFactory dbContextFactory, CrdtRepositoryFactory factory): ICrdtRepositoryFactory
+    ICrdtDbContextFactory dbContextFactory,
+    CrdtRepositoryFactory factory) : ICrdtRepositoryFactory
 {
     public async Task<ICrdtRepository> CreateRepository()
     {
@@ -27,7 +29,9 @@ public class Linq2DbCrdtRepoFactory(
 
     private Linq2DbCrdtRepo CreateInstance(ICrdtDbContext dbContext)
     {
-        return ActivatorUtilities.CreateInstance<Linq2DbCrdtRepo>(serviceProvider, factory.CreateInstance(dbContext), dbContext);
+        return ActivatorUtilities.CreateInstance<Linq2DbCrdtRepo>(serviceProvider,
+            factory.CreateInstance(dbContext),
+            dbContext);
     }
 }
 
@@ -64,21 +68,71 @@ public class Linq2DbCrdtRepo : ICrdtRepository
 
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
+        //save any pending commit changes
+        await _dbContext.SaveChangesAsync();
+        var projectedEntityIds = new HashSet<Guid>();
         var linqToDbTable = _dbContext.Set<ObjectSnapshot>().ToLinqToDBTable();
-        var objectSnapshots = snapshots.ToArray();
-        await linqToDbTable.BulkCopyAsync(objectSnapshots);
-        foreach (var objectSnapshot in objectSnapshots)
+        var dataContext = linqToDbTable.DataContext;
+        foreach (var grouping in
+                 snapshots.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key)) //execute deletes first
         {
-            await InsertOrReplaceAsync(linqToDbTable.DataContext, objectSnapshot.Entity);
+            var objectSnapshots = grouping.ToArray();
+
+            //delete existing snapshots before we bulk recreate them
+            await _dbContext.Set<ObjectSnapshot>()
+                .Where(s => objectSnapshots.Select(s => s.Id).Contains(s.Id))
+                .ExecuteDeleteAsync();
+
+            await linqToDbTable.BulkCopyAsync(objectSnapshots);
+
+            //descending to insert the most recent snapshots first, only keep the last objects by ordering by descending
+            //then distinct by, but lastly reverse so we insert objects in the order they should be created
+            foreach (var objectSnapshot in objectSnapshots.DefaultOrderDescending().DistinctBy(s => s.EntityId).Reverse())
+            {
+                //match how ef core works by adding the snapshot to it's parent commit
+                objectSnapshot.Commit.Snapshots.Add(objectSnapshot);
+
+                //ensure we skip projecting the same entity multiple times
+                if (!projectedEntityIds.Add(objectSnapshot.EntityId)) continue;
+                try
+                {
+                    if (objectSnapshot.EntityIsDeleted)
+                    {
+                        await DeleteAsync(dataContext, objectSnapshot.Entity);
+                    }
+                    else
+                    {
+                        await InsertOrReplaceAsync(dataContext, objectSnapshot.Entity);
+                    }
+                }
+                catch (Exception e)
+                {
+                    throw new Exception("error when projecting snapshot " + objectSnapshot, e);
+                }
+            }
         }
     }
 
     private static readonly MethodInfo InsertOrReplaceAsyncMethodGeneric =
-        new Func<IDataContext, object, string?, string?, string?, string?, TableOptions, CancellationToken, Task<int>>(DataExtensions.InsertOrReplaceAsync).Method.GetGenericMethodDefinition();
+        new Func<IDataContext, object, string?, string?, string?, string?, TableOptions, CancellationToken, Task<int>>(
+            DataExtensions.InsertOrReplaceAsync).Method.GetGenericMethodDefinition();
 
     private Task InsertOrReplaceAsync(IDataContext dataContext, IObjectBase entity)
     {
-        var result = InsertOrReplaceAsyncMethodGeneric.MakeGenericMethod(entity.GetType()).Invoke(null, [dataContext, entity, null, null, null, null, TableOptions.None, CancellationToken.None]);
+        var result = InsertOrReplaceAsyncMethodGeneric.MakeGenericMethod(entity.GetType()).Invoke(null,
+            [dataContext, entity, null, null, null, null, TableOptions.NotSet, CancellationToken.None]);
+        ArgumentNullException.ThrowIfNull(result);
+        return (Task)result;
+    }
+
+    private static readonly MethodInfo DeleteAsyncMethodGeneric =
+        new Func<IDataContext, object, string?, string?, string?, string?, TableOptions, CancellationToken, Task<int>>(
+            DataExtensions.DeleteAsync).Method.GetGenericMethodDefinition();
+
+    private Task DeleteAsync(IDataContext dataContext, IObjectBase entity)
+    {
+        var result = DeleteAsyncMethodGeneric.MakeGenericMethod(entity.GetType()).Invoke(null,
+            [dataContext, entity, null, null, null, null, TableOptions.NotSet, CancellationToken.None]);
         ArgumentNullException.ThrowIfNull(result);
         return (Task)result;
     }
@@ -140,7 +194,8 @@ public class Linq2DbCrdtRepo : ICrdtRepository
         return _original.CurrenSimpleSnapshots(includeDeleted);
     }
 
-    public Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, Commit[] pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
+    public Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, Commit[] pendingCommits)>
+        GetCurrentSnapshotsAndPendingCommits()
     {
         return _original.GetCurrentSnapshotsAndPendingCommits();
     }

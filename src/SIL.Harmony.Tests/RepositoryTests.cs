@@ -56,9 +56,15 @@ public class RepositoryTests : IAsyncLifetime
         };
     }
 
-    private ObjectSnapshot Snapshot(Guid entityId, Guid commitId, HybridDateTime time)
+    private ObjectSnapshot Snapshot(Guid entityId, Guid commitId, HybridDateTime time, string? text = null)
     {
-        return new(new Word { Text = "test", Id = entityId }, Commit(commitId, time), false) { };
+        return new(new Word { Text = text ?? "test", Id = entityId }, Commit(commitId, time), false) { };
+    }
+
+    private async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
+    {
+        _crdtDbContext.AddRange(snapshots);
+        await _crdtDbContext.SaveChangesAsync();
     }
 
     private Guid[] OrderedIds(int count)
@@ -146,11 +152,249 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AddSnapshots_Works()
+    {
+        var snapshot = Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0));
+        await _repository.AddCommit(snapshot.Commit);
+
+        await _repository.AddSnapshots([snapshot]);
+
+        _crdtDbContext.ChangeTracker.Clear();
+        var actualSnapshot = await _crdtDbContext.Snapshots.SingleAsync(s => s.Id == snapshot.Id);
+        actualSnapshot.Should().BeEquivalentTo(snapshot, o => o
+            .Excluding(s => s.Entity.DbObject)
+            .Excluding(s => s.Commit));
+    }
+
+    [Fact]
+    public async Task AddSnapshots_StoresReferences()
+    {
+        var wordId = Guid.NewGuid();
+        var snapshot = Snapshot(wordId, Guid.NewGuid(), Time(1, 0));
+        await _repository.AddCommit(snapshot.Commit);
+        await _repository.AddSnapshots([snapshot]);
+        var commit = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommit(commit);
+        var defSnapshot = new ObjectSnapshot(
+            new Definition
+            {
+                Id = Guid.NewGuid(),
+                Text = "word",
+                Order = 0,
+                PartOfSpeech = "noun",
+                WordId = wordId
+            },
+            commit,
+            true
+        );
+        await _repository.AddSnapshots([defSnapshot]);
+
+        _crdtDbContext.ChangeTracker.Clear();
+        var actualSnapshot = await _crdtDbContext.Snapshots.SingleAsync(s => s.Id == defSnapshot.Id);
+        actualSnapshot.Should().BeEquivalentTo(defSnapshot, o => o
+            .Excluding(s => s.Entity.DbObject)
+            .Excluding(s => s.Commit));
+    }
+
+    [Fact]
+    public async Task AddSnapshots_HandlesTheSameSnapshotTwice()
+    {
+        var snapshot = Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0));
+        await _repository.AddCommit(snapshot.Commit);
+
+        await _repository.AddSnapshots([snapshot]);
+        await _repository.AddSnapshots([snapshot]);
+        _crdtDbContext.Snapshots.Should().ContainSingle(s => s.Id == snapshot.Id);
+    }
+
+    [Fact]
+    public async Task AddSnapshots_Works_InsertsIntoProjectedTable()
+    {
+        var snapshot = Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0));
+        await _repository.AddCommit(snapshot.Commit);
+
+        await _repository.AddSnapshots([snapshot]);
+
+        _crdtDbContext.Set<Word>().Should().Contain(w => w.Id == snapshot.EntityId);
+    }
+
+    [Fact]
+    public async Task AddSnapshots_Works_UpdatesProjectedTable()
+    {
+        var entityId = Guid.NewGuid();
+        await AddSnapshots([Snapshot(entityId, Guid.NewGuid(), Time(1, 0))]);
+
+        var snapshot = Snapshot(entityId, Guid.NewGuid(), Time(2, 0), text: "updated");
+        await _repository.AddCommit(snapshot.Commit);
+        await _repository.AddSnapshots([snapshot]);
+
+        var word = await _crdtDbContext.Set<Word>().FindAsync(entityId);
+        word.Should().NotBeNull();
+        word.Text.Should().Be("updated");
+    }
+
+    [Fact]
+    public async Task AddSnapshots_Works_DeletesFromProjectedTable()
+    {
+        var entityId = Guid.NewGuid();
+        var firstSnapshot = Snapshot(entityId, Guid.NewGuid(), Time(1, 0));
+        await _repository.AddCommit(firstSnapshot.Commit);
+        await _repository.AddSnapshots([firstSnapshot]);
+        _crdtDbContext.Set<Word>().Should().ContainSingle(w => w.Id == entityId);
+
+        var time = Time(2, 0);
+        var snapshot = new ObjectSnapshot(new Word
+            {
+                Text = "test",
+                Id = entityId,
+                //mark as deleted
+                DeletedAt = time.DateTime
+            },
+            Commit(Guid.NewGuid(), time),
+            false);
+        await _repository.AddCommit(snapshot.Commit);
+        await _repository.AddSnapshots([snapshot]);
+
+        _crdtDbContext.Set<Word>().Should().NotContain(w => w.Id == entityId);
+    }
+
+    [Fact]
+    public async Task AddSnapshots_DeletesFirst()
+    {
+        var firstTagId = Guid.NewGuid();
+        var secondTagId = Guid.NewGuid();
+        //must be the same text so that the unique constraint is violated if the delete is not executed first
+        var tagText = "tag";
+        await AddSnapshots([
+            new ObjectSnapshot(new Tag()
+                {
+                    Id = firstTagId,
+                    Text = tagText
+                },
+                Commit(Guid.NewGuid(), Time(1, 0)),
+                true)
+        ]);
+        var secondCommit = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommit(secondCommit);
+
+        //act
+        await _repository.AddSnapshots([
+            new ObjectSnapshot(new Tag()
+                {
+                    Id = secondTagId,
+                    Text = tagText
+                },
+                secondCommit,
+                true),
+            new ObjectSnapshot(new Tag()
+                {
+                    Id = firstTagId,
+                    Text = tagText,
+                    DeletedAt = secondCommit.DateTime
+                },
+                secondCommit,
+                false),
+        ]);
+
+        //assert
+        _crdtDbContext.Set<Tag>().Should().ContainSingle(t => t.Id == secondTagId);
+    }
+
+    [Fact]
+    public async Task AddSnapshots_LastSnapshotWins()
+    {
+        var wordId = Guid.NewGuid();
+        var firstCommit = Commit(Guid.NewGuid(), Time(1, 0));
+        var secondCommit = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommit(firstCommit);
+        await _repository.AddCommit(secondCommit);
+
+        await _repository.AddSnapshots([
+            new ObjectSnapshot(new Word()
+                {
+                    Id = wordId,
+                    Text = "first"
+                },
+                firstCommit,
+                true),
+            new ObjectSnapshot(new Word()
+                {
+                    Id = wordId,
+                    Text = "second"
+                },
+                secondCommit,
+                false)
+        ]);
+
+        _crdtDbContext.Set<Word>().Should().ContainSingle(w => w.Id == wordId).Which.Text.Should().Be("second");
+    }
+
+    [Fact]
+    public async Task AddSnapshots_InsertsInTheCorrectOrder()
+    {
+        var wordId = Guid.NewGuid();
+        var firstCommit = Commit(Guid.NewGuid(), Time(1, 0));
+        var secondCommit = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommit(firstCommit);
+        await _repository.AddCommit(secondCommit);
+
+        await _repository.AddSnapshots([
+            new ObjectSnapshot(new Word()
+                {
+                    Id = wordId,
+                    Text = "first"
+                },
+                firstCommit,
+                true),
+            new ObjectSnapshot(new Definition()
+                {
+                    Id = Guid.NewGuid(),
+                    Text = "second",
+                    WordId = wordId,
+                    Order = 0,
+                    PartOfSpeech = "noun"
+                },
+                secondCommit,
+                false)
+        ]);
+
+        _crdtDbContext.Set<Word>().Should().ContainSingle(w => w.Id == wordId).Which.Text.Should().Be("first");
+        _crdtDbContext.Set<Definition>().Should().ContainSingle(d => d.WordId == wordId).Which.Text.Should().Be("second");
+    }
+
+    [Fact]
     public async Task CurrentSnapshots_Works()
     {
-        await _repository.AddSnapshots([Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0))]);
+        await AddSnapshots([Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0))]);
         var snapshots = await _repository.CurrentSnapshots().ToArrayAsync();
         snapshots.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task CurrentSnapshots_CanFilterByRefs()
+    {
+        var wordId = Guid.NewGuid();
+        var snapshot = Snapshot(wordId, Guid.NewGuid(), Time(1, 0));
+        await _repository.AddCommit(snapshot.Commit);
+        await _repository.AddSnapshots([snapshot]);
+        var commit = Commit(Guid.NewGuid(), Time(2, 0));
+        await _repository.AddCommit(commit);
+        var defSnapshot = new ObjectSnapshot(
+            new Definition
+            {
+                Id = Guid.NewGuid(),
+                Text = "word",
+                Order = 0,
+                PartOfSpeech = "noun",
+                WordId = wordId
+            },
+            commit,
+            true
+        );
+        await _repository.AddSnapshots([defSnapshot]);
+
+        var objectSnapshots = await _repository.CurrentSnapshots().Where(s => s.References.Contains(wordId)).ToArrayAsync();
+        objectSnapshots.Should().ContainSingle().Which.Id.Should().Be(defSnapshot.Id);
     }
 
     [Fact]
@@ -158,7 +402,7 @@ public class RepositoryTests : IAsyncLifetime
     {
         var entityId = Guid.NewGuid();
         var expectedTime = Time(2, 0);
-        await _repository.AddSnapshots([
+        await AddSnapshots([
             Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
             Snapshot(entityId, Guid.NewGuid(), expectedTime),
         ]);
@@ -170,7 +414,7 @@ public class RepositoryTests : IAsyncLifetime
     public async Task CurrentSnapshots_GroupsByEntityIdSortedByCount()
     {
         var entityId = Guid.NewGuid();
-        await _repository.AddSnapshots([
+        await AddSnapshots([
             Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
             Snapshot(entityId, Guid.NewGuid(), Time(1, 1)),
         ]);
@@ -184,7 +428,7 @@ public class RepositoryTests : IAsyncLifetime
         var time = Time(1, 1);
         var entityId = Guid.NewGuid();
         var ids = OrderedIds(2);
-        await _repository.AddSnapshots([
+        await AddSnapshots([
             Snapshot(entityId, ids[0], time),
             Snapshot(entityId, ids[1], time),
         ]);
@@ -201,7 +445,7 @@ public class RepositoryTests : IAsyncLifetime
         var snapshot1 = Snapshot(entityId, commitIds[0], Time(1, 0));
         var snapshot2 = Snapshot(entityId, commitIds[1], Time(2, 0));
         var snapshot3 = Snapshot(entityId, commitIds[2], Time(2, 1));
-        await _repository.AddSnapshots([
+        await AddSnapshots([
             snapshot3,
             snapshot1,
             snapshot2,
@@ -226,7 +470,7 @@ public class RepositoryTests : IAsyncLifetime
         var snapshot1 = Snapshot(entityId, commitIds[0], Time(1, 0));
         var snapshot2 = Snapshot(entityId, commitIds[1], Time(2, 0));
         var snapshot3 = Snapshot(entityId, commitIds[2], Time(2, 0));
-        await _repository.AddSnapshots([
+        await AddSnapshots([
             snapshot3,
             snapshot1,
             snapshot2,
@@ -250,7 +494,7 @@ public class RepositoryTests : IAsyncLifetime
     [Fact]
     public async Task DeleteStaleSnapshots_DeletesSnapshotsAfterCommitByTime()
     {
-        await _repository.AddSnapshots([
+        await AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(3, 0)),
         ]);
@@ -263,7 +507,7 @@ public class RepositoryTests : IAsyncLifetime
     [Fact]
     public async Task DeleteStaleSnapshots_DeletesSnapshotsAfterCommitByCount()
     {
-        await _repository.AddSnapshots([
+        await AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 2)),
         ]);
@@ -279,7 +523,7 @@ public class RepositoryTests : IAsyncLifetime
         var time = Time(1, 1);
         var entityId = Guid.NewGuid();
         var ids = OrderedIds(3);
-        await _repository.AddSnapshots([
+        await AddSnapshots([
             Snapshot(entityId, ids[0], time),
             Snapshot(entityId, ids[2], time),
         ]);

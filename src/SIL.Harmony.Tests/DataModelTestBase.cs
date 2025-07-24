@@ -7,6 +7,7 @@ using SIL.Harmony.Tests.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Logging;
 using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Tests;
@@ -40,6 +41,7 @@ public class DataModelTestBase : IAsyncLifetime
             {
                 builder.UseSqlite(connection, true);
             }, performanceTest)
+            .AddLogging(builder => builder.AddDebug())
             .Configure<CrdtConfig>(config => config.AlwaysValidateCommits = alwaysValidate)
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider));
         configure?.Invoke(serviceCollection);

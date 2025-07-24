@@ -9,20 +9,25 @@ using SIL.Harmony.Sample.Changes;
 
 namespace SIL.Harmony.Tests;
 
+public class RepositoryTests_Linq2Db() : RepositoryTests(true);
+
 public class RepositoryTests : IAsyncLifetime
 {
     private readonly ServiceProvider _services;
     private readonly ICrdtRepository _repository;
     private readonly SampleDbContext _crdtDbContext;
 
-    public RepositoryTests()
+    protected RepositoryTests(bool useLinq2DbRepo)
     {
         _services = new ServiceCollection()
-            .AddCrdtDataSample(":memory:")
+            .AddCrdtDataSample(builder => builder.UseSqlite("Data Source=:memory:"), useLinq2DbRepo: useLinq2DbRepo)
             .BuildServiceProvider();
 
         _repository = _services.GetRequiredService<ICrdtRepositoryFactory>().CreateRepositorySync();
         _crdtDbContext = _services.GetRequiredService<SampleDbContext>();
+    }
+    public RepositoryTests() : this(false)
+    {
     }
 
     public async Task InitializeAsync()

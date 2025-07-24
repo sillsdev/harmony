@@ -3,10 +3,11 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="BenchmarkDotNet.Diagnostics.dotTrace" Version="0.15.2" />
     <PackageVersion Include="Enterprize1.BenchmarkDotNet.GitCompare" Version="0.0.1" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.4" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.4" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.4" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.7" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.7" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Debug" Version="9.0.7" />
     <PackageVersion Include="Nito.AsyncEx.Coordination" Version="5.1.2" />
     <PackageVersion Include="System.IO.Hashing" Version="9.0.0" />
@@ -25,6 +26,6 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.2" />
     <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.12.19" />
     <PackageVersion Include="linq2db.AspNet" Version="5.4.1" />
-    <PackageVersion Include="linq2db.EntityFrameworkCore" Version="9.0.0" />
+    <PackageVersion Include="linq2db.EntityFrameworkCore" Version="9.1.0-rc.1" />
   </ItemGroup>
 </Project>

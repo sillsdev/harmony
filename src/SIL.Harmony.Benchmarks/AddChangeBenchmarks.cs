@@ -1,5 +1,6 @@
 using BenchmarkDotNet_GitCompare;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Diagnostics.dotTrace;
 using BenchmarkDotNet.Engines;
 using SIL.Harmony.Linq2db;
 using SIL.Harmony.Tests;
@@ -7,6 +8,8 @@ using SIL.Harmony.Tests;
 namespace SIL.Harmony.Benchmarks;
 
 [SimpleJob(RunStrategy.Throughput)]
+[MemoryDiagnoser]
+// [DotTraceDiagnoser]
 // [GitJob(gitReference: "HEAD", id: "before", baseline: true)]
 public class AddChangeBenchmarks
 {

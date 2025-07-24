@@ -11,6 +11,7 @@ using SIL.Harmony.Tests;
 namespace SIL.Harmony.Benchmarks;
 
 [SimpleJob(RunStrategy.Throughput)]
+[MemoryDiagnoser]
 // [GitJob(gitReference: "HEAD", id: "before", baseline: true)]
 public class AddSnapshotsBenchmarks
 {

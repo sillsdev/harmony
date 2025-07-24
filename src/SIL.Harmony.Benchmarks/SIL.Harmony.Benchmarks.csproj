@@ -9,6 +9,7 @@
 
     <ItemGroup>
       <PackageReference Include="BenchmarkDotNet" />
+      <PackageReference Include="BenchmarkDotNet.Diagnostics.dotTrace" />
       <PackageReference Include="Enterprize1.BenchmarkDotNet.GitCompare" />
     </ItemGroup>
 

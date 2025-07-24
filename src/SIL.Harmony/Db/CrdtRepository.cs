@@ -348,6 +348,16 @@ public class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
         if (save) await _dbContext.SaveChangesAsync();
     }
 
+    public async Task UpdateCommitHash(Guid commitId, string hash, string parentHash)
+    {
+        await _dbContext.Commits
+            .Where(c => c.Id == commitId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Hash, hash)
+                .SetProperty(c => c.ParentHash, parentHash)
+            );
+    }
+
     public HybridDateTime? GetLatestDateTime()
     {
         return Commits

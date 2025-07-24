@@ -93,6 +93,11 @@ public class Linq2DbCrdtRepo : ICrdtRepository
         return _original.AddCommits(commits, save);
     }
 
+    public Task UpdateCommitHash(Guid commitId, string hash, string parentHash)
+    {
+        return _original.UpdateCommitHash(commitId, hash, parentHash);
+    }
+
     public Task<IDbContextTransaction> BeginTransactionAsync()
     {
         return _original.BeginTransactionAsync();

@@ -71,7 +71,8 @@ internal class SnapshotWorker
             if (updateCommitHash && previousCommitHash is not null)
             {
                 //we're rewriting history, so we need to update the previous commit hash
-                commit.SetParentHash(previousCommitHash);
+                if (commit.SetParentHash(previousCommitHash))
+                    await _crdtRepository.UpdateCommitHash(commit.Id, hash: commit.Hash, parentHash: commit.ParentHash);
             }
 
             previousCommitHash = commit.Hash;

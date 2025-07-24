@@ -20,10 +20,12 @@ public class Commit : CommitBase<IChange>
         ParentHash = NullParentHash;
     }
 
-    public void SetParentHash(string parentHash)
+    public bool SetParentHash(string parentHash)
     {
+        if (ParentHash == parentHash) return false;
         Hash = GenerateHash(parentHash);
         ParentHash = parentHash;
+        return true;
     }
     internal Commit() : this(Guid.NewGuid())
     {

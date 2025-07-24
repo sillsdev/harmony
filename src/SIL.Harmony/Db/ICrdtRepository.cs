@@ -32,6 +32,7 @@ public interface ICrdtRepository : IAsyncDisposable, IDisposable
     CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit);
     Task AddCommit(Commit commit);
     Task AddCommits(IEnumerable<Commit> commits, bool save = true);
+    Task UpdateCommitHash(Guid commitId, string hash, string parentHash);
     HybridDateTime? GetLatestDateTime();
     Task AddLocalResource(LocalResource localResource);
     IAsyncEnumerable<LocalResource> LocalResourcesByIds(IEnumerable<Guid> resourceIds);

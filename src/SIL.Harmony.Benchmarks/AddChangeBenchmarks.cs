@@ -14,6 +14,7 @@ namespace SIL.Harmony.Benchmarks;
 public class AddChangeBenchmarks
 {
     private DataModelTestBase _emptyDataModel = null!;
+    private Guid _clientId = Guid.NewGuid();
 
     [Params(200)]
     public int ChangeCount { get; set; }
@@ -23,11 +24,7 @@ public class AddChangeBenchmarks
     [IterationSetup]
     public void IterationSetup()
     {
-        _emptyDataModel = new(alwaysValidate: false, performanceTest: true, configure: collection =>
-        {
-            if (UseLinq2DbRepo)
-                collection.AddLinq2DbRepository();
-        });
+        _emptyDataModel = new(alwaysValidate: false, performanceTest: true, useLinq2DbRepo: UseLinq2DbRepo);
         _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).GetAwaiter().GetResult();
     }
 
@@ -41,6 +38,14 @@ public class AddChangeBenchmarks
         }
 
         return commits;
+    }
+
+    [Benchmark(OperationsPerInvoke = 200)]
+    public Commit AddChangesAllAtOnce()
+    {
+        return _emptyDataModel.WriteChange(_clientId, DateTimeOffset.Now, Enumerable.Range(0, ChangeCount)
+            .Select(i =>
+            _emptyDataModel.SetWord(Guid.NewGuid(), "entity1"))).Result;
     }
 
     [IterationCleanup]

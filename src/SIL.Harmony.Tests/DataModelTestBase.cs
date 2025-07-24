@@ -101,7 +101,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(clientId, dateTime, [change], add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId,
+    public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
         IEnumerable<IChange> changes,
         bool add = true)

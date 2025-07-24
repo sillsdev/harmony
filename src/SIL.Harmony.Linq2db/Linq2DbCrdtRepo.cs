@@ -70,7 +70,6 @@ public class Linq2DbCrdtRepo : ICrdtRepository
     {
         //save any pending commit changes
         await _dbContext.SaveChangesAsync();
-        var projectedEntityIds = new HashSet<Guid>();
         var linqToDbTable = _dbContext.Set<ObjectSnapshot>().ToLinqToDBTable();
         var dataContext = linqToDbTable.DataContext;
         foreach (var grouping in snapshots.GroupBy(s => s.EntityIsDeleted)
@@ -90,8 +89,6 @@ public class Linq2DbCrdtRepo : ICrdtRepository
             var snapshotsToProject = objectSnapshots.DefaultOrderDescending().DistinctBy(s => s.EntityId).Select(s => s.Id).ToHashSet();
             foreach (var objectSnapshot in objectSnapshots.IntersectBy(snapshotsToProject, s => s.Id))
             {
-                //ensure we skip projecting the same entity multiple times
-                if (!projectedEntityIds.Add(objectSnapshot.EntityId)) continue;
                 try
                 {
                     if (objectSnapshot.EntityIsDeleted)

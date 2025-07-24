@@ -24,9 +24,9 @@ public class DataModelTestBase : IAsyncLifetime
     public IServiceProvider Services => _services;
 
     public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true,
-        Action<IServiceCollection>? configure = null, bool performanceTest = false) : this(saveToDisk
+        Action<IServiceCollection>? configure = null, bool performanceTest = false, bool useLinq2DbRepo = false) : this(saveToDisk
         ? new SqliteConnection("Data Source=test.db")
-        : new SqliteConnection("Data Source=:memory:"), alwaysValidate, configure, performanceTest)
+        : new SqliteConnection("Data Source=:memory:"), alwaysValidate, configure, performanceTest, useLinq2DbRepo)
     {
     }
 
@@ -34,16 +34,16 @@ public class DataModelTestBase : IAsyncLifetime
     {
     }
 
-    public DataModelTestBase(SqliteConnection connection, bool alwaysValidate = true, Action<IServiceCollection>? configure = null, bool performanceTest = false)
+    public DataModelTestBase(SqliteConnection connection, bool alwaysValidate = true, Action<IServiceCollection>? configure = null, bool performanceTest = false, bool useLinq2DbRepo = false)
     {
         _performanceTest = performanceTest;
         var serviceCollection = new ServiceCollection().AddCrdtDataSample(builder =>
             {
                 builder.UseSqlite(connection, true);
-            }, performanceTest)
-            .AddLogging(builder => builder.AddDebug())
+            }, performanceTest, useLinq2DbRepo)
             .Configure<CrdtConfig>(config => config.AlwaysValidateCommits = alwaysValidate)
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider));
+        if (!performanceTest) serviceCollection.AddLogging(builder => builder.AddDebug());
         configure?.Invoke(serviceCollection);
         _services = serviceCollection.BuildServiceProvider();
         DbContext = _services.GetRequiredService<SampleDbContext>();

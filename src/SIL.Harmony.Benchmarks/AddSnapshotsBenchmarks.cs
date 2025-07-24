@@ -28,12 +28,7 @@ public class AddSnapshotsBenchmarks
     public void IterationSetup()
     {
         _emptyDataModel = new(alwaysValidate: false,
-            performanceTest: true,
-            configure: collection =>
-            {
-                if (UseLinq2DbRepo)
-                    collection.AddLinq2DbRepository();
-            });
+            performanceTest: true, useLinq2DbRepo: UseLinq2DbRepo);
         var crdtRepositoryFactory = _emptyDataModel.Services.GetRequiredService<ICrdtRepositoryFactory>();
         _repository = crdtRepositoryFactory.CreateRepositorySync();
         _repository.AddCommit(_commit = new Commit(Guid.NewGuid())

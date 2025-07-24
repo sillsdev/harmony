@@ -16,7 +16,7 @@ public static class CrdtSampleKernel
     }
 
     public static IServiceCollection AddCrdtDataSample(this IServiceCollection services,
-        Action<DbContextOptionsBuilder> optionsBuilder, bool performanceTest = false)
+        Action<DbContextOptionsBuilder> optionsBuilder, bool performanceTest = false, bool useLinq2DbRepo = false)
     {
         services.AddDbContext<SampleDbContext>((provider, builder) =>
         {
@@ -76,6 +76,8 @@ public static class CrdtSampleKernel
                     builder.HasIndex(wt => new { wt.WordId, wt.TagId }).IsUnique();
                 });
         });
+        if (useLinq2DbRepo)
+            services.AddLinq2DbRepository();
         return services;
     }
 }

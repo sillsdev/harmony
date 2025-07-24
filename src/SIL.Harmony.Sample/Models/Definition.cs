@@ -39,4 +39,9 @@ public class Definition : IObjectBase<Definition>, IOrderableCrdt
             DeletedAt = DeletedAt
         };
     }
+
+    public override string ToString()
+    {
+        return $"{nameof(Text)}: {Text}, {nameof(Id)}: {Id}, {nameof(WordId)}: {WordId}, {nameof(DeletedAt)}: {DeletedAt}";
+    }
 }

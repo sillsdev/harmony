@@ -28,9 +28,6 @@ public static class CrdtSampleKernel
             optionsBuilder(builder);
             builder.EnableDetailedErrors();
             builder.EnableSensitiveDataLogging();
-#if DEBUG
-            builder.LogTo(s => Debug.WriteLine(s));
-#endif
         });
         services.AddCrdtData<SampleDbContext>(config =>
         {

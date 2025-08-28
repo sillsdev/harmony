@@ -1,5 +1,6 @@
 using BenchmarkDotNet_GitCompare;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Diagnostics.dotMemory;
 using BenchmarkDotNet.Diagnostics.dotTrace;
 using BenchmarkDotNet.Engines;
 using SIL.Harmony.Linq2db;
@@ -9,15 +10,14 @@ namespace SIL.Harmony.Benchmarks;
 
 [SimpleJob(RunStrategy.Throughput)]
 [MemoryDiagnoser]
+// [DotMemoryDiagnoser]
 // [DotTraceDiagnoser]
 // [GitJob(gitReference: "HEAD", id: "before", baseline: true)]
 public class AddChangeBenchmarks
 {
     private DataModelTestBase _emptyDataModel = null!;
     private Guid _clientId = Guid.NewGuid();
-
-    [Params(200)]
-    public int ChangeCount { get; set; }
+    public const int ActualChangeCount = 2000;
     [Params(true, false)]
     public bool UseLinq2DbRepo { get; set; }
 
@@ -28,11 +28,11 @@ public class AddChangeBenchmarks
         _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).GetAwaiter().GetResult();
     }
 
-    [Benchmark(OperationsPerInvoke = 200)]
+    [Benchmark(OperationsPerInvoke = ActualChangeCount)]
     public List<Commit> AddChanges()
     {
         var commits = new List<Commit>();
-        for (var i = 0; i < ChangeCount; i++)
+        for (var i = 0; i < ActualChangeCount; i++)
         {
             commits.Add(_emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result);
         }
@@ -40,10 +40,10 @@ public class AddChangeBenchmarks
         return commits;
     }
 
-    [Benchmark(OperationsPerInvoke = 200)]
+    [Benchmark(OperationsPerInvoke = ActualChangeCount)]
     public Commit AddChangesAllAtOnce()
     {
-        return _emptyDataModel.WriteChange(_clientId, DateTimeOffset.Now, Enumerable.Range(0, ChangeCount)
+        return _emptyDataModel.WriteChange(_clientId, DateTimeOffset.Now, Enumerable.Range(0, ActualChangeCount)
             .Select(i =>
             _emptyDataModel.SetWord(Guid.NewGuid(), "entity1"))).Result;
     }

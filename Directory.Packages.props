@@ -3,6 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="BenchmarkDotNet.Diagnostics.dotMemory" Version="0.15.2" />
     <PackageVersion Include="BenchmarkDotNet.Diagnostics.dotTrace" Version="0.15.2" />
     <PackageVersion Include="Enterprize1.BenchmarkDotNet.GitCompare" Version="0.0.1" />
     <PackageVersion Include="linq2db.Extensions" Version="6.0.0-rc.1" />

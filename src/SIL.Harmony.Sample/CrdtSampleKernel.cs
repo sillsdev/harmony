@@ -24,7 +24,7 @@ public static class CrdtSampleKernel
             //this can show up as the second instance using the JsonSerializerOptions from the first container
             //only needed for testing scenarios
             builder.EnableServiceProviderCaching(performanceTest);
-            builder.UseLinqToDbCrdt(provider);
+            builder.UseLinqToDbCrdt(provider, !performanceTest);
             optionsBuilder(builder);
             builder.EnableDetailedErrors();
             builder.EnableSensitiveDataLogging();

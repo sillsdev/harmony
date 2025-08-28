@@ -13,7 +13,7 @@ namespace SIL.Harmony.Linq2db;
 
 public static class Linq2dbKernel
 {
-    public static DbContextOptionsBuilder UseLinqToDbCrdt(this DbContextOptionsBuilder builder, IServiceProvider provider)
+    public static DbContextOptionsBuilder UseLinqToDbCrdt(this DbContextOptionsBuilder builder, IServiceProvider provider, bool useLogging = true)
     {
         LinqToDBForEFTools.Initialize();
         return builder.UseLinqToDB(optionsBuilder =>
@@ -39,9 +39,12 @@ public static class Linq2dbKernel
                 )
                 .Build();
 
-            var loggerFactory = provider.GetService<ILoggerFactory>();
-            if (loggerFactory is not null)
-                optionsBuilder.AddCustomOptions(dataOptions => dataOptions.UseLoggerFactory(loggerFactory));
+            if (useLogging)
+            {
+                var loggerFactory = provider.GetService<ILoggerFactory>();
+                if (loggerFactory is not null)
+                    optionsBuilder.AddCustomOptions(dataOptions => dataOptions.UseLoggerFactory(loggerFactory));
+            }
         });
     }
 

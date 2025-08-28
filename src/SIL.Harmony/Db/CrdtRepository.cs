@@ -222,8 +222,19 @@ public class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
             .SingleOrDefaultAsync(s => s.Id == id);
     }
 
+    private readonly Func<DbContext, Guid, Task<ObjectSnapshot?>> GetCurrentSnapshotByObjectIdQuery =
+        EF.CompileAsyncQuery((DbContext dbContext, Guid objectId) =>
+             dbContext.Set<ObjectSnapshot>()
+                .AsTracking(QueryTrackingBehavior.TrackAll)
+                .Include(s => s.Commit)
+                .OrderBy(c => c.Commit.HybridDateTime.DateTime)
+                .ThenBy(c => c.Commit.HybridDateTime.Counter)
+                .ThenBy(c => c.Commit.Id)
+                .LastOrDefault(s => s.EntityId == objectId));
+
     public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId, bool tracking = false)
     {
+        if (tracking) return await GetCurrentSnapshotByObjectIdQuery(_dbContext.ChangeTracker.Context, objectId);
         return await Snapshots
             .AsTracking(tracking)
             .Include(s => s.Commit)

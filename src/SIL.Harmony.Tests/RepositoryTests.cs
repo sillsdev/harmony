@@ -4,6 +4,7 @@ using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests.Mocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Sample.Changes;
 
@@ -21,6 +22,7 @@ public class RepositoryTests : IAsyncLifetime
     {
         _services = new ServiceCollection()
             .AddCrdtDataSample(builder => builder.UseSqlite("Data Source=:memory:"), useLinq2DbRepo: useLinq2DbRepo)
+            .AddLogging(c => c.AddDebug())
             .BuildServiceProvider();
 
         _repository = _services.GetRequiredService<ICrdtRepositoryFactory>().CreateRepositorySync();
@@ -591,5 +593,21 @@ public class RepositoryTests : IAsyncLifetime
 
         var previousCommit = await _repository.FindPreviousCommit(commit1);
         previousCommit.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task GetCurrentSnapshotByObjectId_Works()
+    {
+        var entityId = Guid.NewGuid();
+        var snapshot = Snapshot(entityId, Guid.NewGuid(), Time(1, 0));
+        await _repository.AddCommit(snapshot.Commit);
+        await _repository.AddSnapshots([snapshot]);
+
+        _crdtDbContext.ChangeTracker.Clear();
+        var actualSnapshot = await _repository.GetCurrentSnapshotByObjectId(entityId);
+        actualSnapshot.Should().BeEquivalentTo(snapshot,
+            o => o
+                .Excluding(s => s.Entity.DbObject)
+                .Excluding(s => s.Commit));
     }
 }

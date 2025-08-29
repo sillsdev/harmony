@@ -11,6 +11,7 @@ using JetBrains.Profiler.SelfApi;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
+using SIL.Harmony.Tests.Benchmarks;
 using Xunit.Abstractions;
 
 namespace SIL.Harmony.Tests;
@@ -25,7 +26,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         Assert.Fail("This test is disabled in debug builds, not reliable");
         #endif
         var summary =
-            BenchmarkRunner.Run<DataModelPerformanceBenchmarks>(
+            BenchmarkRunner.Run<ChangeThroughput>(
                 ManualConfig.CreateEmpty()
                     .AddExporter(JsonExporter.FullCompressed)
                     .AddColumnProvider(DefaultColumnProviders.Instance)
@@ -177,60 +178,3 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
     }
 }
 
-// disable warning about waiting for sync code, benchmarkdotnet does not support async code, and it doesn't deadlock when waiting.
-#pragma warning disable VSTHRD002
-[SimpleJob(RunStrategy.Throughput, warmupCount: 2)]
-public class DataModelPerformanceBenchmarks
-{
-    private DataModelTestBase _templateModel = null!;
-    private DataModelTestBase _dataModelTestBase = null!;
-    private DataModelTestBase _emptyDataModel = null!;
-
-
-    [GlobalSetup]
-    public void GlobalSetup()
-    {
-        _templateModel = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
-        DataModelPerformanceTests.BulkInsertChanges(_templateModel, StartingSnapshots).GetAwaiter().GetResult();
-    }
-
-    [Params(0, 1000, 10_000)]
-    public int StartingSnapshots { get; set; }
-
-    [IterationSetup]
-    public void IterationSetup()
-    {
-        _emptyDataModel = new(alwaysValidate: false, performanceTest: true);
-        _ = _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result;
-        _dataModelTestBase = _templateModel.ForkDatabase(false);
-    }
-    
-    [Benchmark(Baseline = true), BenchmarkCategory("WriteChange")]
-    public Commit AddSingleChangePerformance()
-    {
-        return _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result;
-    }
-    
-    [Benchmark, BenchmarkCategory("WriteChange")]
-    public Commit AddSingleChangeWithManySnapshots()
-    {
-        var count = _dataModelTestBase.DbContext.Snapshots.Count();
-        // had a bug where there were no snapshots, this means the test was useless, this is slower, but it's better that then a useless test
-        if (count < (StartingSnapshots - 5)) throw new Exception($"Not enough snapshots, found {count}");
-        return _dataModelTestBase.WriteNextChange(_dataModelTestBase.SetWord(Guid.NewGuid(), "entity1")).Result;
-    }
-
-    [IterationCleanup]
-    public void IterationCleanup()
-    {
-        _emptyDataModel.DisposeAsync().GetAwaiter().GetResult();
-        _dataModelTestBase.DisposeAsync().GetAwaiter().GetResult();
-    }
-
-    [GlobalCleanup]
-    public void GlobalCleanup()
-    {
-        _templateModel.DisposeAsync().GetAwaiter().GetResult();
-    }
-}
-#pragma warning restore VSTHRD002

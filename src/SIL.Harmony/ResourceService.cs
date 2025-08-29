@@ -10,12 +10,12 @@ namespace SIL.Harmony;
 
 public class ResourceService
 {
-    private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
+    private readonly ICrdtRepositoryFactory _crdtRepositoryFactory;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly DataModel _dataModel;
     private readonly ILogger<ResourceService> _logger;
 
-    internal ResourceService(CrdtRepositoryFactory crdtRepositoryFactory, IOptions<CrdtConfig> crdtConfig, DataModel dataModel, ILogger<ResourceService> logger)
+    internal ResourceService(ICrdtRepositoryFactory crdtRepositoryFactory, IOptions<CrdtConfig> crdtConfig, DataModel dataModel, ILogger<ResourceService> logger)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _crdtConfig = crdtConfig;
@@ -164,7 +164,7 @@ public class ResourceService
         return await DownloadResourceInternal(repo, remoteResource, remoteResourceService);
     }
 
-    private async Task<LocalResource> DownloadResourceInternal(CrdtRepository repo,
+    private async Task<LocalResource> DownloadResourceInternal(ICrdtRepository repo,
         RemoteResource remoteResource,
         IRemoteResourceService remoteResourceService)
     {

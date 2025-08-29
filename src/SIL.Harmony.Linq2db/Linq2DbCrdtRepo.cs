@@ -245,9 +245,10 @@ public class Linq2DbCrdtRepo : ICrdtRepository
         return _original.GetChanges(remoteState);
     }
 
-    public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
+    public ICrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
     {
-        return _original.GetScopedRepository(excludeChangesAfterCommit);
+        var inner = _original.GetScopedRepository(excludeChangesAfterCommit);
+        return new Linq2DbCrdtRepo(inner, _dbContext);
     }
 
     public HybridDateTime? GetLatestDateTime()
@@ -258,6 +259,11 @@ public class Linq2DbCrdtRepo : ICrdtRepository
     public Task AddLocalResource(LocalResource localResource)
     {
         return _original.AddLocalResource(localResource);
+    }
+
+    public Task DeleteLocalResource(Guid id)
+    {
+        return _original.DeleteLocalResource(id);
     }
 
     public IAsyncEnumerable<LocalResource> LocalResourcesByIds(IEnumerable<Guid> resourceIds)

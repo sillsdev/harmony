@@ -13,6 +13,12 @@ public interface ICrdtRepositoryFactory
         return await func(repo);
     }
 
+    public async Task Execute(Func<ICrdtRepository, Task> func)
+    {
+        await using var repo = await CreateRepository();
+        await func(repo);
+    }
+
     public async ValueTask<T> Execute<T>(Func<ICrdtRepository, ValueTask<T>> func)
     {
         await using var repo = await CreateRepository();
@@ -32,7 +38,7 @@ public class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbCont
         return CreateInstance(dbContextFactory.CreateDbContext());
     }
 
-    public CrdtRepository CreateInstance(ICrdtDbContext dbContext)
+    public ICrdtRepository CreateInstance(ICrdtDbContext dbContext)
     {
         return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContext);
     }

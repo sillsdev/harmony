@@ -29,7 +29,7 @@ public interface ICrdtRepository : IAsyncDisposable, IDisposable
     Task<SyncState> GetCurrentSyncState();
     Task<ChangesResult<Commit>> GetChanges(SyncState remoteState);
     Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots);
-    CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit);
+    ICrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit);
     Task AddCommit(Commit commit);
     Task AddCommits(IEnumerable<Commit> commits, bool save = true);
     Task UpdateCommitHash(Guid commitId, string hash, string parentHash);
@@ -44,4 +44,5 @@ public interface ICrdtRepository : IAsyncDisposable, IDisposable
     IQueryable<Guid> LocalResourceIds();
 
     Task<LocalResource?> GetLocalResource(Guid resourceId);
+    Task DeleteLocalResource(Guid id);
 }

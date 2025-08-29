@@ -28,28 +28,42 @@ public class ResourceService
         if (!_crdtConfig.Value.RemoteResourcesEnabled) throw new RemoteResourceNotEnabledException();
     }
 
+    public async Task AddExistingRemoteResource(string resourcePath,
+        Guid clientId,
+        Guid resourceId, string remoteId)
+    {
+        ValidateResourcesSetup();
+        var localResource = new LocalResource
+        {
+            Id = resourceId,
+            LocalPath = Path.GetFullPath(resourcePath)
+        };
+        if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
+
+        await _dataModel.AddChange(clientId, new CreateRemoteResourceChange(localResource.Id, remoteId));
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await repo.AddLocalResource(localResource);
+    }
+
     public async Task<HarmonyResource> AddLocalResource(string resourcePath,
         Guid clientId,
         Guid id = default,
         IRemoteResourceService? resourceService = null)
     {
         ValidateResourcesSetup();
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var localResource = new LocalResource
         {
             Id = id == default ? Guid.NewGuid() : id,
             LocalPath = Path.GetFullPath(resourcePath)
         };
         if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
-        await using var transaction = await repo.BeginTransactionAsync();
-        await repo.AddLocalResource(localResource);
         UploadResult? uploadResult = null;
         if (resourceService is not null)
         {
             try
             {
 
-                uploadResult = await resourceService.UploadResource(localResource.LocalPath);
+                uploadResult = await resourceService.UploadResource(localResource.Id, localResource.LocalPath);
             }
             catch (Exception e)
             {
@@ -66,7 +80,7 @@ public class ResourceService
             await _dataModel.AddChange(clientId, new CreateRemoteResourcePendingUploadChange(localResource.Id));
         }
 
-        await transaction.CommitAsync();
+        await _crdtRepositoryFactory.Execute(repo => repo.AddLocalResource(localResource));
         return new HarmonyResource
         {
             Id = localResource.Id,
@@ -88,12 +102,13 @@ public class ResourceService
     {
         ValidateResourcesSetup();
         var pendingUploads = await ListResourcesPendingUpload();
+        if (pendingUploads is []) return;
         var changes = new List<IChange>(pendingUploads.Length);
         try
         {
             foreach (var localResource in pendingUploads)
             {
-                var uploadResult = await remoteResourceService.UploadResource(localResource.LocalPath);
+                var uploadResult = await remoteResourceService.UploadResource(localResource.Id, localResource.LocalPath);
                 changes.Add(new RemoteResourceUploadedChange(localResource.Id, uploadResult.RemoteId));
             }
         }
@@ -116,7 +131,7 @@ public class ResourceService
     public async Task UploadPendingResource(LocalResource localResource, Guid clientId, IRemoteResourceService remoteResourceService)
     {
         ValidateResourcesSetup();
-        var uploadResult = await remoteResourceService.UploadResource(localResource.LocalPath);
+        var uploadResult = await remoteResourceService.UploadResource(localResource.Id, localResource.LocalPath);
         await _dataModel.AddChange(clientId, new RemoteResourceUploadedChange(localResource.Id, uploadResult.RemoteId));
     }
 
@@ -195,5 +210,12 @@ public class ResourceService
     {
         var resources = await AllResourcesInternal();
         return resources.FirstOrDefault(r => r.Id == resourceId);
+    }
+
+    public async Task DeleteResource(Guid clientId, Guid resourceId)
+    {
+        await _dataModel.AddChange(clientId, new DeleteChange<RemoteResource>(resourceId));
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await repo.DeleteLocalResource(resourceId);
     }
 }

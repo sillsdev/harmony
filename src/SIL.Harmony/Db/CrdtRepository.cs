@@ -12,7 +12,37 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
-public class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
+internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory)
+{
+    public async Task<ICrdtRepository> CreateRepository()
+    {
+        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
+    }
+
+    public ICrdtRepository CreateRepositorySync()
+    {
+        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContextFactory.CreateDbContext());
+    }
+
+    public async Task<T> Execute<T>(Func<CrdtRepository, Task<T>> func)
+    {
+        await using var repo = await CreateRepository();
+        return await func(repo);
+    }
+    public async Task Execute(Func<CrdtRepository, Task> func)
+    {
+        await using var repo = await CreateRepository();
+        await func(repo);
+    }
+
+    public async ValueTask<T> Execute<T>(Func<CrdtRepository, ValueTask<T>> func)
+    {
+        await using var repo = await CreateRepository();
+        return await func(repo);
+    }
+}
+
+internal class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
 {
     private static readonly ConcurrentDictionary<string, AsyncLock> Locks = new();
 
@@ -383,6 +413,11 @@ public class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
     {
         _dbContext.Set<LocalResource>().Add(localResource);
         await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task DeleteLocalResource(Guid id)
+    {
+        await _dbContext.Set<LocalResource>().Where(r => r.Id == id).ExecuteDeleteAsync();
     }
 
     public IAsyncEnumerable<LocalResource> LocalResourcesByIds(IEnumerable<Guid> resourceIds)

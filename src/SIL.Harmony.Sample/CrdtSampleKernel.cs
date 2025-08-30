@@ -10,13 +10,19 @@ namespace SIL.Harmony.Sample;
 
 public static class CrdtSampleKernel
 {
+
+    public static IServiceCollection AddCrdtDataSample(this IServiceCollection services, Func<IServiceProvider, string> dbPathProvider)
+    {
+        return services.AddCrdtDataSample((provider, builder) => builder.UseSqlite($"Data Source={dbPathProvider(provider)}"));
+    }
+
     public static IServiceCollection AddCrdtDataSample(this IServiceCollection services, string dbPath)
     {
-        return services.AddCrdtDataSample(builder => builder.UseSqlite($"Data Source={dbPath}"));
+        return services.AddCrdtDataSample((_) => dbPath);
     }
 
     public static IServiceCollection AddCrdtDataSample(this IServiceCollection services,
-        Action<DbContextOptionsBuilder> optionsBuilder, bool performanceTest = false)
+        Action<IServiceProvider, DbContextOptionsBuilder> optionsBuilder, bool performanceTest = false)
     {
         services.AddDbContext<SampleDbContext>((provider, builder) =>
         {
@@ -25,7 +31,7 @@ public static class CrdtSampleKernel
             //only needed for testing scenarios
             builder.EnableServiceProviderCaching(performanceTest);
             builder.UseLinqToDbCrdt(provider);
-            optionsBuilder(builder);
+            optionsBuilder(provider, builder);
             builder.EnableDetailedErrors();
             builder.EnableSensitiveDataLogging();
 #if DEBUG

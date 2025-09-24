@@ -18,7 +18,7 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
         _objectTypeListBuilder = objectTypeListBuilder;
         JsonTypes.AddDerivedType(typeof(IObjectBase), typeof(TCustomAdapter), TCustomAdapter.TypeName);
     }
-    
+
     public CustomAdapterProvider<TCommonInterface, TCustomAdapter> AddWithCustomPolymorphicMapping<T>(string typeName,
         Action<EntityTypeBuilder<T>>? configureEntry = null
     ) where T : class, TCommonInterface
@@ -28,7 +28,8 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
     }
 
     public CustomAdapterProvider<TCommonInterface, TCustomAdapter> Add<T>(
-        Action<EntityTypeBuilder<T>>? configureEntry = null
+        Action<EntityTypeBuilder<T>>? configureEntry = null,
+        Action<JsonTypeInfo>? jsonTypeModifier = null
     ) where T : class, TCommonInterface
     {
         _objectTypeListBuilder.CheckFrozen();
@@ -39,7 +40,7 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
                     var entity = builder.Entity<T>();
                     configureEntry?.Invoke(entity);
                     return entity;
-                })
+                }, jsonTypeModifier)
         );
         return this;
     }

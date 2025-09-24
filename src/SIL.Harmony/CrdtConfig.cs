@@ -69,6 +69,12 @@ public class CrdtConfig
                 typeInfo.PolymorphismOptions!.DerivedTypes.Add(type);
             }
         }
+
+        var registration = ObjectTypeListBuilder.RegistrationsByType.GetValueOrDefault(typeInfo.Type);
+        if (registration?.JsonTypeModifier is not null && registration.ObjectDbType == typeInfo.Type)
+        {
+            registration.JsonTypeModifier(typeInfo);
+        }
     }
 
     public bool RemoteResourcesEnabled { get; private set; }
@@ -131,6 +137,7 @@ public class ObjectTypeListBuilder
     {
         if (_frozen) return;
         _frozen = true;
+        _frozenRegistrationsByType = RegistrationsByType;
         foreach (var registration in AdapterProviders.SelectMany(a => a.GetRegistrations()))
         {
             ModelConfigurations.Add((builder, config) =>
@@ -156,6 +163,10 @@ public class ObjectTypeListBuilder
 
     internal List<IObjectAdapterProvider> AdapterProviders { get; } = [];
 
+    private IReadOnlyDictionary<Type, AdapterRegistration>? _frozenRegistrationsByType;
+    internal IReadOnlyDictionary<Type, AdapterRegistration> RegistrationsByType
+        => _frozenRegistrationsByType ?? AdapterProviders.SelectMany(p => p.GetRegistrations()).ToDictionary(r => r.ObjectDbType);
+
     public DefaultAdapterProvider DefaultAdapter()
     {
         CheckFrozen();
@@ -164,7 +175,7 @@ public class ObjectTypeListBuilder
         AdapterProviders.Add(adapter);
         return adapter;
     }
-    
+
     /// <summary>
     /// add a custom adapter for a common interface
     /// this is required as CRDT objects must express their references and have an Id property

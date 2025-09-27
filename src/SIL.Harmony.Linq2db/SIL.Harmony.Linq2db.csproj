@@ -10,8 +10,8 @@
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="linq2db.AspNet" />
       <PackageReference Include="linq2db.EntityFrameworkCore" />
+      <PackageReference Include="linq2db.Extensions" />
     </ItemGroup>
 
 </Project>

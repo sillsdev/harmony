@@ -1,16 +1,19 @@
-﻿using SIL.Harmony.Core;
-using LinqToDB.AspNet.Logging;
+﻿using System.Text.Json;
+using SIL.Harmony.Core;
 using LinqToDB.EntityFrameworkCore;
+using LinqToDB.Extensions.Logging;
 using LinqToDB.Mapping;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Linq2db;
 
 public static class Linq2dbKernel
 {
-    public static DbContextOptionsBuilder UseLinqToDbCrdt(this DbContextOptionsBuilder builder, IServiceProvider provider)
+    public static DbContextOptionsBuilder UseLinqToDbCrdt(this DbContextOptionsBuilder builder, IServiceProvider provider, bool useLogging = true)
     {
         LinqToDBForEFTools.Initialize();
         return builder.UseLinqToDB(optionsBuilder =>
@@ -22,7 +25,6 @@ public static class Linq2dbKernel
                 mappingSchema = new MappingSchema();
                 optionsBuilder.AddMappingSchema(mappingSchema);
             }
-
             new FluentMappingBuilder(mappingSchema).HasAttribute<Commit>(new ColumnAttribute("DateTime",
                     nameof(Commit.HybridDateTime) + "." + nameof(HybridDateTime.DateTime)))
                 .HasAttribute<Commit>(new ColumnAttribute(nameof(HybridDateTime.Counter),
@@ -31,11 +33,26 @@ public static class Linq2dbKernel
                 //need to use ticks here because the DateTime is stored as UTC, but the db records it as unspecified
                 .Property(commit => commit.HybridDateTime.DateTime).HasConversionFunc(dt => dt.UtcDateTime,
                     dt => new DateTimeOffset(dt.Ticks, TimeSpan.Zero))
+                .Entity<ObjectSnapshot>().Property(s => s.References).HasConversionFunc(
+                    guids => JsonSerializer.Serialize(guids).ToUpper(),//uppercase matches EF and is required for querying by refs
+                    s => JsonSerializer.Deserialize<Guid[]>(s) ?? []
+                )
                 .Build();
 
-            var loggerFactory = provider.GetService<ILoggerFactory>();
-            if (loggerFactory is not null)
-                optionsBuilder.AddCustomOptions(dataOptions => dataOptions.UseLoggerFactory(loggerFactory));
+            if (useLogging)
+            {
+                var loggerFactory = provider.GetService<ILoggerFactory>();
+                if (loggerFactory is not null)
+                    optionsBuilder.AddCustomOptions(dataOptions => dataOptions.UseLoggerFactory(loggerFactory));
+            }
         });
+    }
+
+    public static IServiceCollection AddLinq2DbRepository(this IServiceCollection services)
+    {
+        services.RemoveAll<ICrdtRepositoryFactory>();
+        services.AddScoped<CrdtRepositoryFactory>();
+        services.AddScoped<ICrdtRepositoryFactory, Linq2DbCrdtRepoFactory>();
+        return services;
     }
 }

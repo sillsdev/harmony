@@ -251,6 +251,15 @@ public class DataModel : ISyncable, IAsyncDisposable
                throw new ArgumentException($"unable to find snapshot for entity {entityId}");
     }
 
+    public async IAsyncEnumerable<ObjectSnapshot> GetLatestSnapshots()
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await foreach (var snapshot in repo.CurrentSnapshots().AsAsyncEnumerable())
+        {
+            yield return snapshot;
+        }
+    }
+
     public async Task<T?> GetLatest<T>(Guid objectId) where T : class
     {
         return await _crdtRepositoryFactory.Execute(repo => repo.GetCurrent<T>(objectId));

@@ -310,6 +310,18 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                     await ProjectSnapshot(snapshot);
                 }
             }
+
+            try
+            {
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (DbUpdateException e)
+            {
+                var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
+                var message = $"Error saving snapshots: {e.Message}{Environment.NewLine}{entries}";
+                _logger.LogError(e, message);
+                throw new DbUpdateException(message, e);
+            }
         }
 
         try

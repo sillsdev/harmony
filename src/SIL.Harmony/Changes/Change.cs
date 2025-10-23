@@ -16,6 +16,8 @@ public interface IChange
 
     ValueTask ApplyChange(IObjectBase entity, IChangeContext context);
     ValueTask<IObjectBase> NewEntity(Commit commit, IChangeContext context);
+    bool SupportsApplyChange();
+    bool SupportsNewEntity();
 }
 
 /// <summary>
@@ -44,7 +46,7 @@ public abstract class Change<T> : IChange where T : class
 
     public async ValueTask ApplyChange(IObjectBase entity, IChangeContext context)
     {
-        if (this is CreateChange<T>)
+        if (!SupportsApplyChange())
             return; // skip attempting to apply changes on CreateChange as it does not support apply changes
         if (entity.DbObject is T entityT)
         {
@@ -54,6 +56,16 @@ public abstract class Change<T> : IChange where T : class
         {
             throw new NotSupportedException($"Type {entity.DbObject.GetType()} is not type {typeof(T)}");
         }
+    }
+
+    public virtual bool SupportsApplyChange()
+    {
+        return this is not CreateChange<T>;
+    }
+
+    public virtual bool SupportsNewEntity()
+    {
+        return this is not EditChange<T>;
     }
 
     [JsonIgnore]

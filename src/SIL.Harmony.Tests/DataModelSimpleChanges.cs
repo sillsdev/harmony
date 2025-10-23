@@ -190,15 +190,33 @@ public class DataModelSimpleChanges : DataModelTestBase
     }
 
     [Fact]
-    public async Task CanModifyAnEntryAfterDelete()
+    public async Task ApplyChange_ModifiesADeletedEntry()
     {
         await WriteNextChange(SetWord(_entity1Id, "test-value"));
         var deleteCommit = await WriteNextChange(new DeleteChange<Word>(_entity1Id));
-        await WriteNextChange(SetWord(_entity1Id, "after-delete"));
+        var newNoteChange = new SetWordNoteChange(_entity1Id, "note-after-delete");
+        newNoteChange.SupportsApplyChange().Should().BeTrue();
+        newNoteChange.SupportsNewEntity().Should().BeFalse(); // otherwise it will override the delete
+        await WriteNextChange(newNoteChange);
         var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
         var word = snapshot.Entity.Is<Word>();
-        word.Text.Should().Be("after-delete");
+        word.Text.Should().Be("test-value");
+        word.Note.Should().Be("note-after-delete");
         word.DeletedAt.Should().Be(deleteCommit.DateTime);
+    }
+
+    [Fact]
+    public async Task NewEntity_UndeletesAnEntry()
+    {
+        await WriteNextChange(SetWord(_entity1Id, "test-value"));
+        await WriteNextChange(new DeleteChange<Word>(_entity1Id));
+        var recreateChange = SetWord(_entity1Id, "after-undo-delete");
+        recreateChange.SupportsNewEntity().Should().BeTrue();
+        await WriteNextChange(recreateChange);
+        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
+        var word = snapshot.Entity.Is<Word>();
+        word.Text.Should().Be("after-undo-delete");
+        word.DeletedAt.Should().Be(null);
     }
 
     [Fact]
@@ -208,10 +226,10 @@ public class DataModelSimpleChanges : DataModelTestBase
         var word = await DataModel.GetLatest<Word>(_entity1Id);
         word!.Text.Should().Be("test-value");
         word.Note.Should().BeNull();
-        
+
         //change made outside the model, should not be saved when writing the next change
         word.Note = "a note";
-        
+
         var commit = await WriteNextChange(SetWord(_entity1Id, "after-change"));
         var objectSnapshot = commit.Snapshots.Should().ContainSingle().Subject;
         objectSnapshot.Entity.Is<Word>().Text.Should().Be("after-change");

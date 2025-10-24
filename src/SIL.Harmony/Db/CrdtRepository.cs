@@ -207,7 +207,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return snapshots;
     }
 
-    public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, Commit[] pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
+    public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, SortedSet<Commit> pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
     {
         var snapshots = await CurrentSnapshots().Include(s => s.Commit).ToDictionaryAsync(s => s.EntityId);
 
@@ -217,7 +217,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         var newCommits = await CurrentCommits()
             .Include(c => c.ChangeEntities)
             .WhereAfter(lastCommit)
-            .ToArrayAsync();
+            .ToSortedSetAsync();
         return (snapshots, newCommits);
     }
 
@@ -326,24 +326,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             catch (DbUpdateException e)
             {
                 var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
-                var message = $"Error saving snapshots: {e.Message}{Environment.NewLine}{entries}";
+                var message = $"Error saving snapshots (deleted: {grouping.Key}): {e.Message}{Environment.NewLine}{entries}";
                 _logger.LogError(e, message);
                 throw new DbUpdateException(message, e);
             }
-        }
-
-        // this extra try/catch was added as a quick way to get the NewEntityOnExistingEntityIsNoOp test to pass
-        // it will be removed again in a larger refactor in https://github.com/sillsdev/harmony/pull/56
-        try
-        {
-            await _dbContext.SaveChangesAsync();
-        }
-        catch (DbUpdateException e)
-        {
-            var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
-            var message = $"Error saving snapshots: {e.Message}{Environment.NewLine}{entries}";
-            _logger.LogError(e, message);
-            throw new DbUpdateException(message, e);
         }
     }
 
@@ -389,16 +375,45 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return new CrdtRepository(_dbContext, _crdtConfig, _logger, excludeChangesAfterCommit);
     }
 
-    public async Task AddCommit(Commit commit)
+    public async Task<SortedSet<Commit>> AddCommit(Commit commit)
     {
-        _dbContext.Add(commit);
+        var updatedCommits = await AddNewCommits([commit]);
         await _dbContext.SaveChangesAsync();
+        return updatedCommits;
     }
 
-    public async Task AddCommits(IEnumerable<Commit> commits, bool save = true)
+    public async Task<SortedSet<Commit>> AddCommits(IEnumerable<Commit> commits, bool save = true)
     {
-        _dbContext.AddRange(commits);
+        var updatedCommits = await AddNewCommits(commits);
         if (save) await _dbContext.SaveChangesAsync();
+        return updatedCommits;
+    }
+
+    private async Task<SortedSet<Commit>> AddNewCommits(IEnumerable<Commit> newCommits)
+    {
+        if (newCommits is null || !newCommits.Any()) return [];
+        var oldestAddedCommit = newCommits.MinBy(c => c.CompareKey)
+            ?? throw new ArgumentException("Couldn't find oldest commit", nameof(newCommits));
+        var parentCommit = await FindPreviousCommit(oldestAddedCommit);
+        var existingCommitsToUpdate = await GetCommitsAfter(parentCommit);
+        var commitsToApply = existingCommitsToUpdate
+            .UnionBy(newCommits, c => c.Id)
+            .ToSortedSet();
+        //we're inserting commits in the past/rewriting history, so we need to update the previous commit hashes
+        await UpdateCommitHashes(commitsToApply, parentCommit);
+        _dbContext.AddRange(newCommits);
+        return commitsToApply;
+    }
+
+    private async Task UpdateCommitHashes(SortedSet<Commit> commits, Commit? parentCommit = null)
+    {
+        var previousCommitHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
+        foreach (var commit in commits)
+        {
+            commit.SetParentHash(previousCommitHash);
+            previousCommitHash = commit.Hash;
+        }
+        await _dbContext.SaveChangesAsync();
     }
 
     public HybridDateTime? GetLatestDateTime()

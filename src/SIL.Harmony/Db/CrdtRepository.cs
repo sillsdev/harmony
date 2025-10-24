@@ -332,6 +332,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             }
         }
 
+        // this extra try/catch was added as a quick way to get the NewEntityOnExistingEntityIsNoOp test to pass
+        // it will be removed again in a larger refactor in https://github.com/sillsdev/harmony/pull/56
         try
         {
             await _dbContext.SaveChangesAsync();

@@ -185,4 +185,31 @@ public class DeleteAndCreateTests : DataModelTestBase
         var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
         entityWord.Should().BeNull();
     }
+
+    [Fact]
+    public async Task NewEntityOnExistingEntityIsNoOp()
+    {
+        var wordId = Guid.NewGuid();
+
+        await WriteNextChange(new NewWordChange(wordId, "original"));
+        var snapshotsBefore = await DbContext.Snapshots.Where(s => s.EntityId == wordId).ToArrayAsync();
+
+        await WriteNextChange(
+            [
+                new NewWordChange(wordId, "Undeleted"),
+            ]);
+
+        var word = await DataModel.GetLatest<Word>(wordId);
+        word.Should().NotBeNull();
+        word.DeletedAt.Should().BeNull();
+        word.Text.Should().Be("original");
+
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        entityWord.Should().NotBeNull();
+        entityWord.DeletedAt.Should().BeNull();
+        entityWord.Text.Should().Be("original");
+
+        var snapshotsAfter = await DbContext.Snapshots.Where(s => s.EntityId == wordId).ToArrayAsync();
+        snapshotsAfter.Select(s => s.Id).Should().BeEquivalentTo(snapshotsBefore.Select(s => s.Id));
+    }
 }

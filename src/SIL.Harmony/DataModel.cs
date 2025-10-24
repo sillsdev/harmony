@@ -81,8 +81,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         repo.ClearChangeTracker();
 
         await using var transaction = await repo.BeginTransactionAsync();
-        await repo.AddCommits(commits);
-        await UpdateSnapshots(repo, commits.First(), commits);
+        var updatedCommits = await repo.AddCommits(commits);
+        await UpdateSnapshots(repo, updatedCommits);
         await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
@@ -119,8 +119,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         repo.ClearChangeTracker();
 
         await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
-        await repo.AddCommit(commit);
-        await UpdateSnapshots(repo, commit, [commit]);
+        var updatedCommits = await repo.AddCommit(commit);
+        await UpdateSnapshots(repo, updatedCommits);
 
         if (AlwaysValidate) await ValidateCommits(repo);
 
@@ -156,8 +156,8 @@ public class DataModel : ISyncable, IAsyncDisposable
 
             await using var transaction = await repo.BeginTransactionAsync();
             //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
-            await repo.AddCommits(newCommits, false);
-            await UpdateSnapshots(repo, oldestChange, newCommits);
+            var updatedCommits = await repo.AddCommits(newCommits, false);
+            await UpdateSnapshots(repo, updatedCommits);
             await ValidateCommits(repo);
             await transaction.CommitAsync();
         }
@@ -194,13 +194,15 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private async Task UpdateSnapshots(CrdtRepository repo, Commit oldestAddedCommit, Commit[] newCommits)
+    private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply)
     {
+        if (commitsToApply.Count == 0) return;
+        var oldestAddedCommit = commitsToApply.First();
         await repo.DeleteStaleSnapshots(oldestAddedCommit);
         Dictionary<Guid, Guid?> snapshotLookup;
-        if (newCommits.Length > 10)
+        if (commitsToApply.Count > 10)
         {
-            var entityIds = newCommits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId));
+            var entityIds = commitsToApply.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId));
             snapshotLookup = await repo.CurrentSnapshots()
                 .Where(s => entityIds.Contains(s.EntityId))
                 .Select(s => new KeyValuePair<Guid, Guid?>(s.EntityId, s.Id))
@@ -212,7 +214,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
 
         var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
-        await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
+        await snapshotWorker.UpdateSnapshots(commitsToApply);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -240,8 +242,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.DeleteSnapshotsAndProjectedTables();
         repo.ClearChangeTracker();
-        var allCommits = await repo.CurrentCommits().AsNoTracking().ToArrayAsync();
-        await UpdateSnapshots(repo, allCommits.First(), allCommits);
+        var allCommits = await repo.CurrentCommits().AsNoTracking().ToSortedSetAsync();
+        await UpdateSnapshots(repo, allCommits);
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
@@ -296,7 +298,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         var repository = repo.GetScopedRepository(commit);
         var (snapshots, pendingCommits) = await repository.GetCurrentSnapshotsAndPendingCommits();
 
-        if (pendingCommits.Length != 0)
+        if (pendingCommits.Count != 0)
         {
             snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots,
                 repository,
@@ -331,8 +333,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         var newCommits = await repository.CurrentCommits()
             .Include(c => c.ChangeEntities)
             .WhereAfter(snapshot.Commit)
-            .ToArrayAsync();
-        if (newCommits.Length > 0)
+            .ToSortedSetAsync();
+        if (newCommits.Count > 0)
         {
             var snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(
                 new Dictionary<Guid, ObjectSnapshot>([

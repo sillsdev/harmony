@@ -1,4 +1,6 @@
 using SIL.Harmony.Sample.Models;
+using SIL.Harmony.Sample.Changes;
+using SIL.Harmony.Changes;
 using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Tests;
@@ -19,7 +21,7 @@ public class SnapshotTests : DataModelTestBase
     {
         var entityId = Guid.NewGuid();
         var commits = new List<Commit>();
-        for (int i = 0; i < 4; i++)
+        for (var i = 0; i < 4; i++)
         {
             commits.Add(await WriteChange(_localClientId,
                 new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(i),
@@ -39,7 +41,7 @@ public class SnapshotTests : DataModelTestBase
     {
         var entityId = Guid.NewGuid();
         var commits = new List<Commit>();
-        for (int i = 0; i < 6; i++)
+        for (var i = 0; i < 6; i++)
         {
             commits.Add(await WriteChange(_localClientId,
                 new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(i),
@@ -135,7 +137,7 @@ public class SnapshotTests : DataModelTestBase
         var tagCreation = await WriteNextChange(TagWord(wordId, tagId));
         await WriteChangeBefore(tagCreation, TagWord(wordId, tagId));
 
-        var word = await DataModel.QueryLatest<Word>(q=> q.Include(w => w.Tags)
+        var word = await DataModel.QueryLatest<Word>(q => q.Include(w => w.Tags)
             .Where(w => w.Id == wordId)).FirstOrDefaultAsync();
         word.Should().NotBeNull();
         word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);

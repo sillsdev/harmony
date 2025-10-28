@@ -155,8 +155,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             if (oldestChange is null || newCommits is []) return;
 
             await using var transaction = await repo.BeginTransactionAsync();
-            //don't save since UpdateSnapshots will also modify newCommits with hashes, so changes will be saved once that's done
-            var updatedCommits = await repo.AddCommits(newCommits, false);
+            var updatedCommits = await repo.AddCommits(newCommits);
             await UpdateSnapshots(repo, updatedCommits);
             await ValidateCommits(repo);
             await transaction.CommitAsync();

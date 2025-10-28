@@ -382,10 +382,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return updatedCommits;
     }
 
-    public async Task<SortedSet<Commit>> AddCommits(IEnumerable<Commit> commits, bool save = true)
+    public async Task<SortedSet<Commit>> AddCommits(IEnumerable<Commit> commits)
     {
         var updatedCommits = await AddNewCommits(commits);
-        if (save) await _dbContext.SaveChangesAsync();
+        await _dbContext.SaveChangesAsync();
         return updatedCommits;
     }
 

@@ -242,7 +242,9 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.DeleteSnapshotsAndProjectedTables();
         repo.ClearChangeTracker();
-        var allCommits = await repo.CurrentCommits().AsNoTracking().ToSortedSetAsync();
+        var allCommits = await repo.CurrentCommits()
+            .Include(c => c.ChangeEntities)
+            .ToSortedSetAsync();
         await UpdateSnapshots(repo, allCommits);
     }
 

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json.Serialization;
 
 namespace SIL.Harmony.Changes;
@@ -47,7 +48,11 @@ public abstract class Change<T> : IChange where T : class
     public async ValueTask ApplyChange(IObjectBase entity, IChangeContext context)
     {
         if (!SupportsApplyChange())
+        {
+            Debug.Fail("ApplyChange called on a Change that does not support it");
             return; // skip attempting to apply changes on CreateChange as it does not support apply changes
+        }
+
         if (entity.DbObject is T entityT)
         {
             await ApplyChange(entityT, context);

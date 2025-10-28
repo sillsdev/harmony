@@ -81,26 +81,37 @@ internal class SnapshotWorker
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, commitIndex, intermediateSnapshots, this, _crdtConfig);
-                bool wasDeleted;
-                if (prevSnapshot is not null)
+
+                if (prevSnapshot is null)
                 {
+                    // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
+                    entity = await commitChange.Change.NewEntity(commit, changeContext);
+                }
+                else if (prevSnapshot.EntityIsDeleted && commitChange.Change.SupportsNewEntity())
+                {
+                    // revive deleted entity
+                    entity = await commitChange.Change.NewEntity(commit, changeContext);
+                }
+                else if (commitChange.Change.SupportsApplyChange())
+                {
+                    // update existing entity
                     entity = prevSnapshot.Entity.Copy();
-                    wasDeleted = entity.DeletedAt.HasValue;
+                    var wasDeleted = prevSnapshot.EntityIsDeleted;
+                    await commitChange.Change.ApplyChange(entity, changeContext);
+                    var deletedByChange = !wasDeleted && entity.DeletedAt.HasValue;
+                    if (deletedByChange)
+                    {
+                        await MarkDeleted(entity.Id, changeContext);
+                    }
                 }
                 else
                 {
-                    entity = await commitChange.Change.NewEntity(commit, changeContext);
-                    wasDeleted = false;
+                    // Entity already exists (and is not deleted)
+                    // and change does not support updating existing entities,
+                    // so do nothing.
+                    continue;
                 }
 
-                await commitChange.Change.ApplyChange(entity, changeContext);
-
-                var deletedByChange = !wasDeleted && entity.DeletedAt.HasValue;
-                if (deletedByChange)
-                {
-                    await MarkDeleted(entity.Id, changeContext);
-                }
-                
                 await GenerateSnapshotForEntity(entity, prevSnapshot, changeContext);
             }
             _newIntermediateSnapshots.AddRange(intermediateSnapshots.Values);

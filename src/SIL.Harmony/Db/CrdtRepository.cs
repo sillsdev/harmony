@@ -299,7 +299,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
-        var latestProjectByEntityId = new Dictionary<Guid, HybridDateTime>();
+        var latestProjectByEntityId = new Dictionary<Guid, (DateTimeOffset, long, Guid)>();
         foreach (var grouping in snapshots.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
         {
             foreach (var snapshot in grouping.DefaultOrderDescending())
@@ -309,12 +309,12 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                 {
                     // there might be a deleted and un-deleted snapshot for the same entity in the same batch
                     // in that case there's only a 50% chance that they're in the right order, so we need to explicitly only project the latest one
-                    if (snapshot.Commit.HybridDateTime < latestProjected)
+                    if (snapshot.Commit.CompareKey.CompareTo(latestProjected) < 0)
                     {
                         continue;
                     }
                 }
-                latestProjectByEntityId[snapshot.EntityId] = snapshot.Commit.HybridDateTime;
+                latestProjectByEntityId[snapshot.EntityId] = snapshot.Commit.CompareKey;
 
                 await ProjectSnapshot(snapshot);
             }

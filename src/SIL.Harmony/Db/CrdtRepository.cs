@@ -402,6 +402,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         //we're inserting commits in the past/rewriting history, so we need to update the previous commit hashes
         await UpdateCommitHashes(commitsToApply, parentCommit);
         _dbContext.AddRange(newCommits);
+        await _dbContext.SaveChangesAsync();
         return commitsToApply;
     }
 
@@ -413,7 +414,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             commit.SetParentHash(previousCommitHash);
             previousCommitHash = commit.Hash;
         }
-        await _dbContext.SaveChangesAsync();
     }
 
     public HybridDateTime? GetLatestDateTime()

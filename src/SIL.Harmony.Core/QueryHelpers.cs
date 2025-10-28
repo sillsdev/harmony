@@ -60,19 +60,18 @@ public static class QueryHelpers
         }
     }
 
-    private static readonly IComparer<CommitBase> CommitComparer =
-        Comparer<CommitBase>.Create((a, b) => a.CompareKey.CompareTo(b.CompareKey));
-
     public static SortedSet<T> ToSortedSet<T>(this IEnumerable<T> queryable) where T : CommitBase
     {
-        return new SortedSet<T>(queryable, CommitComparer);
+        return [.. queryable];
     }
 
     public static async Task<SortedSet<T>> ToSortedSetAsync<T>(this IQueryable<T> queryable) where T : CommitBase
     {
-        var set = new SortedSet<T>(CommitComparer);
+        var set = new SortedSet<T>();
         await foreach (var item in queryable.AsAsyncEnumerable())
+        {
             set.Add(item);
+        }
         return set;
     }
 

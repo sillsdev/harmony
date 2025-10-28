@@ -400,12 +400,12 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .UnionBy(newCommits, c => c.Id)
             .ToSortedSet();
         //we're inserting commits in the past/rewriting history, so we need to update the previous commit hashes
-        await UpdateCommitHashes(commitsToApply, parentCommit);
+        UpdateCommitHashes(commitsToApply, parentCommit);
         _dbContext.AddRange(newCommits);
         return commitsToApply;
     }
 
-    private async Task UpdateCommitHashes(SortedSet<Commit> commits, Commit? parentCommit = null)
+    private void UpdateCommitHashes(SortedSet<Commit> commits, Commit? parentCommit = null)
     {
         var previousCommitHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
         foreach (var commit in commits)

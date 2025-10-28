@@ -299,16 +299,24 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
-        var projectedEntityIds = new HashSet<Guid>();
+        var latestProjectByEntityId = new Dictionary<Guid, (DateTimeOffset, long, Guid)>();
         foreach (var grouping in snapshots.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
         {
             foreach (var snapshot in grouping.DefaultOrderDescending())
             {
                 _dbContext.Add(snapshot);
-                if (projectedEntityIds.Add(snapshot.EntityId))
+                if (latestProjectByEntityId.TryGetValue(snapshot.EntityId, out var latestProjected))
                 {
-                    await ProjectSnapshot(snapshot);
+                    // there might be a deleted and un-deleted snapshot for the same entity in the same batch
+                    // in that case there's only a 50% chance that they're in the right order, so we need to explicitly only project the latest one
+                    if (snapshot.Commit.CompareKey.CompareTo(latestProjected) < 0)
+                    {
+                        continue;
+                    }
                 }
+                latestProjectByEntityId[snapshot.EntityId] = snapshot.Commit.CompareKey;
+
+                await ProjectSnapshot(snapshot);
             }
 
             try
@@ -322,6 +330,20 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                 _logger.LogError(e, message);
                 throw new DbUpdateException(message, e);
             }
+        }
+
+        // this extra try/catch was added as a quick way to get the NewEntityOnExistingEntityIsNoOp test to pass
+        // it will be removed again in a larger refactor in https://github.com/sillsdev/harmony/pull/56
+        try
+        {
+            await _dbContext.SaveChangesAsync();
+        }
+        catch (DbUpdateException e)
+        {
+            var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
+            var message = $"Error saving snapshots: {e.Message}{Environment.NewLine}{entries}";
+            _logger.LogError(e, message);
+            throw new DbUpdateException(message, e);
         }
     }
 

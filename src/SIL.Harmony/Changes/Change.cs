@@ -17,7 +17,16 @@ public interface IChange
 
     ValueTask ApplyChange(IObjectBase entity, IChangeContext context);
     ValueTask<IObjectBase> NewEntity(Commit commit, IChangeContext context);
+    /// <summary>
+    /// Indicates whether this change supports applying changes to an existing entity (whether deleted or not).
+    /// Essentially just avoids creating redundant snapshots for change objects that won't apply changes.
+    /// (e.g. redundant change objects intended only for NewEntity)
+    /// </summary>
     bool SupportsApplyChange();
+    /// <summary>
+    /// Indicates whether this change supports creating entities (both creating brand new entities as well as recreating deleted entities).
+    /// Primarily for differentiating between updating vs recreating deleted entities.
+    /// </summary>
     bool SupportsNewEntity();
 }
 

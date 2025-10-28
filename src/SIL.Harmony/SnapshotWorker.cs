@@ -84,7 +84,7 @@ internal class SnapshotWorker
 
                 if (prevSnapshot is null)
                 {
-                    // create brand new entity
+                    // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
                     entity = await commitChange.Change.NewEntity(commit, changeContext);
                 }
                 else if (prevSnapshot.EntityIsDeleted && commitChange.Change.SupportsNewEntity())
@@ -106,9 +106,9 @@ internal class SnapshotWorker
                 }
                 else
                 {
-                    // entity already exists (and is not deleted)
-                    // and change does not support updating existing entities
-                    // so do nothing
+                    // Entity already exists (and is not deleted)
+                    // and change does not support updating existing entities,
+                    // so do nothing.
                     continue;
                 }
 

@@ -202,10 +202,10 @@
     Keys: 
       Id PK
     Foreign keys: 
-      Word {'AntonymId'} -> Word {'Id'} Unique SetNull ToPrincipal: Antonym
+      Word {'AntonymId'} -> Word {'Id'} SetNull ToPrincipal: Antonym
       Word {'SnapshotId'} -> ObjectSnapshot {'Id'} Unique SetNull
     Indexes: 
-      AntonymId Unique
+      AntonymId
       SnapshotId Unique
     Annotations: 
       DiscriminatorProperty: 

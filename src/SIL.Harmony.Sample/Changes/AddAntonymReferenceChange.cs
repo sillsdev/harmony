@@ -19,7 +19,7 @@ public class AddAntonymReferenceChange(Guid entityId, Guid antonymId, bool setOb
         var antonym = await context.GetCurrent<Word>(AntonymId);
         if (antonym is null or { DeletedAt: not null }) return;
 
-        if (SetObject) entity.Antonym = antonym;
+        entity.Antonym = SetObject ? antonym : null;
         entity.AntonymId = AntonymId;
     }
 }

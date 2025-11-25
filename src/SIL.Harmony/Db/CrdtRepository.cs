@@ -362,8 +362,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
             var entity = objectSnapshot.Entity.Copy().DbObject;
-            _dbContext.Add(entity)
-                .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
+
+            var entry = _dbContext.Entry(entity);
+            // only mark this single entry as added, rather than the whole graph (this matches the update behaviour below)
+            entry.State = EntityState.Added;
+            entry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
         }
         else if (objectSnapshot.EntityIsDeleted) // delete
         {

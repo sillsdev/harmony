@@ -60,6 +60,10 @@ public static class CrdtSampleKernel
                     builder.HasMany(w => w.Tags)
                         .WithMany()
                         .UsingEntity<WordTag>();
+                    builder.HasOne((w) => w.Antonym)
+                        .WithOne()
+                        .HasForeignKey<Word>(w => w.AntonymId)
+                        .OnDelete(DeleteBehavior.SetNull);
                 })
                 .Add<Definition>(builder =>
                 {

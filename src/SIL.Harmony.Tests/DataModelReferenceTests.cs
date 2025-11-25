@@ -17,6 +17,174 @@ public class DataModelReferenceTests : DataModelTestBase
         await WriteNextChange(SetWord(_word2Id, "entity2"));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddReferenceWorks(bool includeObjectInSnapshot)
+    {
+        // act
+        await WriteNextChange(new AddAntonymReferenceChange(_word1Id, _word2Id, setObject: includeObjectInSnapshot));
+
+        // assert - snapshot
+        var entryWithRef = await DataModel.GetLatest<Word>(_word1Id);
+        entryWithRef.Should().NotBeNull();
+        if (includeObjectInSnapshot)
+        {
+            entryWithRef.Antonym.Should().NotBeNull();
+            entryWithRef.Antonym.Text.Should().Be("entity2");
+        }
+        entryWithRef.AntonymId.Should().Be(_word2Id);
+
+        // assert - projected entity
+        var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
+            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync();
+        entityWord.Should().NotBeNull();
+        entityWord.Antonym.Should().NotBeNull();
+        entityWord.Antonym.Text.Should().Be("entity2");
+        entityWord.AntonymId.Should().Be(_word2Id);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddEntityAndReferenceInSameCommitWorks(bool includeObjectInSnapshot)
+    {
+        // arrange
+        var word3Id = Guid.NewGuid();
+
+        // act
+        await WriteNextChange(
+            [
+                new NewWordChange(word3Id, "entity3"),
+                new AddAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
+            ]);
+
+        // assert - snapshot
+        var word = await DataModel.GetLatest<Word>(word3Id);
+        word.Should().NotBeNull();
+        word.Text.Should().Be("entity3");
+        word.AntonymId.Should().Be(_word1Id);
+        if (includeObjectInSnapshot)
+        {
+            word.Antonym.Should().NotBeNull();
+            word.Antonym.Text.Should().Be("entity1");
+        }
+
+        // assert - projected entity
+        var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
+            .Where(w => w.Id == word3Id).SingleOrDefaultAsync();
+        entityWord.Should().NotBeNull();
+        entityWord.Text.Should().Be("entity3");
+        entityWord.AntonymId.Should().Be(_word1Id);
+        entityWord.Antonym.Should().NotBeNull();
+        entityWord.Antonym.Text.Should().Be("entity1");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddEntityAndReverseReferenceInSameCommitWorks(bool includeObjectInSnapshot)
+    {
+        // arrange
+        var word3Id = Guid.NewGuid();
+
+        // act
+        await WriteNextChange(
+            [
+                new NewWordChange(word3Id, "entity3"),
+                new AddAntonymReferenceChange(_word1Id, word3Id, setObject: includeObjectInSnapshot),
+            ]);
+
+        // assert - snapshot
+        var word = await DataModel.GetLatest<Word>(_word1Id);
+        word.Should().NotBeNull();
+        word.Text.Should().Be("entity1");
+        word.AntonymId.Should().Be(word3Id);
+        if (includeObjectInSnapshot)
+        {
+            word.Antonym.Should().NotBeNull();
+            word.Antonym.Text.Should().Be("entity3");
+        }
+
+        // assert - projected entity
+        var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
+            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync();
+        entityWord.Should().NotBeNull();
+        entityWord.Text.Should().Be("entity1");
+        entityWord.AntonymId.Should().Be(word3Id);
+        entityWord.Antonym.Should().NotBeNull();
+        entityWord.Antonym.Text.Should().Be("entity3");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddEntityAndReferenceInSameSyncWorks(bool includeObjectInSnapshot)
+    {
+        // arrange
+        var word3Id = Guid.NewGuid();
+
+        // act
+        await AddCommitsViaSync([
+            await WriteNextChange(new NewWordChange(word3Id, "entity3"), add: false),
+            await WriteNextChange(new AddAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot), add: false),
+        ]);
+
+        // assert - snapshot
+        var word = await DataModel.GetLatest<Word>(word3Id);
+        word.Should().NotBeNull();
+        word.Text.Should().Be("entity3");
+        word.AntonymId.Should().Be(_word1Id);
+        if (includeObjectInSnapshot)
+        {
+            word.Antonym.Should().NotBeNull();
+            word.Antonym.Text.Should().Be("entity1");
+        }
+
+        // assert - projected entity
+        var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
+            .Where(w => w.Id == word3Id).SingleOrDefaultAsync();
+        entityWord.Should().NotBeNull();
+        entityWord.Text.Should().Be("entity3");
+        entityWord.AntonymId.Should().Be(_word1Id);
+        entityWord.Antonym.Should().NotBeNull();
+        entityWord.Antonym.Text.Should().Be("entity1");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddEntityAndReverseReferenceInSameSyncWorks(bool includeObjectInSnapshot)
+    {
+        // arrange
+        var word3Id = Guid.NewGuid();
+
+        // act
+        await AddCommitsViaSync([
+            await WriteNextChange(new NewWordChange(word3Id, "entity3"), add: false),
+            await WriteNextChange(new AddAntonymReferenceChange(_word1Id, word3Id, setObject: includeObjectInSnapshot), add: false),
+        ]);
+
+        // assert - snapshot
+        var word = await DataModel.GetLatest<Word>(_word1Id);
+        word.Should().NotBeNull();
+        word.Text.Should().Be("entity1");
+        word.AntonymId.Should().Be(word3Id);
+        if (includeObjectInSnapshot)
+        {
+            word.Antonym.Should().NotBeNull();
+            word.Antonym.Text.Should().Be("entity3");
+        }
+
+        // assert - projected entity
+        var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
+            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync();
+        entityWord.Should().NotBeNull();
+        entityWord.Text.Should().Be("entity1");
+        entityWord.AntonymId.Should().Be(word3Id);
+        entityWord.Antonym.Should().NotBeNull();
+        entityWord.Antonym.Text.Should().Be("entity3");
+    }
 
     [Fact]
     public async Task DeleteAfterTheFactRewritesReferences()

@@ -189,19 +189,23 @@
   EntityType: Word
     Properties: 
       Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
-      AntonymId (Guid?)
+      AntonymId (Guid?) FK Index
       DeletedAt (DateTimeOffset?)
       ImageResourceId (Guid?)
       Note (string)
       SnapshotId (no field, Guid?) Shadow FK Index
       Text (string) Required
+    Navigations: 
+      Antonym (Word) ToPrincipal Word
     Skip navigations: 
       Tags (List<Tag>) CollectionTag Inverse: Word
     Keys: 
       Id PK
     Foreign keys: 
+      Word {'AntonymId'} -> Word {'Id'} Unique SetNull ToPrincipal: Antonym
       Word {'SnapshotId'} -> ObjectSnapshot {'Id'} Unique SetNull
     Indexes: 
+      AntonymId Unique
       SnapshotId Unique
     Annotations: 
       DiscriminatorProperty: 

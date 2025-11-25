@@ -12,7 +12,8 @@ public class NewWordChange(Guid entityId, string text, string? note = null, Guid
 
     public override async ValueTask<Word> NewEntity(Commit commit, IChangeContext context)
     {
-        var antonymShouldBeNull = AntonymId is null || (await context.IsObjectDeleted(AntonymId.Value));
-        return (new Word { Text = Text, Note = Note, Id = EntityId, AntonymId = antonymShouldBeNull ? null : AntonymId });
+        var antonym = AntonymId is null ? null : await context.GetCurrent<Word>(AntonymId.Value);
+        antonym = antonym is { DeletedAt: null } ? antonym : null;
+        return new Word { Text = Text, Note = Note, Id = EntityId, Antonym = antonym, AntonymId = antonym?.Id };
     }
 }

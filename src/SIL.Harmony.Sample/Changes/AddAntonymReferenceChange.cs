@@ -4,10 +4,11 @@ using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Sample.Changes;
 
-public class AddAntonymReferenceChange(Guid entityId, Guid antonymId)
+public class AddAntonymReferenceChange(Guid entityId, Guid antonymId, bool setObject = true)
     : EditChange<Word>(entityId), ISelfNamedType<AddAntonymReferenceChange>
 {
     public Guid AntonymId { get; set; } = antonymId;
+    public bool SetObject { get; set; } = setObject;
 
     public override async ValueTask ApplyChange(Word entity, IChangeContext context)
     {
@@ -15,7 +16,10 @@ public class AddAntonymReferenceChange(Guid entityId, Guid antonymId)
         //then we don't want to apply the change
         //if the change was already applied,
         //then this reference is removed via Word.RemoveReference after the change which deletes the Antonym, see SnapshotWorker.MarkDeleted
-        if (!await context.IsObjectDeleted(AntonymId))
-            entity.AntonymId = AntonymId;
+        var antonym = await context.GetCurrent<Word>(AntonymId);
+        if (antonym is null or { DeletedAt: not null }) return;
+
+        if (SetObject) entity.Antonym = antonym;
+        entity.AntonymId = AntonymId;
     }
 }

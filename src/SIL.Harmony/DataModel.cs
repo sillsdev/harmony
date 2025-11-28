@@ -201,6 +201,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         Dictionary<Guid, Guid?> snapshotLookup;
         if (commitsToApply.Count > 10)
         {
+            // Bulk-load relevant snapshots to minimize DB queries
             var entityIds = commitsToApply.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId));
             snapshotLookup = await repo.CurrentSnapshots()
                 .Where(s => entityIds.Contains(s.EntityId))

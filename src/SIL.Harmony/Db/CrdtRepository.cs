@@ -375,6 +375,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return new CrdtRepository(_dbContext, _crdtConfig, _logger, excludeChangesAfterCommit);
     }
 
+    /// <summary>
+    /// Adds a commit to the database. If the new commit was authored before any commits that
+    /// are already in the database, then history will be rewritten by updating those commit hashes.
+    /// </summary>
+    /// <returns>All added and updated commits.</returns>
     public async Task<SortedSet<Commit>> AddCommit(Commit commit)
     {
         var updatedCommits = await AddNewCommits([commit]);
@@ -382,6 +387,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return updatedCommits;
     }
 
+    /// <summary>
+    /// Adds commits to the database. If any of the new commits were authored before any commits that
+    /// are already in the database, then history will be rewritten by updating those commit hashes.
+    /// </summary>
+    /// <returns>All added and updated commits.</returns>
     public async Task<SortedSet<Commit>> AddCommits(IEnumerable<Commit> commits)
     {
         var updatedCommits = await AddNewCommits(commits);

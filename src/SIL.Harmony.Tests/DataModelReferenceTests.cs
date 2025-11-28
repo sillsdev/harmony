@@ -26,22 +26,104 @@ public class DataModelReferenceTests : DataModelTestBase
         await WriteNextChange(new AddAntonymReferenceChange(_word1Id, _word2Id, setObject: includeObjectInSnapshot));
 
         // assert - snapshot
-        var entryWithRef = await DataModel.GetLatest<Word>(_word1Id);
-        entryWithRef.Should().NotBeNull();
+        var word = await DataModel.GetLatest<Word>(_word1Id);
+        word.Should().NotBeNull();
+        word.AntonymId.Should().Be(_word2Id);
         if (includeObjectInSnapshot)
         {
-            entryWithRef.Antonym.Should().NotBeNull();
-            entryWithRef.Antonym.Text.Should().Be("entity2");
+            word.Antonym.Should().NotBeNull();
+            word.Antonym.Text.Should().Be("entity2");
         }
-        entryWithRef.AntonymId.Should().Be(_word2Id);
+        else
+        {
+            word.Antonym.Should().BeNull();
+        }
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
             .Where(w => w.Id == _word1Id).SingleOrDefaultAsync();
         entityWord.Should().NotBeNull();
+        entityWord.AntonymId.Should().Be(_word2Id);
         entityWord.Antonym.Should().NotBeNull();
         entityWord.Antonym.Text.Should().Be("entity2");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UpdateReferenceTwiceInSameCommitWorks(bool includeObjectInSnapshot)
+    {
+        // arrange
+        var word3Id = Guid.NewGuid();
+        await WriteNextChange(new NewWordChange(word3Id, "entity3"));
+
+        // act
+        await WriteNextChange(
+            [
+                new AddAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
+                new AddAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot),
+            ]);
+
+        // assert - snapshot
+        var word = await DataModel.GetLatest<Word>(word3Id);
+        word.Should().NotBeNull();
+        word.AntonymId.Should().Be(_word2Id);
+        if (includeObjectInSnapshot)
+        {
+            word.Antonym.Should().NotBeNull();
+            word.Antonym.Text.Should().Be("entity2");
+        }
+        else
+        {
+            word.Antonym.Should().BeNull();
+        }
+
+        // assert - projected entity
+        var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
+            .Where(w => w.Id == word3Id).SingleOrDefaultAsync();
+        entityWord.Should().NotBeNull();
         entityWord.AntonymId.Should().Be(_word2Id);
+        entityWord.Antonym.Should().NotBeNull();
+        entityWord.Antonym.Text.Should().Be("entity2");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task UpdateReferenceTwiceInSameSyncWorks(bool includeObjectInSnapshot)
+    {
+        // arrange
+        var word3Id = Guid.NewGuid();
+        await WriteNextChange(new NewWordChange(word3Id, "entity3"));
+
+        // act
+        await WriteNextChange(
+            [
+                new AddAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
+                new AddAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot),
+            ]);
+
+        // assert - snapshot
+        var word = await DataModel.GetLatest<Word>(word3Id);
+        word.Should().NotBeNull();
+        word.AntonymId.Should().Be(_word2Id);
+        if (includeObjectInSnapshot)
+        {
+            word.Antonym.Should().NotBeNull();
+            word.Antonym.Text.Should().Be("entity2");
+        }
+        else
+        {
+            word.Antonym.Should().BeNull();
+        }
+
+        // assert - projected entity
+        var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
+            .Where(w => w.Id == word3Id).SingleOrDefaultAsync();
+        entityWord.Should().NotBeNull();
+        entityWord.AntonymId.Should().Be(_word2Id);
+        entityWord.Antonym.Should().NotBeNull();
+        entityWord.Antonym.Text.Should().Be("entity2");
     }
 
     [Theory]
@@ -68,6 +150,10 @@ public class DataModelReferenceTests : DataModelTestBase
         {
             word.Antonym.Should().NotBeNull();
             word.Antonym.Text.Should().Be("entity1");
+        }
+        else
+        {
+            word.Antonym.Should().BeNull();
         }
 
         // assert - projected entity
@@ -105,6 +191,10 @@ public class DataModelReferenceTests : DataModelTestBase
             word.Antonym.Should().NotBeNull();
             word.Antonym.Text.Should().Be("entity3");
         }
+        else
+        {
+            word.Antonym.Should().BeNull();
+        }
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
@@ -140,6 +230,10 @@ public class DataModelReferenceTests : DataModelTestBase
             word.Antonym.Should().NotBeNull();
             word.Antonym.Text.Should().Be("entity1");
         }
+        else
+        {
+            word.Antonym.Should().BeNull();
+        }
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
@@ -174,6 +268,10 @@ public class DataModelReferenceTests : DataModelTestBase
         {
             word.Antonym.Should().NotBeNull();
             word.Antonym.Text.Should().Be("entity3");
+        }
+        else
+        {
+            word.Antonym.Should().BeNull();
         }
 
         // assert - projected entity

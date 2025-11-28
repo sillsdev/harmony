@@ -363,10 +363,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             //by future changes in the same session
             var entity = objectSnapshot.Entity.Copy().DbObject;
 
-            var entry = _dbContext.Entry(entity);
+            var newEntry = _dbContext.Entry(entity);
             // only mark this single entry as added, rather than the whole graph (this matches the update behaviour below)
-            entry.State = EntityState.Added;
-            entry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
+            newEntry.State = EntityState.Added;
+            newEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
         }
         else if (objectSnapshot.EntityIsDeleted) // delete
         {

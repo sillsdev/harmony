@@ -43,7 +43,7 @@ public static class CrdtSampleKernel
                 .Add<EditExampleChange>()
                 .Add<SetWordTextChange>()
                 .Add<SetWordNoteChange>()
-                .Add<AddAntonymReferenceChange>()
+                .Add<SetAntonymReferenceChange>()
                 .Add<AddWordImageChange>()
                 .Add<SetOrderChange<Definition>>()
                 .Add<SetDefinitionPartOfSpeechChange>()
@@ -60,6 +60,10 @@ public static class CrdtSampleKernel
                     builder.HasMany(w => w.Tags)
                         .WithMany()
                         .UsingEntity<WordTag>();
+                    builder.HasOne((w) => w.Antonym)
+                        .WithMany()
+                        .HasForeignKey(w => w.AntonymId)
+                        .OnDelete(DeleteBehavior.SetNull);
                 })
                 .Add<Definition>(builder =>
                 {

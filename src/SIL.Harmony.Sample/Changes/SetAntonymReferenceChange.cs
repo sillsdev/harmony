@@ -4,8 +4,8 @@ using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Sample.Changes;
 
-public class AddAntonymReferenceChange(Guid entityId, Guid antonymId, bool setObject = true)
-    : EditChange<Word>(entityId), ISelfNamedType<AddAntonymReferenceChange>
+public class SetAntonymReferenceChange(Guid entityId, Guid antonymId, bool setObject = true)
+    : EditChange<Word>(entityId), ISelfNamedType<SetAntonymReferenceChange>
 {
     public Guid AntonymId { get; set; } = antonymId;
     public bool SetObject { get; set; } = setObject;

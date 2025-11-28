@@ -23,7 +23,7 @@ public class DataModelReferenceTests : DataModelTestBase
     public async Task AddReferenceWorks(bool includeObjectInSnapshot)
     {
         // act
-        await WriteNextChange(new AddAntonymReferenceChange(_word1Id, _word2Id, setObject: includeObjectInSnapshot));
+        await WriteNextChange(new SetAntonymReferenceChange(_word1Id, _word2Id, setObject: includeObjectInSnapshot));
 
         // assert - snapshot
         var word = await DataModel.GetLatest<Word>(_word1Id);
@@ -60,8 +60,8 @@ public class DataModelReferenceTests : DataModelTestBase
         // act
         await WriteNextChange(
             [
-                new AddAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
-                new AddAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot),
+                new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
+                new SetAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot),
             ]);
 
         // assert - snapshot
@@ -99,8 +99,8 @@ public class DataModelReferenceTests : DataModelTestBase
         // act
         await WriteNextChange(
             [
-                new AddAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
-                new AddAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot),
+                new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
+                new SetAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot),
             ]);
 
         // assert - snapshot
@@ -138,7 +138,7 @@ public class DataModelReferenceTests : DataModelTestBase
         await WriteNextChange(
             [
                 new NewWordChange(word3Id, "entity3"),
-                new AddAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
+                new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
             ]);
 
         // assert - snapshot
@@ -178,7 +178,7 @@ public class DataModelReferenceTests : DataModelTestBase
         await WriteNextChange(
             [
                 new NewWordChange(word3Id, "entity3"),
-                new AddAntonymReferenceChange(_word1Id, word3Id, setObject: includeObjectInSnapshot),
+                new SetAntonymReferenceChange(_word1Id, word3Id, setObject: includeObjectInSnapshot),
             ]);
 
         // assert - snapshot
@@ -217,7 +217,7 @@ public class DataModelReferenceTests : DataModelTestBase
         // act
         await AddCommitsViaSync([
             await WriteNextChange(new NewWordChange(word3Id, "entity3"), add: false),
-            await WriteNextChange(new AddAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot), add: false),
+            await WriteNextChange(new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot), add: false),
         ]);
 
         // assert - snapshot
@@ -256,7 +256,7 @@ public class DataModelReferenceTests : DataModelTestBase
         // act
         await AddCommitsViaSync([
             await WriteNextChange(new NewWordChange(word3Id, "entity3"), add: false),
-            await WriteNextChange(new AddAntonymReferenceChange(_word1Id, word3Id, setObject: includeObjectInSnapshot), add: false),
+            await WriteNextChange(new SetAntonymReferenceChange(_word1Id, word3Id, setObject: includeObjectInSnapshot), add: false),
         ]);
 
         // assert - snapshot
@@ -287,7 +287,7 @@ public class DataModelReferenceTests : DataModelTestBase
     [Fact]
     public async Task DeleteAfterTheFactRewritesReferences()
     {
-        var addRef = await WriteNextChange(new AddAntonymReferenceChange(_word1Id, _word2Id));
+        var addRef = await WriteNextChange(new SetAntonymReferenceChange(_word1Id, _word2Id));
         var entryWithRef = await DataModel.GetLatest<Word>(_word1Id);
         entryWithRef!.AntonymId.Should().Be(_word2Id);
 
@@ -299,7 +299,7 @@ public class DataModelReferenceTests : DataModelTestBase
     [Fact]
     public async Task DeleteRemovesAllReferences()
     {
-        await WriteNextChange(new AddAntonymReferenceChange(_word1Id, _word2Id));
+        await WriteNextChange(new SetAntonymReferenceChange(_word1Id, _word2Id));
         var entryWithRef = await DataModel.GetLatest<Word>(_word1Id);
         entryWithRef!.AntonymId.Should().Be(_word2Id);
 
@@ -311,7 +311,7 @@ public class DataModelReferenceTests : DataModelTestBase
     [Fact]
     public async Task SnapshotsDontGetMutatedByADelete()
     {
-        var refAdd = await WriteNextChange(new AddAntonymReferenceChange(_word1Id, _word2Id));
+        var refAdd = await WriteNextChange(new SetAntonymReferenceChange(_word1Id, _word2Id));
         await WriteNextChange(new DeleteChange<Word>(_word2Id));
         var word = await DataModel.GetAtCommit<Word>(refAdd.Id, _word1Id);
         word.Should().NotBeNull();
@@ -323,11 +323,11 @@ public class DataModelReferenceTests : DataModelTestBase
     {
         var entityId3 = Guid.NewGuid();
         await WriteNextChange(SetWord(entityId3, "entity3"));
-        await WriteNextChange(new AddAntonymReferenceChange(_word1Id, _word2Id));
+        await WriteNextChange(new SetAntonymReferenceChange(_word1Id, _word2Id));
         var delete = await WriteNextChange(new DeleteChange<Word>(_word2Id));
 
         //a ref was synced in the past, it happened before the delete, the reference should be retroactively removed
-        await WriteChangeBefore(delete, new AddAntonymReferenceChange(entityId3, _word2Id));
+        await WriteChangeBefore(delete, new SetAntonymReferenceChange(entityId3, _word2Id));
         var entry = await DataModel.GetLatest<Word>(entityId3);
         entry!.AntonymId.Should().BeNull();
     }

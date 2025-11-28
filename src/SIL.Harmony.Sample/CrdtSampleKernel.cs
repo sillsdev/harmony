@@ -43,7 +43,7 @@ public static class CrdtSampleKernel
                 .Add<EditExampleChange>()
                 .Add<SetWordTextChange>()
                 .Add<SetWordNoteChange>()
-                .Add<AddAntonymReferenceChange>()
+                .Add<SetAntonymReferenceChange>()
                 .Add<AddWordImageChange>()
                 .Add<SetOrderChange<Definition>>()
                 .Add<SetDefinitionPartOfSpeechChange>()

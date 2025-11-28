@@ -97,11 +97,10 @@ public class DataModelReferenceTests : DataModelTestBase
         await WriteNextChange(new NewWordChange(word3Id, "entity3"));
 
         // act
-        await WriteNextChange(
-            [
-                new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot),
-                new SetAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot),
-            ]);
+        await AddCommitsViaSync([
+            await WriteNextChange(new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot), add: false),
+            await WriteNextChange(new SetAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot), add: false),
+        ]);
 
         // assert - snapshot
         var word = await DataModel.GetLatest<Word>(word3Id);

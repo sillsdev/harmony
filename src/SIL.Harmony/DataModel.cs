@@ -18,14 +18,14 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// </summary>
     private bool AlwaysValidate => _crdtConfig.Value.AlwaysValidateCommits;
 
-    private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
+    private readonly ICrdtRepositoryFactory _crdtRepositoryFactory;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly IHybridDateTimeProvider _timeProvider;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
 
     //constructor must be internal because CrdtRepository is internal
-    internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
+    internal DataModel(ICrdtRepositoryFactory crdtRepositoryFactory,
         JsonSerializerOptions serializerOptions,
         IHybridDateTimeProvider timeProvider,
         IOptions<CrdtConfig> crdtConfig,
@@ -194,7 +194,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private async Task UpdateSnapshots(CrdtRepository repo, Commit oldestAddedCommit, Commit[] newCommits)
+    private async Task UpdateSnapshots(ICrdtRepository repo, Commit oldestAddedCommit, Commit[] newCommits)
     {
         await repo.DeleteStaleSnapshots(oldestAddedCommit);
         Dictionary<Guid, Guid?> snapshotLookup;
@@ -215,7 +215,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         await snapshotWorker.UpdateSnapshots(oldestAddedCommit, newCommits);
     }
 
-    private async Task ValidateCommits(CrdtRepository repo)
+    private async Task ValidateCommits(ICrdtRepository repo)
     {
         Commit? parentCommit = null;
         await foreach (var commit in repo.CurrentCommits().AsNoTracking().AsAsyncEnumerable())

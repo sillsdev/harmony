@@ -231,7 +231,7 @@ public class DataModelSimpleChanges : DataModelTestBase
         word.Note = "a note";
 
         var commit = await WriteNextChange(SetWord(_entity1Id, "after-change"));
-        var objectSnapshot = commit.Snapshots.Should().ContainSingle().Subject;
+        var objectSnapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == commit.Id);
         objectSnapshot.Entity.Is<Word>().Text.Should().Be("after-change");
         objectSnapshot.Entity.Is<Word>().Note.Should().BeNull();
     }

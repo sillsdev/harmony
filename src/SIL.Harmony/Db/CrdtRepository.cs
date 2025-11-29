@@ -4,7 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
@@ -13,37 +12,7 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
-internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory)
-{
-    public async Task<CrdtRepository> CreateRepository()
-    {
-        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
-    }
-
-    public CrdtRepository CreateRepositorySync()
-    {
-        return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, dbContextFactory.CreateDbContext());
-    }
-
-    public async Task<T> Execute<T>(Func<CrdtRepository, Task<T>> func)
-    {
-        await using var repo = await CreateRepository();
-        return await func(repo);
-    }
-    public async Task Execute(Func<CrdtRepository, Task> func)
-    {
-        await using var repo = await CreateRepository();
-        await func(repo);
-    }
-
-    public async ValueTask<T> Execute<T>(Func<CrdtRepository, ValueTask<T>> func)
-    {
-        await using var repo = await CreateRepository();
-        return await func(repo);
-    }
-}
-
-internal class CrdtRepository : IDisposable, IAsyncDisposable
+internal class CrdtRepository : IDisposable, IAsyncDisposable, ICrdtRepository
 {
     private static readonly ConcurrentDictionary<string, AsyncLock> Locks = new();
 
@@ -87,7 +56,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     //doesn't really do anything when using a dbcontext factory since it will likely just have been created
     //but when not using the factory it is still useful
-    internal void ClearChangeTracker()
+    public void ClearChangeTracker()
     {
         _dbContext.ChangeTracker.Clear();
     }
@@ -253,8 +222,19 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .SingleOrDefaultAsync(s => s.Id == id);
     }
 
+    private readonly Func<DbContext, Guid, Task<ObjectSnapshot?>> GetCurrentSnapshotByObjectIdQuery =
+        EF.CompileAsyncQuery((DbContext dbContext, Guid objectId) =>
+             dbContext.Set<ObjectSnapshot>()
+                .AsTracking(QueryTrackingBehavior.TrackAll)
+                .Include(s => s.Commit)
+                .OrderBy(c => c.Commit.HybridDateTime.DateTime)
+                .ThenBy(c => c.Commit.HybridDateTime.Counter)
+                .ThenBy(c => c.Commit.Id)
+                .LastOrDefault(s => s.EntityId == objectId));
+
     public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId, bool tracking = false)
     {
+        if (tracking) return await GetCurrentSnapshotByObjectIdQuery(_dbContext.ChangeTracker.Context, objectId);
         return await Snapshots
             .AsTracking(tracking)
             .Include(s => s.Commit)
@@ -387,7 +367,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return entity is not null ? _dbContext.Entry(entity) : null;
     }
 
-    public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
+    public ICrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
     {
         return new CrdtRepository(_dbContext, _crdtConfig, _logger, excludeChangesAfterCommit);
     }
@@ -402,6 +382,16 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     {
         _dbContext.AddRange(commits);
         if (save) await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task UpdateCommitHash(Guid commitId, string hash, string parentHash)
+    {
+        await _dbContext.Commits
+            .Where(c => c.Id == commitId)
+            .ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.Hash, hash)
+                .SetProperty(c => c.ParentHash, parentHash)
+            );
     }
 
     public HybridDateTime? GetLatestDateTime()

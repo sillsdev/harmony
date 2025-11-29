@@ -77,4 +77,9 @@ public class ObjectSnapshot : IObjectSnapshot
     public required Commit Commit { get; init; }
     CommitBase IObjectSnapshot.Commit => Commit;
     public required bool IsRoot { get; init; }
+
+    public override string ToString()
+    {
+        return $"{Id} [{CommitId}] {TypeName} {EntityId} Deleted:{EntityIsDeleted}, Entity: {Entity}";
+    }
 }

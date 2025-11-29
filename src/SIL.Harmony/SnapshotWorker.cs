@@ -11,7 +11,7 @@ namespace SIL.Harmony;
 internal class SnapshotWorker
 {
     private readonly Dictionary<Guid, Guid?> _snapshotLookup;
-    private readonly CrdtRepository _crdtRepository;
+    private readonly ICrdtRepository _crdtRepository;
     private readonly CrdtConfig _crdtConfig;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots  = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
@@ -19,7 +19,7 @@ internal class SnapshotWorker
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, Guid?> snapshotLookup,
-        CrdtRepository crdtRepository,
+        ICrdtRepository crdtRepository,
         CrdtConfig crdtConfig)
     {
         _pendingSnapshots = snapshots;
@@ -30,7 +30,7 @@ internal class SnapshotWorker
 
     internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
         Dictionary<Guid, ObjectSnapshot> snapshots,
-        CrdtRepository crdtRepository,
+        ICrdtRepository crdtRepository,
         ICollection<Commit> commits,
         CrdtConfig crdtConfig)
     {
@@ -44,7 +44,7 @@ internal class SnapshotWorker
     /// <param name="crdtRepository"></param>
     /// <param name="crdtConfig"></param>
     internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup,
-        CrdtRepository crdtRepository,
+        ICrdtRepository crdtRepository,
         CrdtConfig crdtConfig): this([], snapshotLookup, crdtRepository, crdtConfig)
     {
     }
@@ -71,7 +71,8 @@ internal class SnapshotWorker
             if (updateCommitHash && previousCommitHash is not null)
             {
                 //we're rewriting history, so we need to update the previous commit hash
-                commit.SetParentHash(previousCommitHash);
+                if (commit.SetParentHash(previousCommitHash))
+                    await _crdtRepository.UpdateCommitHash(commit.Id, hash: commit.Hash, parentHash: commit.ParentHash);
             }
 
             previousCommitHash = commit.Hash;

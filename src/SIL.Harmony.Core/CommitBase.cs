@@ -7,7 +7,7 @@ namespace SIL.Harmony.Core;
 /// most basic commit, does not contain any change data, that's stored in <see cref="CommitBase{TChange}"/>
 /// this class is not meant to be inherited from directly, use <see cref="ServerCommit"/> or <see cref="SIL.Harmony.Commit"/> instead
 /// </summary>
-public abstract class CommitBase
+public abstract class CommitBase : IComparable<CommitBase>
 {
     public const string NullParentHash = "0000";
     [JsonConstructor]
@@ -44,6 +44,12 @@ public abstract class CommitBase
     public override string ToString()
     {
         return $"{Id} [{DateTime}]";
+    }
+
+    public int CompareTo(CommitBase? other)
+    {
+        if (other is null) return 1;
+        return CompareKey.CompareTo(other.CompareKey);
     }
 }
 

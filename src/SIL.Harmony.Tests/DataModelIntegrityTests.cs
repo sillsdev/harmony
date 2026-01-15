@@ -29,4 +29,21 @@ public class DataModelIntegrityTests : DataModelTestBase
         var entry = await DataModel.GetLatest<Word>(entity1Id);
         entry!.Text.Should().Be("entity1.1");
     }
+
+    [Fact]
+    public async Task InvalidCommitHashesResultInException()
+    {
+        // arrange
+        var addedCommit = await WriteNextChange(SetWord(Guid.NewGuid(), "word"));
+
+        // act - break the hash
+        addedCommit.SetParentHash("BBAADD");
+        DbContext.SaveChanges();
+
+        // act - add another commit to trigger validation
+        Func<Task> act = async () => await WriteNextChange(SetWord(Guid.NewGuid(), "word"));
+
+        // assert - validation detects the broken hash
+        await act.Should().ThrowAsync<CommitValidationException>().WithMessage("*does not match expected hash*");
+    }
 }

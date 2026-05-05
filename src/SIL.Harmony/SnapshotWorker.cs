@@ -16,6 +16,7 @@ internal class SnapshotWorker
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots  = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
+    private Dictionary<Guid, ObjectSnapshot>? _allCurrentSnapshotsByEntityId;
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, Guid?> snapshotLookup,
@@ -26,6 +27,16 @@ internal class SnapshotWorker
         _crdtRepository = crdtRepository;
         _snapshotLookup = snapshotLookup;
         _crdtConfig = crdtConfig;
+    }
+
+    private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
+        Dictionary<Guid, Guid?> snapshotLookup,
+        CrdtRepository crdtRepository,
+        CrdtConfig crdtConfig,
+        Dictionary<Guid, ObjectSnapshot>? preloadedSnapshotsByEntityId)
+        : this(snapshots, snapshotLookup, crdtRepository, crdtConfig)
+    {
+        _allCurrentSnapshotsByEntityId = preloadedSnapshotsByEntityId;
     }
 
     internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
@@ -40,6 +51,18 @@ internal class SnapshotWorker
         return snapshots;
     }
 
+    internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
+        Dictionary<Guid, ObjectSnapshot> snapshots,
+        CrdtRepository crdtRepository,
+        SortedSet<Commit> commits,
+        CrdtConfig crdtConfig,
+        Dictionary<Guid, ObjectSnapshot> preloadedSnapshotsByEntityId)
+    {
+        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig, preloadedSnapshotsByEntityId)
+            .ApplyCommitChanges(commits);
+        return snapshots;
+    }
+
     /// <param name="snapshotLookup">a dictionary of entity id to latest snapshot id</param>
     /// <param name="crdtRepository"></param>
     /// <param name="crdtConfig"></param>
@@ -47,6 +70,19 @@ internal class SnapshotWorker
         CrdtRepository crdtRepository,
         CrdtConfig crdtConfig): this([], snapshotLookup, crdtRepository, crdtConfig)
     {
+    }
+
+    /// <summary>
+    /// Pre-loads all current snapshots into memory for large batches.
+    /// This eliminates the expensive CurrentSnapshots CTE query from
+    /// GetSnapshot/GetSnapshotsReferencing/GetSnapshotsWhere during change application.
+    /// Keyed by EntityId for O(1) lookup from GetSnapshot.
+    /// </summary>
+    internal async Task PreloadAllCurrentSnapshots()
+    {
+        _allCurrentSnapshotsByEntityId = await _crdtRepository.CurrentSnapshots()
+            .Include(s => s.Commit)
+            .ToDictionaryAsync(s => s.EntityId);
     }
 
     public async Task UpdateSnapshots(SortedSet<Commit> commits)
@@ -152,6 +188,15 @@ internal class SnapshotWorker
             return rootSnapshot;
         }
 
+        // When all snapshots are pre-loaded, serve them directly from the in-memory cache
+        // to avoid per-entity FindSnapshot round-trips the _snapshotLookup path would trigger.
+        if (_allCurrentSnapshotsByEntityId is not null)
+        {
+            _allCurrentSnapshotsByEntityId.TryGetValue(entityId, out snapshot);
+            _snapshotLookup[entityId] = snapshot?.Id;
+            return snapshot;
+        }
+
         if (_snapshotLookup.TryGetValue(entityId, out var snapshotId))
         {
             if (snapshotId is null) return null;
@@ -187,9 +232,14 @@ internal class SnapshotWorker
             yield return snapshot;
         }
 
-        await foreach (var snapshot in _crdtRepository.CurrentSnapshots()
-            .Where(predicateExpression)
-            .AsAsyncEnumerable())
+        // Use pre-loaded cache if available (avoids expensive CurrentSnapshots CTE per call)
+        IEnumerable<ObjectSnapshot> dbSnapshots = _allCurrentSnapshotsByEntityId is not null
+            ? _allCurrentSnapshotsByEntityId.Values.Where(predicate)
+            : await _crdtRepository.CurrentSnapshots()
+                .Where(predicateExpression)
+                .ToListAsync();
+
+        foreach (var snapshot in dbSnapshots)
         {
             if (_pendingSnapshots.ContainsKey(snapshot.EntityId) || _rootSnapshots.ContainsKey(snapshot.EntityId))
                 continue;

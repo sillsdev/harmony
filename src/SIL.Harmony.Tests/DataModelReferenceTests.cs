@@ -318,6 +318,21 @@ public class DataModelReferenceTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task GetAtCommitUsesReferenceStateFromReplayBaseSnapshot()
+    {
+        var refAdd = await WriteNextChange(new SetAntonymReferenceChange(_word1Id, _word2Id, setObject: true));
+        await WriteNextChange(SetWord(_word2Id, "updated antonym"));
+        await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync();
+
+        var word = await DataModel.GetAtCommit<Word>(refAdd.Id, _word1Id);
+
+        word.Should().NotBeNull();
+        word.AntonymId.Should().Be(_word2Id);
+        word.Antonym.Should().NotBeNull();
+        word.Antonym!.Text.Should().Be("entity2");
+    }
+
+    [Fact]
     public async Task DeleteRetroactivelyRemovesRefs()
     {
         var entityId3 = Guid.NewGuid();

@@ -83,7 +83,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var transaction = await repo.BeginTransactionAsync();
         var updatedCommits = await repo.AddCommits(commits);
         await UpdateSnapshots(repo, updatedCommits);
-        await ValidateCommits(repo);
+        if (AlwaysValidate) await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
 
@@ -198,22 +198,32 @@ public class DataModel : ISyncable, IAsyncDisposable
         if (commitsToApply.Count == 0) return;
         var oldestAddedCommit = commitsToApply.First();
         await repo.DeleteStaleSnapshots(oldestAddedCommit);
-        Dictionary<Guid, Guid?> snapshotLookup;
-        if (commitsToApply.Count > 10)
+
+        var snapshotWorker = new SnapshotWorker([], repo, _crdtConfig.Value);
+
+        // Pre-load all current snapshots into memory once for any non-trivial batch.
+        // This replaces the per-entity FindSnapshot queries during GetSnapshot and
+        // the expensive CurrentSnapshots CTE that MarkDeleted / RemoveReference
+        // would otherwise run per cascade step.
+        //
+        // Gate is on total change count (not commit count, which the default 100-per-
+        // commit chunking made effectively a `> 1000 changes` gate and blocked preload
+        // on medium batches like a 400-delete sync).
+        //
+        // Threshold of 50 is a deliberate UI-safety margin: single-user UI operations
+        // (e.g., CreateEntry with multiple senses + examples + components) commonly
+        // produce 10–30 changes in a single AddManyChanges call. Preloading all
+        // snapshots for those would add ~hundreds of ms of latency with little benefit
+        // (no cascade → no CurrentSnapshots CTE to replace). At 50+, we're confidently
+        // in "bulk operation" territory (explicit BulkChangeBatch, server sync, import)
+        // where the preload pays off. Sync batches are typically 100s–1000s of changes,
+        // comfortably above this threshold.
+        var totalChangeCount = commitsToApply.Sum(c => c.ChangeEntities.Count);
+        if (totalChangeCount > 50)
         {
-            // Bulk-load relevant snapshots to minimize DB queries
-            var entityIds = commitsToApply.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId));
-            snapshotLookup = await repo.CurrentSnapshots()
-                .Where(s => entityIds.Contains(s.EntityId))
-                .Select(s => new KeyValuePair<Guid, Guid?>(s.EntityId, s.Id))
-                .ToDictionaryAsync(s => s.Key, s => s.Value);
-        }
-        else
-        {
-            snapshotLookup = [];
+            await snapshotWorker.PreloadAllCurrentSnapshots();
         }
 
-        var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
         await snapshotWorker.UpdateSnapshots(commitsToApply);
     }
 
@@ -347,13 +357,18 @@ public class DataModel : ISyncable, IAsyncDisposable
             .ToSortedSetAsync();
         if (newCommits.Count > 0)
         {
+            var replayBaseRepository = repo.GetScopedRepository(snapshot.Commit);
+            var preloadedSnapshotsByEntityId = await replayBaseRepository.CurrentSnapshots()
+                .Include(s => s.Commit)
+                .ToDictionaryAsync(s => s.EntityId);
             var snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(
                 new Dictionary<Guid, ObjectSnapshot>([
                     new KeyValuePair<Guid, ObjectSnapshot>(snapshot.EntityId, snapshot)
                 ]),
                 repository,
                 newCommits,
-                _crdtConfig.Value);
+                _crdtConfig.Value,
+                preloadedSnapshotsByEntityId);
             snapshot = snapshots[snapshot.EntityId];
         }
 

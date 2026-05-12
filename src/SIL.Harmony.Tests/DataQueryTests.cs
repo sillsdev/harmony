@@ -6,7 +6,7 @@ namespace SIL.Harmony.Tests;
 public class DataQueryTests: DataModelTestBase
 {
     private readonly Guid _entity1Id = Guid.NewGuid();
-    public override async Task InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
         await WriteNextChange(SetWord(_entity1Id, "entity1"));

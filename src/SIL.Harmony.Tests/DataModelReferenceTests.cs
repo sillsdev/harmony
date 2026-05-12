@@ -10,7 +10,7 @@ public class DataModelReferenceTests : DataModelTestBase
     private readonly Guid _word1Id = Guid.NewGuid();
     private readonly Guid _word2Id = Guid.NewGuid();
 
-    public override async Task InitializeAsync()
+    public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
         await WriteNextChange(SetWord(_word1Id, "entity1"));

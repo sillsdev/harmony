@@ -1,5 +1,4 @@
 using Microsoft.Data.Sqlite;
-using Xunit.Abstractions;
 
 namespace SIL.Harmony.Tests;
 
@@ -17,7 +16,7 @@ public class MultiThreadingTests(ITestOutputHelper output)
             {
                 var random = new Random();
                 var fixture = new DataModelTestBase(new SqliteConnection(_connectionString));
-                fixture.InitializeAsync().Wait();
+                fixture.InitializeAsync().AsTask().Wait();
                 var id = Guid.NewGuid();
                 for (var i = 0; i < 100; i++)
                 {

@@ -161,12 +161,12 @@ public class DataModelTestBase : IAsyncLifetime
         };
     }
 
-    public virtual Task InitializeAsync()
+    public virtual ValueTask InitializeAsync()
     {
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
 
         await _services.DisposeAsync();

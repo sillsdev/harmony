@@ -25,14 +25,14 @@ public class RepositoryTests : IAsyncLifetime
         _crdtDbContext = _services.GetRequiredService<SampleDbContext>();
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // Open the connection manually, otherwise it will be closed after each command, wiping out the in memory sqlite db
         await _crdtDbContext.Database.OpenConnectionAsync();
         await _crdtDbContext.Database.EnsureCreatedAsync();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await _repository.DisposeAsync();
         await _services.DisposeAsync();

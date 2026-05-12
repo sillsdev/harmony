@@ -17,12 +17,13 @@
     <PackageVersion Include="System.Text.Json" Version="10.0.7" />
     <PackageVersion Include="Verify.DiffPlex" Version="3.1.2" />
     <PackageVersion Include="Verify.EntityFramework" Version="15.1.0" />
-    <PackageVersion Include="Verify.Xunit" Version="31.12.5" />
-    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="Verify.XunitV3" Version="31.16.2" />
+    <PackageVersion Include="xunit.v3" Version="3.2.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="coverlet.collector" Version="10.0.0" />
     <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" />
-    <PackageVersion Include="linq2db.AspNet" Version="5.4.1.9" />
+    <PackageVersion Include="linq2db" Version="6.2.1" />
     <PackageVersion Include="linq2db.EntityFrameworkCore" Version="10.3.0" />
+    <PackageVersion Include="linq2db.Extensions" Version="6.2.1" />
   </ItemGroup>
 </Project>

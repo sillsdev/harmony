@@ -9,9 +9,9 @@
     <ItemGroup>
         <PackageReference Include="BenchmarkDotNet" />
         <PackageReference Include="FluentAssertions" />
+        <PackageReference Include="Microsoft.Testing.Platform" />
         <PackageReference Include="GitHubActionsTestLogger">
           <PrivateAssets>all</PrivateAssets>
-          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
         <PackageReference Include="JetBrains.Profiler.SelfApi" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />

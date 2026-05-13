@@ -16,7 +16,7 @@ public class MultiThreadingTests(ITestOutputHelper output)
             {
                 var random = new Random();
                 var fixture = new DataModelTestBase(new SqliteConnection(_connectionString));
-                fixture.InitializeAsync().AsTask().Wait();
+                fixture.InitializeAsync().GetAwaiter().GetResult();
                 var id = Guid.NewGuid();
                 for (var i = 0; i < 100; i++)
                 {

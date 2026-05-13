@@ -24,7 +24,6 @@
     Keys: 
       Id PK
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -44,7 +43,6 @@
     Foreign keys: 
       ChangeEntity<IChange> {'CommitId'} -> Commit {'Id'} Required Cascade ToDependent: ChangeEntities
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -66,7 +64,7 @@
           ElementType: Element type: Guid Required
       TypeName (string) Required
     Navigations: 
-      Commit (Commit) ToPrincipal Commit Inverse: Snapshots
+      Commit (Commit) Required ToPrincipal Commit Inverse: Snapshots
     Keys: 
       Id PK
     Foreign keys: 
@@ -75,7 +73,6 @@
       EntityId
       CommitId, EntityId Unique
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -89,7 +86,6 @@
     Keys: 
       Id PK
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -109,7 +105,6 @@
     Indexes: 
       SnapshotId Unique
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -135,7 +130,6 @@
       SnapshotId Unique
       WordId
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -156,7 +150,6 @@
     Indexes: 
       SnapshotId Unique
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -179,7 +172,6 @@
       SnapshotId Unique
       Text Unique
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -196,7 +188,7 @@
       SnapshotId (no field, Guid?) Shadow FK Index
       Text (string) Required
     Navigations: 
-      Antonym (Word) ToPrincipal Word
+      Antonym (Word) Optional ToPrincipal Word
     Skip navigations: 
       Tags (List<Tag>) CollectionTag Inverse: Word
     Keys: 
@@ -208,7 +200,6 @@
       AntonymId
       SnapshotId Unique
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -233,7 +224,6 @@
       TagId
       WordId, TagId Unique
     Annotations: 
-      DiscriminatorProperty: 
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 
@@ -241,4 +231,4 @@
       Relational:ViewName: 
       Relational:ViewSchema: 
 Annotations: 
-  ProductVersion: 9.0.4
+  ProductVersion: 10.0.7

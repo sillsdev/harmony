@@ -41,7 +41,7 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
-            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync();
+            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.AntonymId.Should().Be(_word2Id);
         entityWord.Antonym.Should().NotBeNull();
@@ -80,7 +80,7 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
-            .Where(w => w.Id == word3Id).SingleOrDefaultAsync();
+            .Where(w => w.Id == word3Id).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.AntonymId.Should().Be(_word2Id);
         entityWord.Antonym.Should().NotBeNull();
@@ -118,7 +118,7 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
-            .Where(w => w.Id == word3Id).SingleOrDefaultAsync();
+            .Where(w => w.Id == word3Id).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.AntonymId.Should().Be(_word2Id);
         entityWord.Antonym.Should().NotBeNull();
@@ -157,7 +157,7 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
-            .Where(w => w.Id == word3Id).SingleOrDefaultAsync();
+            .Where(w => w.Id == word3Id).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.Text.Should().Be("entity3");
         entityWord.AntonymId.Should().Be(_word1Id);
@@ -197,7 +197,7 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
-            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync();
+            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.Text.Should().Be("entity1");
         entityWord.AntonymId.Should().Be(word3Id);
@@ -236,7 +236,7 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
-            .Where(w => w.Id == word3Id).SingleOrDefaultAsync();
+            .Where(w => w.Id == word3Id).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.Text.Should().Be("entity3");
         entityWord.AntonymId.Should().Be(_word1Id);
@@ -275,7 +275,7 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // assert - projected entity
         var entityWord = await DataModel.QueryLatest<Word>(w => w.Include(w => w.Antonym))
-            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync();
+            .Where(w => w.Id == _word1Id).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.Text.Should().Be("entity1");
         entityWord.AntonymId.Should().Be(word3Id);
@@ -341,10 +341,10 @@ public class DataModelReferenceTests : DataModelTestBase
             initialWordCommit,
             deleteWordCommit
         ]);
-        var snapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == initialWordCommit.Id);
+        var snapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == initialWordCommit.Id, TestContext.Current.CancellationToken);
         var initialWord = (Word) snapshot.Entity;
         initialWord.AntonymId.Should().Be(_word1Id);
-        snapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == deleteWordCommit.Id && s.EntityId == wordId);
+        snapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == deleteWordCommit.Id && s.EntityId == wordId, TestContext.Current.CancellationToken);
         var wordWithoutRef = (Word) snapshot.Entity;
         wordWithoutRef.AntonymId.Should().BeNull();
     }
@@ -422,7 +422,7 @@ public class DataModelReferenceTests : DataModelTestBase
         var commitA = await WriteNextChange(SetTag(Guid.NewGuid(), tagText));
         //represents someone syncing in a tag with the same name
         await WriteChangeBefore(commitA, SetTag(Guid.NewGuid(), tagText));
-        DataModel.QueryLatest<Tag>().ToBlockingEnumerable().Where(t => t.Text == tagText).Should().ContainSingle();
+        DataModel.QueryLatest<Tag>().ToBlockingEnumerable(TestContext.Current.CancellationToken).Where(t => t.Text == tagText).Should().ContainSingle();
     }
 
     [Fact]
@@ -434,6 +434,6 @@ public class DataModelReferenceTests : DataModelTestBase
         var commitA = await WriteNextChange(SetTag(Guid.NewGuid(), tagText));
         //represents someone syncing in a tag with the same name
         await WriteNextChange(SetTag(renameTagId, tagText));
-        DataModel.QueryLatest<Tag>().ToBlockingEnumerable().Where(t => t.Text == tagText).Should().ContainSingle();
+        DataModel.QueryLatest<Tag>().ToBlockingEnumerable(TestContext.Current.CancellationToken).Where(t => t.Text == tagText).Should().ContainSingle();
     }
 }

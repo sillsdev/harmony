@@ -77,7 +77,7 @@ public class DataModelSimpleChanges : DataModelTestBase
 
         await WriteNextChange(SetWord(Guid.NewGuid(), "change 3"));
         DbContext.Snapshots.Should().HaveCount(3);
-        DataModel.QueryLatest<Word>().ToBlockingEnumerable().Should().HaveCount(3);
+        DataModel.QueryLatest<Word>().ToBlockingEnumerable(TestContext.Current.CancellationToken).Should().HaveCount(3);
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public class DataModelSimpleChanges : DataModelTestBase
     {
         await WriteNextChange(SetWord(_entity1Id, "first"));
         await WriteNextChange(SetWord(_entity1Id, "second"));
-        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
+        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync(TestContext.Current.CancellationToken);
         snapshot.Entity.Is<Word>().Text.Should().Be("second");
     }
 
@@ -107,7 +107,7 @@ public class DataModelSimpleChanges : DataModelTestBase
         await WriteNextChange(SetWord(_entity1Id, "word-1"));
         await WriteNextChange(SetWord(_entity1Id, "second"));
         await WriteNextChange(SetWord(_entity1Id, "third"));
-        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
+        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync(TestContext.Current.CancellationToken);
         snapshot.Entity.Is<Word>().Text.Should().Be("third");
     }
 
@@ -118,7 +118,7 @@ public class DataModelSimpleChanges : DataModelTestBase
         var secondDate = DateTimeOffset.UtcNow.AddSeconds(1);
         await WriteChange(_localClientId, firstDate, SetWord(_entity1Id, "first"));
         await WriteChange(_localClientId, secondDate, SetWord(_entity1Id, "second"));
-        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
+        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync(TestContext.Current.CancellationToken);
         snapshot.Entity.Is<Word>().Text.Should().Be("second");
     }
 
@@ -129,7 +129,7 @@ public class DataModelSimpleChanges : DataModelTestBase
         var secondDate = DateTimeOffset.Now.AddSeconds(1);
         await WriteChange(_localClientId, firstDate, SetWord(_entity1Id, "first"));
         await WriteChange(_localClientId, secondDate, SetWord(_entity1Id, "second"));
-        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
+        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync(TestContext.Current.CancellationToken);
         snapshot.Entity.Is<Word>().Text.Should().Be("second");
     }
 
@@ -185,7 +185,7 @@ public class DataModelSimpleChanges : DataModelTestBase
     {
         await WriteNextChange(SetWord(_entity1Id, "test-value"));
         var deleteCommit = await WriteNextChange(new DeleteChange<Word>(_entity1Id));
-        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
+        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync(TestContext.Current.CancellationToken);
         snapshot.Entity.DeletedAt.Should().Be(deleteCommit.DateTime);
     }
 
@@ -198,7 +198,7 @@ public class DataModelSimpleChanges : DataModelTestBase
         newNoteChange.SupportsApplyChange().Should().BeTrue();
         newNoteChange.SupportsNewEntity().Should().BeFalse(); // otherwise it will override the delete
         await WriteNextChange(newNoteChange);
-        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
+        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync(TestContext.Current.CancellationToken);
         var word = snapshot.Entity.Is<Word>();
         word.Text.Should().Be("test-value");
         word.Note.Should().Be("note-after-delete");
@@ -213,7 +213,7 @@ public class DataModelSimpleChanges : DataModelTestBase
         var recreateChange = SetWord(_entity1Id, "after-undo-delete");
         recreateChange.SupportsNewEntity().Should().BeTrue();
         await WriteNextChange(recreateChange);
-        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync();
+        var snapshot = await DbContext.Snapshots.DefaultOrder().LastAsync(TestContext.Current.CancellationToken);
         var word = snapshot.Entity.Is<Word>();
         word.Text.Should().Be("after-undo-delete");
         word.DeletedAt.Should().Be(null);

@@ -83,7 +83,7 @@ public class ModelSnapshotTests : DataModelTestBase
 
     private Task ClearNonRootSnapshots()
     {
-        return DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync();
+        return DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
     }
 
     [Theory]

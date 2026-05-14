@@ -27,10 +27,10 @@ public class DbContextTests: DataModelTestBase
             HybridDateTime = new HybridDateTime(expectedDateTime, 0)
         };
         DbContext.Add(commit);
-        await DbContext.SaveChangesAsync();
-        var actualCommit = await DbContext.Commits.AsNoTracking().SingleOrDefaultAsyncEF(c => c.Id == commitId);
+        await DbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var actualCommit = await DbContext.Commits.AsNoTracking().SingleOrDefaultAsyncEF(c => c.Id == commitId, TestContext.Current.CancellationToken);
         actualCommit!.HybridDateTime.DateTime.Should().Be(expectedDateTime, "EF");
-        actualCommit = await DbContext.Commits.ToLinqToDB().SingleOrDefaultAsyncLinqToDB(c => c.Id == commitId);
+        actualCommit = await DbContext.Commits.ToLinqToDB().SingleOrDefaultAsyncLinqToDB(c => c.Id == commitId, TestContext.Current.CancellationToken);
         actualCommit!.HybridDateTime.DateTime.Should().Be(expectedDateTime, "LinqToDB");
     }
 
@@ -53,10 +53,10 @@ public class DbContextTests: DataModelTestBase
             .Value(c => c.Metadata, new CommitMetadata())
             .Value(c => c.Hash, "")
             .Value(c => c.ParentHash, "")
-            .InsertAsync();
-        var actualCommit = await DbContext.Commits.SingleOrDefaultAsyncEF(c => c.Id == commitId);
+            .InsertAsync(TestContext.Current.CancellationToken);
+        var actualCommit = await DbContext.Commits.SingleOrDefaultAsyncEF(c => c.Id == commitId, TestContext.Current.CancellationToken);
         actualCommit!.HybridDateTime.DateTime.Should().Be(expectedDateTime, "EF");
-        actualCommit = await DbContext.Commits.ToLinqToDB().SingleOrDefaultAsyncLinqToDB(c => c.Id == commitId);
+        actualCommit = await DbContext.Commits.ToLinqToDB().SingleOrDefaultAsyncLinqToDB(c => c.Id == commitId, TestContext.Current.CancellationToken);
         actualCommit!.HybridDateTime.DateTime.Should().Be(expectedDateTime, "LinqToDB");
     }
 
@@ -80,11 +80,11 @@ public class DbContextTests: DataModelTestBase
             });
         }
 
-        await DbContext.SaveChangesAsync();
+        await DbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var commits = await DbContext.Commits
             .Where(c => c.HybridDateTime.DateTime > baseDateTime.Add(new TimeSpan((long)(25 * scale))))
             .OrderBy(c => c.HybridDateTime.DateTime)
-            .ToArrayAsyncEF();
+            .ToArrayAsyncEF(TestContext.Current.CancellationToken);
         commits.Should().HaveCount(24);
     }
 }

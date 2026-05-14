@@ -8,13 +8,13 @@ public class SyncTests : IAsyncLifetime
     private readonly DataModelTestBase _client1 = new();
     private readonly DataModelTestBase _client2 = new();
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await _client1.InitializeAsync();
         await _client2.InitializeAsync();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await _client1.DisposeAsync();
         await _client2.DisposeAsync();
@@ -116,7 +116,7 @@ public class SyncTests : IAsyncLifetime
 
         await _client2.DataModel.SyncWith(_client1.DataModel);
 
-        _client2.DataModel.QueryLatest<Definition>().ToBlockingEnumerable().Should()
-            .BeEquivalentTo(_client1.DataModel.QueryLatest<Definition>().ToBlockingEnumerable());
+        _client2.DataModel.QueryLatest<Definition>().ToBlockingEnumerable(TestContext.Current.CancellationToken).Should()
+            .BeEquivalentTo(_client1.DataModel.QueryLatest<Definition>().ToBlockingEnumerable(TestContext.Current.CancellationToken));
     }
 }

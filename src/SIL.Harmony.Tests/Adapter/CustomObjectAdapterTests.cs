@@ -158,8 +158,8 @@ public class CustomObjectAdapterTests
                     .Add<MyClass2>(builder => builder.HasKey(o => o.Identifier));
             }).BuildServiceProvider();
         var myDbContext = services.GetRequiredService<MyDbContext>();
-        await myDbContext.Database.OpenConnectionAsync();
-        await myDbContext.Database.EnsureCreatedAsync();
+        await myDbContext.Database.OpenConnectionAsync(TestContext.Current.CancellationToken);
+        await myDbContext.Database.EnsureCreatedAsync(TestContext.Current.CancellationToken);
         var dataModel = services.GetRequiredService<DataModel>();
         var objectId = Guid.NewGuid();
         var objectId2 = Guid.NewGuid();
@@ -194,6 +194,6 @@ public class CustomObjectAdapterTests
         myClass2.MyNumber.Should().Be(123.45m);
         myClass2.DeletedTime.Should().BeNull();
 
-        dataModel.QueryLatest<MyClass>().ToBlockingEnumerable().Should().NotBeEmpty();
+        dataModel.QueryLatest<MyClass>().ToBlockingEnumerable(TestContext.Current.CancellationToken).Should().NotBeEmpty();
     }
 }

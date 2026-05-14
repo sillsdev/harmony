@@ -11,7 +11,6 @@ using JetBrains.Profiler.SelfApi;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
-using Xunit.Abstractions;
 
 namespace SIL.Harmony.Tests;
 

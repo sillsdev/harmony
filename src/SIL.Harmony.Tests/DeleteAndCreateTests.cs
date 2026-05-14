@@ -25,7 +25,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().BeNull();
         word.Text.Should().Be("Undeleted");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.DeletedAt.Should().BeNull();
         entityWord.Text.Should().Be("Undeleted");
@@ -48,7 +48,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().BeNull();
         word.Text.Should().Be("Undeleted");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.DeletedAt.Should().BeNull();
         entityWord.Text.Should().Be("Undeleted");
@@ -72,7 +72,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().BeNull();
         word.Text.Should().Be("Undeleted");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.DeletedAt.Should().BeNull();
         entityWord.Text.Should().Be("Undeleted");
@@ -96,7 +96,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().BeNull();
         word.Text.Should().Be("Undeleted");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.DeletedAt.Should().BeNull();
         entityWord.Text.Should().Be("Undeleted");
@@ -119,7 +119,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().BeNull();
         word.Text.Should().Be("Undeleted");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.DeletedAt.Should().BeNull();
         entityWord.Text.Should().Be("Undeleted");
@@ -141,7 +141,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().BeNull();
         word.Text.Should().Be("Undeleted");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.DeletedAt.Should().BeNull();
         entityWord.Text.Should().Be("Undeleted");
@@ -163,7 +163,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().NotBeNull();
         word.Text.Should().Be("original");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().BeNull();
     }
 
@@ -182,7 +182,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().NotBeNull();
         word.Text.Should().Be("original");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().BeNull();
     }
 
@@ -192,7 +192,7 @@ public class DeleteAndCreateTests : DataModelTestBase
         var wordId = Guid.NewGuid();
 
         await WriteNextChange(new NewWordChange(wordId, "original"));
-        var snapshotsBefore = await DbContext.Snapshots.Where(s => s.EntityId == wordId).ToArrayAsync();
+        var snapshotsBefore = await DbContext.Snapshots.Where(s => s.EntityId == wordId).ToArrayAsync(TestContext.Current.CancellationToken);
 
         await WriteNextChange(
             [
@@ -204,12 +204,12 @@ public class DeleteAndCreateTests : DataModelTestBase
         word.DeletedAt.Should().BeNull();
         word.Text.Should().Be("original");
 
-        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync();
+        var entityWord = await DataModel.QueryLatest<Word>().Where(w => w.Id == wordId).SingleOrDefaultAsync(TestContext.Current.CancellationToken);
         entityWord.Should().NotBeNull();
         entityWord.DeletedAt.Should().BeNull();
         entityWord.Text.Should().Be("original");
 
-        var snapshotsAfter = await DbContext.Snapshots.Where(s => s.EntityId == wordId).ToArrayAsync();
+        var snapshotsAfter = await DbContext.Snapshots.Where(s => s.EntityId == wordId).ToArrayAsync(TestContext.Current.CancellationToken);
         snapshotsAfter.Select(s => s.Id).Should().BeEquivalentTo(snapshotsBefore.Select(s => s.Id));
     }
 }

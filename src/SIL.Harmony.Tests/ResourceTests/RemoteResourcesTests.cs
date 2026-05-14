@@ -128,7 +128,7 @@ public class RemoteResourcesTests : DataModelTestBase
 
 
         localResource.Id.Should().Be(resourceId);
-        var actualFileContents = await File.ReadAllTextAsync(localResource.LocalPath);
+        var actualFileContents = await File.ReadAllTextAsync(localResource.LocalPath, TestContext.Current.CancellationToken);
         actualFileContents.Should().Be(fileContents);
         var pendingDownloads = await _resourceService.ListResourcesPendingDownload();
         pendingDownloads.Should().BeEmpty();

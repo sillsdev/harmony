@@ -1,6 +1,6 @@
 ﻿using SIL.Harmony.Core;
 using LinqToDB.EntityFrameworkCore;
-using LinqToDB.Extensions.Logging;
+using LinqToDB.AspNet.Logging;
 using LinqToDB.Mapping;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

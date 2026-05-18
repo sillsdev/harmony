@@ -11,7 +11,7 @@
 
     <ItemGroup>
       <PackageReference Include="linq2db.EntityFrameworkCore" />
-      <PackageReference Include="linq2db.Extensions" />
+      <PackageReference Include="linq2db.AspNet" />
     </ItemGroup>
 
 </Project>

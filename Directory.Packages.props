@@ -3,9 +3,9 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.7" />
-    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.7" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.16" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.16" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="9.0.16" />
     <PackageVersion Include="Microsoft.Testing.Platform" Version="2.0.0" />
     <PackageVersion Include="Nito.AsyncEx.Coordination" Version="5.1.2" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.7" />
@@ -23,8 +23,8 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="coverlet.collector" Version="10.0.0" />
     <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" />
-    <PackageVersion Include="linq2db" Version="6.2.1" />
-    <PackageVersion Include="linq2db.EntityFrameworkCore" Version="10.3.0" />
-    <PackageVersion Include="linq2db.Extensions" Version="6.2.1" />
+    <PackageVersion Include="linq2db" Version="5.4.1" />
+    <PackageVersion Include="linq2db.AspNet" Version="5.4.1" />
+    <PackageVersion Include="linq2db.EntityFrameworkCore" Version="9.0.0" />
   </ItemGroup>
 </Project>

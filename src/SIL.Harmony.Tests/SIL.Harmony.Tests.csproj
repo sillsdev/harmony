@@ -29,7 +29,7 @@
         </PackageReference>
         <PackageReference Include="System.Linq.Async"/>
         <PackageReference Include="linq2db" />
-        <PackageReference Include="linq2db.Extensions" />
+        <PackageReference Include="linq2db.AspNet" />
     </ItemGroup>
 
     <ItemGroup>

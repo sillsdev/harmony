@@ -114,8 +114,8 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task Add(Commit commit)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        if (await repo.HasCommit(commit.Id)) return;
         using var locked = await repo.Lock();
+        if (await repo.HasCommit(commit.Id)) return;
         repo.ClearChangeTracker();
 
         await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();

@@ -428,6 +428,20 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Walks every commit in chain order and recomputes <see cref="Commit.Hash"/> / <see cref="Commit.ParentHash"/>
+    /// against the current Commit.Ids. Used when callers seed commits whose Ids change after the fact
+    /// (e.g. applying a Guid-substituted SQL template), so the persisted hashes need to be brought
+    /// back in line before any sync validates them.
+    /// </summary>
+    public async Task RebuildCommitHashes()
+    {
+        var commits = await Commits.AsTracking().DefaultOrder().ToSortedSetAsync();
+        if (commits.Count == 0) return;
+        UpdateCommitHashes(commits);
+        await _dbContext.SaveChangesAsync();
+    }
+
     public HybridDateTime? GetLatestDateTime()
     {
         return Commits

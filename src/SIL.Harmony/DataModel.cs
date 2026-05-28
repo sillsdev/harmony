@@ -237,6 +237,23 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Recomputes every persisted <see cref="Commit.Hash"/> against the current Commit.Ids in chain order.
+    /// Useful when a caller has staged commits whose Ids changed after the fact (e.g. applying a
+    /// Guid-substituted SQL template) and needs the hash chain brought back in line before sync
+    /// validates it. Local-only: no replication of the rebuild — the resulting hashes must not
+    /// have been observed by any peer.
+    /// </summary>
+    public async Task RebuildCommitHashes()
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
+        repo.ClearChangeTracker();
+        await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
+        await repo.RebuildCommitHashes();
+        if (transaction is not null) await transaction.CommitAsync();
+    }
+
     public async Task RegenerateSnapshots()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();

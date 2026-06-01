@@ -29,9 +29,16 @@ public abstract class CommitBase : IComparable<CommitBase>
     public CommitMetadata Metadata { get; init; } = new();
 
 
-    public string GenerateHash(string parentHash)
+    public string GenerateHash(string parentHash) => GenerateHash(Id, parentHash);
+
+    /// <summary>
+    /// Computes a commit hash from a commit Id and its parent commit's hash. The hash binds only
+    /// these two values — not change content, ClientId, or the timestamp — so a commit chain can be
+    /// re-identified by minting new Ids and rehashing against them.
+    /// </summary>
+    public static string GenerateHash(Guid id, string parentHash)
     {
-        var idBytes = Id.ToByteArray();
+        var idBytes = id.ToByteArray();
         var parentHashBytes = Convert.FromHexString(parentHash);
         Span<byte> hashBytes = stackalloc byte[idBytes.Length + parentHashBytes.Length];
         idBytes.AsSpan().CopyTo(hashBytes);

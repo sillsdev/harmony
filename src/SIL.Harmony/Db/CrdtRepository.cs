@@ -103,6 +103,29 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public bool IsInTransaction => _dbContext.Database.CurrentTransaction is not null;
 
+    /// <summary>
+    /// Runs an interpolated SQL statement against the underlying database, enlisted in the ambient
+    /// transaction if one is open. Kept internal and narrow so raw-SQL surgery (see
+    /// <see cref="DataModel.ReseedProjectImpl"/>) stays contained and greppable.
+    /// </summary>
+    internal Task<int> ExecuteSqlAsync(FormattableString sql)
+    {
+        return _dbContext.Database.ExecuteSqlInterpolatedAsync(sql);
+    }
+
+    /// <summary>
+    /// Counts ChangeEntities and Snapshots rows still pointing at any of the given commit Ids.
+    /// Used as a safety check before deleting commits, since both child FKs are ON DELETE CASCADE.
+    /// </summary>
+    internal async Task<int> CountReferencesToCommits(IReadOnlyCollection<Guid> commitIds)
+    {
+        var changeCount = await _dbContext.Set<ChangeEntity<IChange>>()
+            .CountAsync(c => commitIds.Contains(c.CommitId));
+        var snapshotCount = await _dbContext.Set<ObjectSnapshot>()
+            .CountAsync(s => commitIds.Contains(s.CommitId));
+        return changeCount + snapshotCount;
+    }
+
 
     public async Task<bool> HasCommit(Guid commitId)
     {

@@ -11,7 +11,7 @@ namespace SIL.Harmony;
 
 public record SyncResults(Commit[] MissingFromLocal, Commit[] MissingFromRemote, bool IsSynced);
 
-public class DataModel : ISyncable, IAsyncDisposable
+public partial class DataModel : ISyncable, IAsyncDisposable
 {
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.

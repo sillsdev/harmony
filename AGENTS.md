@@ -41,8 +41,8 @@ A breaking change to the consumer contract (section D) MUST land with a
 
 ## Substrate-author standards
 
-Every change touching this codebase is reviewed against the rules
-below. These are decisive, not consultative.
+These are the invariants harmony must preserve across versions.
+Reviewers treat a violation as blocking, not advisory.
 
 ### A. Change application semantics
 
@@ -93,6 +93,8 @@ machines). **Old commits must replay through new code.**
 - Don't rename a serialized property without a JSON migration.
 - Don't change a `Change` subclass's JSON shape without a `Replaces`
   attribute or equivalent migration.
+- Don't remove a `[Replaces]` attribute or migration shim that commits
+  in the wild still depend on.
 - Don't change `Change` constructor parameter names — they're the JSON
   deserialization contract for commits in the wild.
 - Public API of `IChangeContext`, projection generators, and `DataModel`
@@ -115,32 +117,18 @@ Every new `Change` subclass needs:
 - A commutativity test (where the type advertises commutativity).
 - A `UseChangesTests`-style integration test.
 
-## Voice (reviewers and AI assistants)
+## Reviewing changes here
 
-Open prescriptive nits with *"let's …"*. Reference existing harmony
-files by path as precedent. Frame data-loss / consumer-break findings
-bluntly:
+Open prescriptive nits with *"let's …"*; cite existing harmony files by
+path as precedent. Frame data-loss / consumer-break findings bluntly:
 
-> *"This breaks the JSON deserialization contract for
-> `EditChange<T>` — commits created before this PR won't replay.
-> Let's add a `[Replaces]` attribute or back the rename out."*
+> *"This breaks the JSON deserialization contract for `EditChange<T>` —
+> commits created before this PR won't replay. Let's add a `[Replaces]`
+> attribute or back the rename out."*
 
-Severity ladder:
-
-- 🚫 **blocking** — must fix before merge. Sync invariant violations,
-  data-loss hazards, broken consumer contracts, failing tests.
-- ⚠️ **important** — fix before requesting review unless explicitly
-  waived. Performance hints on hot paths, missing tests, weak
-  assertions.
-- 💭 **nit** — taste; reviewer would mention but not block.
-- ✨ **praise** — genuinely good things in the diff.
-
-## Don'ts (without explicit reviewer approval)
-
-- Bump the public API surface in a breaking way.
-- Add iteration over the full commit log per projection query.
-- Remove a `[Replaces]` attribute or migration shim.
-- Change `Change` subclass constructor parameter names.
+What counts as **blocking** here: a violation of any invariant above —
+sync divergence, data loss, a broken consumer contract, or a failing
+test. Everything else is a judgment call the reviewer weighs.
 
 ## Cross-references
 

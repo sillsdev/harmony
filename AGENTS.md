@@ -129,11 +129,3 @@ path as precedent. Frame data-loss / consumer-break findings bluntly:
 What counts as **blocking** here: a violation of any invariant above —
 sync divergence, data loss, a broken consumer contract, or a failing
 test. Everything else is a judgment call the reviewer weighs.
-
-## Cross-references
-
-Consumed by:
-[languageforge-lexbox](https://github.com/sillsdev/languageforge-lexbox)
-— its `harmony-sentinel` agent
-(`.claude/agents/harmony-sentinel.md`) reads this file as the
-authoritative source for substrate-author standards.

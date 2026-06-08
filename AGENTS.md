@@ -25,6 +25,20 @@ harmony/
 │   └── SIL.Harmony.Tests/    # Test suite
 ```
 
+## Versioning & releases
+
+NuGet package versions are derived from git tags plus commit messages by
+`src/calculate-version.sh`: the most recent `vX.Y.Z` tag sets the base,
+and commits since then bump it according to `+semver:` markers in the
+messages —
+
+- `+semver: major` / `+semver: breaking` → bump major, reset minor + patch.
+- `+semver: minor` / `+semver: feature` → bump minor, reset patch.
+- anything else (or `+semver: patch` / `+semver: fix`) → bump patch.
+
+A breaking change to the consumer contract (section D) MUST land with a
+`+semver: major` commit so downstream package resolution reflects it.
+
 ## Substrate-author standards
 
 Every change touching this codebase is reviewed against the rules
@@ -81,9 +95,9 @@ machines). **Old commits must replay through new code.**
   attribute or equivalent migration.
 - Don't change `Change` constructor parameter names — they're the JSON
   deserialization contract for commits in the wild.
-- Public API of `IChangeContext`, `IRepository`, projection generators,
-  `DataModel` — treat as deployed; additive evolution only without a
-  major version.
+- Public API of `IChangeContext`, projection generators, and `DataModel`
+  (including `QueryLatest<T>`) — treat as deployed; additive evolution
+  only without a major version (see *Versioning & releases*).
 
 Public API break without a migration story is blocking.
 

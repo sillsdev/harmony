@@ -105,15 +105,18 @@ public class DataModelTestBase : IAsyncLifetime
         bool add = true)
     {
         if (!add)
-            return new Commit
+        {
+            var commit = new Commit
             {
                 ClientId = clientId,
                 HybridDateTime = new HybridDateTime(dateTime, 0),
-                ChangeEntities = changes.Select((change, index) => new ChangeEntity<IChange>
-                {
-                    Change = change, Index = index, CommitId = change.CommitId, EntityId = change.EntityId
-                }).ToList()
             };
+            commit.ChangeEntities.AddRange(changes.Select((change, index) => new ChangeEntity<IChange>
+            {
+                Change = change, Index = index, CommitId = commit.Id, EntityId = change.EntityId
+            }));
+            return commit;
+        }
         MockTimeProvider.SetNextDateTime(dateTime);
         return await DataModel.AddChanges(clientId, changes);
     }

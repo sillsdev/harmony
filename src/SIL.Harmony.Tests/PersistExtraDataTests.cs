@@ -23,7 +23,7 @@ public class PersistExtraDataTests
     {
         public Guid Id { get; set; }
         public DateTimeOffset? DeletedAt { get; set; }
-        public Guid CommitId { get; set; }
+        public Guid LastCommitId { get; set; }
         public DateTimeOffset? DateTime { get; set; }
         public long Counter { get; set; }
 
@@ -42,7 +42,7 @@ public class PersistExtraDataTests
             {
                 Id = Id,
                 DeletedAt = DeletedAt,
-                CommitId = CommitId,
+                LastCommitId = LastCommitId,
                 DateTime = DateTime,
                 Counter = Counter
             };
@@ -61,7 +61,7 @@ public class PersistExtraDataTests
                 {
                     if (obj is ExtraDataModel extraDataModel)
                     {
-                        extraDataModel.CommitId = snapshot.CommitId;
+                        extraDataModel.LastCommitId = snapshot.CommitId;
                         extraDataModel.DateTime = snapshot.Commit.HybridDateTime.DateTime;
                         extraDataModel.Counter = snapshot.Commit.HybridDateTime.Counter;
                     }
@@ -78,7 +78,7 @@ public class PersistExtraDataTests
         var commit = await _dataModelTestBase.WriteNextChange(new CreateExtraDataModelChange(entityId));
         var extraDataModel = _dataModelTestBase.DataModel.QueryLatest<ExtraDataModel>().Should().ContainSingle().Subject;
         extraDataModel.Id.Should().Be(entityId);
-        extraDataModel.CommitId.Should().Be(commit.Id);
+        extraDataModel.LastCommitId.Should().Be(commit.Id);
         extraDataModel.DateTime.Should().Be(commit.HybridDateTime.DateTime);
         extraDataModel.Counter.Should().Be(commit.HybridDateTime.Counter);
     }

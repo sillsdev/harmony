@@ -108,18 +108,15 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
             var commit = new Commit(commitId)
             {
                 ClientId = Guid.NewGuid(),
-                HybridDateTime = new HybridDateTime(dataModelTest.NextDate(), 0), 
-                ChangeEntities =
-                [
-                    new ChangeEntity<IChange>()
-                    {
-                        Change = change,
-                        Index = 0,
-                        CommitId = commitId,
-                        EntityId = change.EntityId
-                    }
-                ]
+                HybridDateTime = new HybridDateTime(dataModelTest.NextDate(), 0),
             };
+            commit.ChangeEntities.Add(new ChangeEntity<IChange>()
+            {
+                Change = change,
+                Index = 0,
+                CommitId = commit.Id,
+                EntityId = change.EntityId
+            });
             commit.SetParentHash(parentHash);
             parentHash = commit.Hash;
             dataModelTest.DbContext.Add(commit);

@@ -6,9 +6,6 @@ namespace SIL.Harmony.Changes;
 public interface IChange
 {
     [JsonIgnore]
-    Guid CommitId { get; set; }
-
-    [JsonIgnore]
     Guid EntityId { get; set; }
 
     [JsonIgnore]
@@ -28,9 +25,6 @@ public abstract class Change<T> : IChange where T : class
     {
         EntityId = entityId;
     }
-
-    [JsonIgnore]
-    public Guid CommitId { get; set; }
 
     public Guid EntityId { get; set; }
 

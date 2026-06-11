@@ -198,27 +198,19 @@ public class DataModel : ISyncable, IAsyncDisposable
         if (commitsToApply.Count == 0) return;
         var oldestAddedCommit = commitsToApply.First();
         await repo.DeleteStaleSnapshots(oldestAddedCommit);
-        Dictionary<Guid, Guid?> snapshotLookup = [];
+        Dictionary<Guid, Guid?> snapshotLookup;
         if (commitsToApply.Count > 10)
         {
             // Bulk-load relevant snapshots to minimize DB queries
-            var entityIds = commitsToApply
-                .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
-                .Distinct();
-
-            //chunk into batches to avoid too many parameters in the query
-            foreach (var entityIdBatch in entityIds.Chunk(500))
-            {
-                var batchLookup = await repo.CurrentSnapshots()
-                    .Where(s => entityIdBatch.Contains(s.EntityId))
-                    .Select(s => new KeyValuePair<Guid, Guid?>(s.EntityId, s.Id))
-                    .ToDictionaryAsync(s => s.Key, s => s.Value);
-
-                foreach (var pair in batchLookup)
-                {
-                    snapshotLookup[pair.Key] = pair.Value;
-                }
-            }
+            var entityIds = commitsToApply.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId));
+            snapshotLookup = await repo.CurrentSnapshots()
+                .Where(s => entityIds.Contains(s.EntityId))
+                .Select(s => new KeyValuePair<Guid, Guid?>(s.EntityId, s.Id))
+                .ToDictionaryAsync(s => s.Key, s => s.Value);
+        }
+        else
+        {
+            snapshotLookup = [];
         }
 
         var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);

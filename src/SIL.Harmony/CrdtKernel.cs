@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -8,21 +9,34 @@ namespace SIL.Harmony;
 
 public static class CrdtKernel
 {
+    public static IServiceCollection AddCrdtDataDbFactory<TContext>(this IServiceCollection services,
+        Action<CrdtConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
+    {
+
+        services.AddCrdtDataCore(configureCrdt);
+        services.AddScoped<ICrdtDbContextFactory, CrdtDbContextFactory<TContext>>();
+        return services;
+    }
+
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
-        Action<CrdtConfig> configureCrdt) where TContext: ICrdtDbContext
+        Action<CrdtConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
+    {
+        services.AddCrdtDataCore(configureCrdt);
+        services.AddScoped<ICrdtDbContextFactory, CrdtDbContextNoDisposeFactory<TContext>>();
+        return services;
+    }
+    public static IServiceCollection AddCrdtDataCore(this IServiceCollection services, Action<CrdtConfig> configureCrdt)
     {
         services.AddLogging();
-        services.AddOptions<CrdtConfig>().Configure(configureCrdt).PostConfigure(crdtConfig => crdtConfig.ObjectTypeListBuilder.Freeze());
+        services.AddOptions<CrdtConfig>().Configure(configureCrdt)
+            .PostConfigure(crdtConfig => crdtConfig.ObjectTypeListBuilder.Freeze());
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
-        //must use factory, otherwise one context will be created for this registration, and one for the application.
-        //we want to have one context per application
-        services.AddScoped<ICrdtDbContext>(p => p.GetRequiredService<TContext>());
-        services.AddScoped<CrdtRepository>();
+        services.AddScoped<CrdtRepositoryFactory>();
         //must use factory method because DataModel constructor is internal
         services.AddScoped<DataModel>(provider => new DataModel(
-            provider.GetRequiredService<CrdtRepository>(),
+            provider.GetRequiredService<CrdtRepositoryFactory>(),
             provider.GetRequiredService<JsonSerializerOptions>(),
             provider.GetRequiredService<IHybridDateTimeProvider>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
@@ -30,7 +44,7 @@ public static class CrdtKernel
         ));
         //must use factory method because ResourceService constructor is internal
         services.AddScoped<ResourceService>(provider => new ResourceService(
-            provider.GetRequiredService<CrdtRepository>(),
+            provider.GetRequiredService<CrdtRepositoryFactory>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
             provider.GetRequiredService<DataModel>(),
             provider.GetRequiredService<ILogger<ResourceService>>()
@@ -43,8 +57,11 @@ public static class CrdtKernel
         //todo, if this causes issues getting the order correct, we can update the last date time after the db is created
         //as long as it's before we get a date time from the provider
         //todo use IMemoryCache to store the last date time, possibly based on the current project
-        var hybridDateTime = serviceProvider.GetRequiredService<CrdtRepository>().GetLatestDateTime();
+        using var repo = serviceProvider.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
+        var hybridDateTime = repo.GetLatestDateTime();
         hybridDateTime ??= HybridDateTimeProvider.DefaultLastDateTime;
         return ActivatorUtilities.CreateInstance<HybridDateTimeProvider>(serviceProvider, hybridDateTime);
     }
 }
+
+

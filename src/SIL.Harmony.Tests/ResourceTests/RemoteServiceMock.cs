@@ -26,7 +26,7 @@ public class RemoteServiceMock : IRemoteResourceService
     
     private readonly Queue<string> _throwOnUpload = new();
 
-    public async Task<UploadResult> UploadResource(string localPath)
+    public async Task<UploadResult> UploadResource(Guid resourceId, string localPath)
     {
         await Task.Yield();//yield back to the scheduler to emulate how exceptions are thrown
         if (_throwOnUpload.TryPeek(out var throwOnUpload))

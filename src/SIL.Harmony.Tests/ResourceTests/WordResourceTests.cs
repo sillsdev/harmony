@@ -36,6 +36,6 @@ public class WordResourceTests: DataModelTestBase
         var localResource = await _resourceService.GetLocalResource(word.ImageResourceId!.Value);
         localResource.Should().NotBeNull();
         localResource!.LocalPath.Should().Be(imageFile);
-        (await File.ReadAllTextAsync(localResource.LocalPath)).Should().Be("not image data");
+        (await File.ReadAllTextAsync(localResource.LocalPath, TestContext.Current.CancellationToken)).Should().Be("not image data");
     }
 }

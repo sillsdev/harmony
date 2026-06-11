@@ -22,7 +22,8 @@ public static class CrdtSampleKernel
         {
             //this ensures that Ef Conversion methods will not be cached across different IoC containers
             //this can show up as the second instance using the JsonSerializerOptions from the first container
-            //only needed for testing scenarios
+            //But, for testing scenarios (performanceTest: true) this essentially restores EF Core's default service-provider caching
+            //(which is otherwise disabled for test isolation) and thus matches real ASP.NET Core app config
             builder.EnableServiceProviderCaching(performanceTest);
             builder.UseLinqToDbCrdt(provider);
             optionsBuilder(builder);
@@ -43,7 +44,7 @@ public static class CrdtSampleKernel
                 .Add<EditExampleChange>()
                 .Add<SetWordTextChange>()
                 .Add<SetWordNoteChange>()
-                .Add<AddAntonymReferenceChange>()
+                .Add<SetAntonymReferenceChange>()
                 .Add<AddWordImageChange>()
                 .Add<SetOrderChange<Definition>>()
                 .Add<SetDefinitionPartOfSpeechChange>()
@@ -60,6 +61,10 @@ public static class CrdtSampleKernel
                     builder.HasMany(w => w.Tags)
                         .WithMany()
                         .UsingEntity<WordTag>();
+                    builder.HasOne((w) => w.Antonym)
+                        .WithMany()
+                        .HasForeignKey(w => w.AntonymId)
+                        .OnDelete(DeleteBehavior.SetNull);
                 })
                 .Add<Definition>(builder =>
                 {

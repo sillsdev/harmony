@@ -4,7 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace SIL.Harmony.Db;
 
-public interface ICrdtDbContext
+public interface ICrdtDbContext : IDisposable, IAsyncDisposable
 {
     IQueryable<Commit> Commits => Set<Commit>();
     IQueryable<ObjectSnapshot> Snapshots => Set<ObjectSnapshot>();

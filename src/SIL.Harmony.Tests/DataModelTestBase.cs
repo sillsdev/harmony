@@ -18,7 +18,6 @@ public class DataModelTestBase : IAsyncLifetime
     private readonly bool _performanceTest;
     public readonly DataModel DataModel;
     public readonly SampleDbContext DbContext;
-    internal readonly CrdtRepository CrdtRepository;
     protected readonly MockTimeProvider MockTimeProvider = new();
 
     public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true,
@@ -47,7 +46,6 @@ public class DataModelTestBase : IAsyncLifetime
         DbContext.Database.OpenConnection();
         DbContext.Database.EnsureCreated();
         DataModel = _services.GetRequiredService<DataModel>();
-        CrdtRepository = _services.GetRequiredService<CrdtRepository>();
     }
     
     public DataModelTestBase ForkDatabase(bool alwaysValidate = true)
@@ -166,13 +164,14 @@ public class DataModelTestBase : IAsyncLifetime
         };
     }
 
-    public virtual Task InitializeAsync()
+    public virtual ValueTask InitializeAsync()
     {
-        return Task.CompletedTask;
+        return ValueTask.CompletedTask;
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
+
         await _services.DisposeAsync();
     }
 

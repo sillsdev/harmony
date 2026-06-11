@@ -26,5 +26,6 @@
     <PackageVersion Include="linq2db" Version="6.2.1" />
     <PackageVersion Include="linq2db.EntityFrameworkCore" Version="10.3.0" />
     <PackageVersion Include="linq2db.Extensions" Version="6.2.1" />
+    <PackageVersion Include="EFCore.ComplexIndexes" Version="3.1.5" />
   </ItemGroup>
 </Project>

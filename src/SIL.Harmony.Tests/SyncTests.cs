@@ -1,4 +1,6 @@
-﻿using SIL.Harmony.Sample.Changes;
+﻿using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
@@ -118,5 +120,33 @@ public class SyncTests : IAsyncLifetime
 
         _client2.DataModel.QueryLatest<Definition>().ToBlockingEnumerable(TestContext.Current.CancellationToken).Should()
             .BeEquivalentTo(_client1.DataModel.QueryLatest<Definition>().ToBlockingEnumerable(TestContext.Current.CancellationToken));
+    }
+    
+    [Fact]
+    public async Task CanSyncCommitsWithMoreEntitiesThanTheSqliteParameterLimit()
+    {
+        //lower the connection's variable limit so tripping it doesn't require such a slow test
+        //(currently 32,766 in the currently bundled SQLite) 
+        var connection = (SqliteConnection)_client1.DbContext.Database.GetDbConnection();
+        const int maxSqlVariables = 600;
+        SQLitePCL.raw.sqlite3_limit(connection.Handle, SQLitePCL.raw.SQLITE_LIMIT_VARIABLE_NUMBER, maxSqlVariables);
+
+        //>10 commits triggers the bulk snapshot preload
+        const int commitCount = 30;
+        const int changesPerCommit = 30;
+        const int totalEntityCount = commitCount * changesPerCommit;
+        totalEntityCount.Should().BeGreaterThan(maxSqlVariables, "the synced commits must touch more entities than SQLite allows variables");
+
+        var commits = new List<Commit>(commitCount);
+        for (var i = 0; i < commitCount; i++)
+        {
+            var changes = Enumerable.Range(0, changesPerCommit)
+                .Select(j => _client1.SetWord(Guid.NewGuid(), $"word {i}-{j}"));
+            commits.Add(await _client1.WriteNextChange(changes, add: false));
+        }
+
+        await ((ISyncable)_client1.DataModel).AddRangeFromSync(commits);
+
+        _client1.DbContext.Set<Word>().Should().HaveCount(totalEntityCount);
     }
 }

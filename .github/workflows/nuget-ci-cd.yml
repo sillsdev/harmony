@@ -56,11 +56,11 @@ jobs:
           packages=(src/artifacts/package/release/*.nupkg)
           symbols=(src/artifacts/package/release/*.snupkg)
 
-          if ((${`#packages`[@]} == 0)); then
+          if ((${#packages[@]} == 0)); then
             echo "No NuGet packages were produced." >&2
             exit 1
           fi
-          if ((${`#symbols`[@]} == 0)); then
+          if ((${#symbols[@]} == 0)); then
             echo "No symbol packages were produced." >&2
             exit 1
           fi

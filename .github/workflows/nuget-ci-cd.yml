@@ -53,7 +53,19 @@ jobs:
         shell: bash
         run: |
           shopt -s nullglob
-          for pkg in src/artifacts/package/release/*.nupkg; do
+          packages=(src/artifacts/package/release/*.nupkg)
+          symbols=(src/artifacts/package/release/*.snupkg)
+
+          if ((${`#packages`[@]} == 0)); then
+            echo "No NuGet packages were produced." >&2
+            exit 1
+          fi
+          if ((${`#symbols`[@]} == 0)); then
+            echo "No symbol packages were produced." >&2
+            exit 1
+          fi
+
+          for pkg in "${packages[@]}"; do
             case "$pkg" in
               *.symbols.nupkg|*.snupkg) continue ;;
             esac
@@ -63,7 +75,7 @@ jobs:
               --api-key "$NUGET_API_KEY" \
               --source https://api.nuget.org/v3/index.json
           done
-          for sym in src/artifacts/package/release/*.snupkg; do
+          for sym in "${symbols[@]}"; do
             echo "Publishing symbols $sym"
             dotnet nuget push "$sym" \
               --skip-duplicate \

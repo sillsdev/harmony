@@ -1,0 +1,19 @@
+<Project>
+    <PropertyGroup Condition="'$(IsPackable)' == 'true'">
+        <Authors>SIL Global</Authors>
+        <Company>SIL Global</Company>
+        <Copyright>Copyright © SIL Global</Copyright>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/sillsdev/harmony</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/sillsdev/harmony</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageTags>CRDT;offline-first;Entity Framework Core;synchronization;collaboration</PackageTags>
+        <IncludeSymbols>true</IncludeSymbols>
+        <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    </PropertyGroup>
+
+    <ItemGroup Condition="'$(IsPackable)' == 'true'">
+        <None Include="$(MSBuildThisFileDirectory)../README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+</Project>

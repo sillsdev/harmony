@@ -40,7 +40,7 @@ jobs:
       - name: Pack
         shell: bash
         run: |
-          dotnet pack --include-symbols /p:PackageVersion="$PACKAGE_VERSION" /p:AssemblyVersion="$ASSEMBLY_VERSION" /p:FileVersion="$FILE_VERSION"
+          dotnet pack /p:PackageVersion="$PACKAGE_VERSION" /p:AssemblyVersion="$ASSEMBLY_VERSION" /p:FileVersion="$FILE_VERSION"
 
       - name: Upload packages to build artifacts
         uses: actions/upload-artifact@v4
@@ -48,21 +48,27 @@ jobs:
           name: nuget-packages
           path: src/artifacts/package/release/*nupkg
 
-      # Not using the GitHub package registry right now, since it doesn't allow anonymous access so it's a hassle to use
-
-      # - name: Publish package to GitHub
-      #   if: github.event_name == 'pull_request' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads'))
-      #   shell: bash
-      #   run: |
-      #     dotnet nuget push "src/artifacts/package/release/*.symbols.nupkg" -s https://nuget.pkg.github.com/sillsdev/index.json -k "$NUGET_API_KEY" --skip-duplicate
-      #   env:
-      #     NUGET_API_KEY: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Publish package to NuGet.org
-      #   if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')
-      #   shell: bash
-      #   run: |
-      #     echo Would run the following:
-      #     echo dotnet nuget push "src/artifacts/package/release/*nupkg" --skip-duplicate --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json
-      #   env:
-      #     NUGET_API_KEY: ${{ secrets.SILLSDEV_PUBLISH_NUGET_ORG }}
+      - name: Publish package to NuGet.org
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for pkg in src/artifacts/package/release/*.nupkg; do
+            case "$pkg" in
+              *.symbols.nupkg|*.snupkg) continue ;;
+            esac
+            echo "Publishing $pkg"
+            dotnet nuget push "$pkg" \
+              --skip-duplicate \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json
+          done
+          for sym in src/artifacts/package/release/*.snupkg; do
+            echo "Publishing symbols $sym"
+            dotnet nuget push "$sym" \
+              --skip-duplicate \
+              --api-key "$NUGET_API_KEY" \
+              --source https://api.nuget.org/v3/index.json
+          done
+        env:
+          NUGET_API_KEY: ${{ secrets.SILLSDEV_PUBLISH_NUGET_ORG }}

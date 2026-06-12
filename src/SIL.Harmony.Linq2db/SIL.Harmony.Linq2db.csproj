@@ -3,6 +3,8 @@
     <PropertyGroup>
         <RootNamespace>SIL.Harmony.Linq2db</RootNamespace>
         <IsPackable>true</IsPackable>
+        <Description>linq2db integration for the Harmony CRDT library.</Description>
+        <PackageTags>$(PackageTags);linq2db</PackageTags>
     </PropertyGroup>
 
     <ItemGroup>

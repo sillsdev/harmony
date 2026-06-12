@@ -1,5 +1,7 @@
 # harmony
 
+[![NuGet version](https://img.shields.io/nuget/v/SIL.Harmony.svg?style=flat-square)](https://www.nuget.org/packages/SIL.Harmony/)
+
 A CRDT application library for C#, use it to build offline first applications.
 
 ## Install

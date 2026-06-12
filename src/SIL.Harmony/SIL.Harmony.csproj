@@ -3,6 +3,7 @@
     <PropertyGroup>
         <RootNamespace>SIL.Harmony</RootNamespace>
         <IsPackable>true</IsPackable>
+        <Description>CRDT application library for building offline-first apps with Entity Framework Core.</Description>
     </PropertyGroup>
 
     <ItemGroup>

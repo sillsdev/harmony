@@ -3,6 +3,7 @@
     <PropertyGroup>
         <RootNamespace>SIL.Harmony.Core</RootNamespace>
         <IsPackable>true</IsPackable>
+        <Description>Core types and interfaces for the Harmony CRDT library.</Description>
     </PropertyGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="SIL.Harmony"/>

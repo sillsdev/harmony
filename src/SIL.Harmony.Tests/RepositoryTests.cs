@@ -2,6 +2,7 @@ using SIL.Harmony.Db;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests.Mocks;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
@@ -342,5 +343,28 @@ public class RepositoryTests : IAsyncLifetime
 
         var previousCommit = await _repository.FindPreviousCommit(commit1);
         previousCommit.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task FilterExistingCommits_WorksWithMoreCommitsThanTheSqliteParameterLimit()
+    {
+        //lower the connection's variable limit so tripping it doesn't require such a slow test
+        //(currently 32,766 in the currently bundled SQLite) 
+        var connection = (SqliteConnection)_crdtDbContext.Database.GetDbConnection();
+        const int maxSqlVariables = 500;
+        SQLitePCL.raw.sqlite3_limit(connection.Handle, SQLitePCL.raw.SQLITE_LIMIT_VARIABLE_NUMBER, maxSqlVariables);
+
+        const int commitCount = 600;
+        commitCount.Should().BeGreaterThan(maxSqlVariables, "more commits must be filtered than SQLite allows variables");
+        var commits = Enumerable.Range(0, commitCount)
+            .Select(i => Commit(Guid.NewGuid(), Time(i, 0)))
+            .ToArray();
+        await _repository.AddCommits(commits.Take(2).ToArray());
+
+        var (oldestChange, newCommits) = await _repository.FilterExistingCommits(commits);
+
+        newCommits.Should().HaveCount(commitCount - 2);
+        oldestChange.Should().NotBeNull();
+        oldestChange.Id.Should().Be(commits[2].Id);
     }
 }

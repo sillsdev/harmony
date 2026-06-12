@@ -112,8 +112,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     public async Task<(Commit? oldestChange, Commit[] newCommits)> FilterExistingCommits(ICollection<Commit> commits)
     {
         Commit? oldestChange = null;
+        //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
+        var commitIds = commits.Select(c => c.Id);
         var commitIdsToExclude = await Commits
-            .Where(c => commits.Select(c => c.Id).Contains(c.Id))
+            .Where(c => EF.Parameter(commitIds).Contains(c.Id))
             .Select(c => c.Id)
             .ToArrayAsync();
         var newCommits = commits.ExceptBy(commitIdsToExclude, c => c.Id).Select(commit =>

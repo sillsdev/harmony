@@ -110,7 +110,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
             var commit = new Commit(commitId)
             {
                 ClientId = Guid.NewGuid(),
-                HybridDateTime = new HybridDateTime(dataModelTest.NextDate(), 0), 
+                HybridDateTime = new HybridDateTime(dataModelTest.NextDate(), 0),
                 ChangeEntities =
                 [
                     new ChangeEntity<IChange>()

@@ -49,11 +49,20 @@ public class ResourceService<TMetadata> where TMetadata : class
         await repo.AddLocalResource(localResource);
     }
 
+    /// <summary>
+    /// add and upload a local resource
+    /// </summary>
+    /// <param name="resourcePath">path to the resource on the local machine</param>
+    /// <param name="clientId">id of the client</param>
+    /// <param name="metadata">metadata for the resource, this metadata will be overridden by the remote service if returned by <see cref="IRemoteResourceService{TMetadata}.UploadResource"/></param>
+    /// <param name="id">id of the resource</param>
+    /// <param name="resourceService">service to upload the resource to the remote server</param>
+    /// <returns>the HarmonyResource created</returns>
     public async Task<HarmonyResource<TMetadata>> AddLocalResource(string resourcePath,
         Guid clientId,
         TMetadata? metadata = null,
         Guid id = default,
-        IRemoteResourceService? resourceService = null)
+        IRemoteResourceService<TMetadata>? resourceService = null)
     {
         ValidateResourcesSetup();
         var localResource = new LocalResource
@@ -62,12 +71,13 @@ public class ResourceService<TMetadata> where TMetadata : class
             LocalPath = Path.GetFullPath(resourcePath)
         };
         if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
-        UploadResult? uploadResult = null;
+        UploadResult<TMetadata>? uploadResult = null;
         if (resourceService is not null)
         {
             try
             {
                 uploadResult = await resourceService.UploadResource(localResource.Id, localResource.LocalPath);
+                metadata = uploadResult.Metadata ?? metadata;
             }
             catch (Exception e)
             {
@@ -113,7 +123,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         return await localResource.ToArrayAsync();
     }
 
-    public async Task UploadPendingResources(Guid clientId, IRemoteResourceService remoteResourceService)
+    public async Task UploadPendingResources(Guid clientId, IRemoteResourceService<TMetadata> remoteResourceService)
     {
         ValidateResourcesSetup();
         var pendingUploads = await ListResourcesPendingUpload();
@@ -135,7 +145,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         }
     }
 
-    public async Task UploadPendingResource(Guid resourceId, Guid clientId, IRemoteResourceService remoteResourceService)
+    public async Task UploadPendingResource(Guid resourceId, Guid clientId, IRemoteResourceService<TMetadata> remoteResourceService)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var localResource = await repo.GetLocalResource(resourceId) ??
@@ -145,7 +155,7 @@ public class ResourceService<TMetadata> where TMetadata : class
     }
 
     public async Task UploadPendingResource(LocalResource localResource, Guid clientId,
-        IRemoteResourceService remoteResourceService)
+        IRemoteResourceService<TMetadata> remoteResourceService)
     {
         ValidateResourcesSetup();
         var uploadResult = await remoteResourceService.UploadResource(localResource.Id, localResource.LocalPath);
@@ -164,7 +174,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         return remoteResources;
     }
 
-    public async Task<LocalResource> DownloadResource(Guid resourceId, IRemoteResourceService remoteResourceService)
+    public async Task<LocalResource> DownloadResource(Guid resourceId, IRemoteResourceService<TMetadata> remoteResourceService)
     {
         ValidateResourcesSetup();
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
@@ -176,7 +186,7 @@ public class ResourceService<TMetadata> where TMetadata : class
     }
 
     public async Task<LocalResource> DownloadResource(RemoteResource<TMetadata> remoteResource,
-        IRemoteResourceService remoteResourceService)
+        IRemoteResourceService<TMetadata> remoteResourceService)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         return await DownloadResourceInternal(repo, remoteResource, remoteResourceService);
@@ -184,7 +194,7 @@ public class ResourceService<TMetadata> where TMetadata : class
 
     private async Task<LocalResource> DownloadResourceInternal(CrdtRepository repo,
         RemoteResource<TMetadata> remoteResource,
-        IRemoteResourceService remoteResourceService)
+        IRemoteResourceService<TMetadata> remoteResourceService)
     {
         ValidateResourcesSetup();
         ArgumentNullException.ThrowIfNull(remoteResource.RemoteId);

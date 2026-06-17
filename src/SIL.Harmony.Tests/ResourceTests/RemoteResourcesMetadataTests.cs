@@ -22,7 +22,7 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
         new(fileName, "image/jpeg", 102400);
 
     [Fact]
-    public async Task CreateWithUpload_IncludesMetadata()
+    public async Task CreateWithUpload_UsesPassedMetadataWhenUploadReturnsNone()
     {
         var metadata = SampleMetadata();
         var localFile = CreateFile("image data");
@@ -32,6 +32,22 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
         var stored = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(resource.Id);
         stored!.Metadata.Should().BeEquivalentTo(metadata);
         (await _resourceService.GetResource(resource.Id))!.Metadata.Should().BeEquivalentTo(metadata);
+    }
+
+    [Fact]
+    public async Task CreateWithUpload_UploadMetadataOverridesPassedMetadata()
+    {
+        var passedMetadata = SampleMetadata("passed.jpg");
+        var uploadMetadata = new MediaMetadata("from-upload.jpg", "image/png", 204800);
+        var localFile = CreateFile("image data");
+        _remoteServiceMock.SetUploadMetadata(localFile, uploadMetadata);
+        var resource = await _resourceService.AddLocalResource(localFile, _localClientId, passedMetadata,
+            resourceService: _remoteServiceMock);
+        resource.Metadata.Should().BeEquivalentTo(uploadMetadata);
+        resource.Metadata.Should().NotBeEquivalentTo(passedMetadata);
+        var stored = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(resource.Id);
+        stored!.Metadata.Should().BeEquivalentTo(uploadMetadata);
+        (await _resourceService.GetResource(resource.Id))!.Metadata.Should().BeEquivalentTo(uploadMetadata);
     }
 
     [Fact]

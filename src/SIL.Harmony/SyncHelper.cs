@@ -5,7 +5,7 @@ internal static class SyncHelper
     public static async Task<SyncResults> SyncWithResourceUpload<TMetadata>(this DataModel localModel,
         ISyncable remoteModel,
         ResourceService<TMetadata> resourceService,
-        IRemoteResourceService remoteResourceService,
+        IRemoteResourceService<TMetadata> remoteResourceService,
         Guid localClientId) where TMetadata : class
     {
         await resourceService.UploadPendingResources(localClientId, remoteResourceService);

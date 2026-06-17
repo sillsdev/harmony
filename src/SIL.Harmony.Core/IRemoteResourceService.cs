@@ -5,7 +5,7 @@
 /// the remote Id is opaque to the CRDT lib and could be a URL or some other identifier provided by the backend
 /// the local path returned for the application code to use as required, it could be a URL if needed also.
 /// </summary>
-public interface IRemoteResourceService
+public interface IRemoteResourceService<TMetadata> where TMetadata : class
 {
     /// <summary>
     /// instructs application code to download a resource from the remote server
@@ -22,8 +22,8 @@ public interface IRemoteResourceService
     /// <param name="resourceId">id of the resource in the CRDT</param>
     /// <param name="localPath">full path to the resource on the local machine</param>
     /// <returns>an upload result with the remote id, the id will be stored and transmitted to other clients so they can also download the resource</returns>
-    Task<UploadResult> UploadResource(Guid resourceId, string localPath);
+    Task<UploadResult<TMetadata>> UploadResource(Guid resourceId, string localPath);
 }
 
 public record DownloadResult(string LocalPath);
-public record UploadResult(string RemoteId);
+public record UploadResult<TMetadata>(string RemoteId, TMetadata? Metadata = null) where TMetadata : class;

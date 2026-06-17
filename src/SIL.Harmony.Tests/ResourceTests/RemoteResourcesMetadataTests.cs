@@ -2,20 +2,25 @@
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Resource;
 using SIL.Harmony.Sample;
+
 namespace SIL.Harmony.Tests.ResourceTests;
+
 public class RemoteResourcesMetadataTests : DataModelTestBase
 {
     private RemoteServiceMock _remoteServiceMock = new();
     private ResourceService<MediaMetadata> _resourceService =>
         _services.GetRequiredService<ResourceService<MediaMetadata>>();
+
     private string CreateFile(string contents, [CallerMemberName] string fileName = "")
     {
         var filePath = Path.GetFullPath(fileName + ".txt");
         File.WriteAllText(filePath, contents);
         return filePath;
     }
+
     private static MediaMetadata SampleMetadata(string fileName = "photo.jpg") =>
         new(fileName, "image/jpeg", 102400);
+
     [Fact]
     public async Task CreateWithUpload_IncludesMetadata()
     {
@@ -28,6 +33,7 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
         stored!.Metadata.Should().BeEquivalentTo(metadata);
         (await _resourceService.GetResource(resource.Id))!.Metadata.Should().BeEquivalentTo(metadata);
     }
+
     [Fact]
     public async Task CreatePendingUpload_IncludesMetadata()
     {
@@ -39,6 +45,7 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
         var stored = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(resource.Id);
         stored!.Metadata.Should().BeEquivalentTo(metadata);
     }
+
     [Fact]
     public async Task AllResources_IncludesMetadata()
     {
@@ -48,6 +55,7 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
         var all = await _resourceService.AllResources();
         all.Should().ContainSingle().Which.Metadata.Should().BeEquivalentTo(metadata);
     }
+
     [Fact]
     public async Task SetResourceMetadata_UpdatesAndSyncs()
     {
@@ -63,6 +71,7 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
         (await remoteClient.DataModel.GetLatest<RemoteResource<MediaMetadata>>(resource.Id))!.Metadata
             .Should().BeEquivalentTo(updated);
     }
+
     [Fact]
     public async Task CreateWithoutMetadata_DeserializesWithNullMetadata()
     {

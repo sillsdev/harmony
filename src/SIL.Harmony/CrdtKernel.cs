@@ -4,7 +4,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Db;
+
 namespace SIL.Harmony;
+
 public static class CrdtKernel
 {
     public static IServiceCollection AddCrdtDataDbFactory<TContext>(this IServiceCollection services,
@@ -14,6 +16,7 @@ public static class CrdtKernel
         services.AddScoped<ICrdtDbContextFactory, CrdtDbContextFactory<TContext>>();
         return services;
     }
+
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
         Action<CrdtConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
     {
@@ -21,6 +24,7 @@ public static class CrdtKernel
         services.AddScoped<ICrdtDbContextFactory, CrdtDbContextNoDisposeFactory<TContext>>();
         return services;
     }
+
     public static IServiceCollection AddCrdtRemoteResources<TMetadata>(this IServiceCollection services,
         Action<CrdtConfig>? configureCrdt = null, string? cachePath = null)
         where TMetadata : class
@@ -38,6 +42,7 @@ public static class CrdtKernel
         ));
         return services;
     }
+
     public static IServiceCollection AddCrdtDataCore(this IServiceCollection services, Action<CrdtConfig> configureCrdt)
     {
         services.AddLogging();
@@ -57,6 +62,7 @@ public static class CrdtKernel
         ));
         return services;
     }
+
     public static HybridDateTimeProvider NewTimeProvider(IServiceProvider serviceProvider)
     {
         //todo, if this causes issues getting the order correct, we can update the last date time after the db is created

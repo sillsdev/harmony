@@ -93,16 +93,19 @@
       Relational:TableName: LocalResource
       Relational:ViewName: 
       Relational:ViewSchema: 
-  EntityType: RemoteResource
+  EntityType: RemoteResource<MediaMetadata>
     Properties: 
       Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
       DeletedAt (DateTimeOffset?)
+      Metadata (MediaMetadata)
+        Annotations: 
+          Relational:ColumnType: jsonb
       RemoteId (string)
       SnapshotId (no field, Guid?) Shadow FK Index
     Keys: 
       Id PK
     Foreign keys: 
-      RemoteResource {'SnapshotId'} -> ObjectSnapshot {'Id'} Unique SetNull
+      RemoteResource<MediaMetadata> {'SnapshotId'} -> ObjectSnapshot {'Id'} Unique SetNull
     Indexes: 
       SnapshotId Unique
     Annotations: 

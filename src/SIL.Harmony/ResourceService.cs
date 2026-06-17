@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
@@ -8,14 +8,15 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony;
 
-public class ResourceService
+public class ResourceService<TMetadata> where TMetadata : class
 {
     private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly DataModel _dataModel;
-    private readonly ILogger<ResourceService> _logger;
+    private readonly ILogger<ResourceService<TMetadata>> _logger;
 
-    internal ResourceService(CrdtRepositoryFactory crdtRepositoryFactory, IOptions<CrdtConfig> crdtConfig, DataModel dataModel, ILogger<ResourceService> logger)
+    internal ResourceService(CrdtRepositoryFactory crdtRepositoryFactory, IOptions<CrdtConfig> crdtConfig,
+        DataModel dataModel, ILogger<ResourceService<TMetadata>> logger)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _crdtConfig = crdtConfig;
@@ -30,7 +31,9 @@ public class ResourceService
 
     public async Task AddExistingRemoteResource(string resourcePath,
         Guid clientId,
-        Guid resourceId, string remoteId)
+        Guid resourceId,
+        string remoteId,
+        TMetadata? metadata = null)
     {
         ValidateResourcesSetup();
         var localResource = new LocalResource
@@ -40,13 +43,15 @@ public class ResourceService
         };
         if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
 
-        await _dataModel.AddChange(clientId, new CreateRemoteResourceChange(localResource.Id, remoteId));
+        await _dataModel.AddChange(clientId,
+            new CreateRemoteResourceChange<TMetadata>(localResource.Id, remoteId, metadata));
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.AddLocalResource(localResource);
     }
 
-    public async Task<HarmonyResource> AddLocalResource(string resourcePath,
+    public async Task<HarmonyResource<TMetadata>> AddLocalResource(string resourcePath,
         Guid clientId,
+        TMetadata? metadata = null,
         Guid id = default,
         IRemoteResourceService? resourceService = null)
     {
@@ -62,38 +67,48 @@ public class ResourceService
         {
             try
             {
-
                 uploadResult = await resourceService.UploadResource(localResource.Id, localResource.LocalPath);
             }
             catch (Exception e)
             {
-                _logger.LogError(e, "Error uploading resource {resourcePath}, resource will be marked as pending upload", localResource.LocalPath);
+                _logger.LogError(e, "Error uploading resource {resourcePath}, resource will be marked as pending upload",
+                    localResource.LocalPath);
             }
         }
 
         if (uploadResult is not null)
         {
-            await _dataModel.AddChange(clientId, new CreateRemoteResourceChange(localResource.Id, uploadResult.RemoteId));
+            await _dataModel.AddChange(clientId,
+                new CreateRemoteResourceChange<TMetadata>(localResource.Id, uploadResult.RemoteId, metadata));
         }
         else
         {
-            await _dataModel.AddChange(clientId, new CreateRemoteResourcePendingUploadChange(localResource.Id));
+            await _dataModel.AddChange(clientId,
+                new CreateRemoteResourcePendingUploadChange<TMetadata>(localResource.Id, metadata));
         }
 
         await _crdtRepositoryFactory.Execute(repo => repo.AddLocalResource(localResource));
-        return new HarmonyResource
+        return new HarmonyResource<TMetadata>
         {
             Id = localResource.Id,
             RemoteId = uploadResult?.RemoteId,
-            LocalPath = localResource.LocalPath
+            LocalPath = localResource.LocalPath,
+            Metadata = metadata
         };
+    }
+
+    public async Task SetResourceMetadata(Guid resourceId, Guid clientId, TMetadata metadata)
+    {
+        ValidateResourcesSetup();
+        await _dataModel.AddChange(clientId, new SetRemoteResourceMetadataChange<TMetadata>(resourceId, metadata));
     }
 
     public async Task<LocalResource[]> ListResourcesPendingUpload()
     {
         ValidateResourcesSetup();
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        var remoteResources = await repo.GetCurrentObjects<RemoteResource>().Where(r => r.RemoteId == null).ToArrayAsync();
+        var remoteResources = await repo.GetCurrentObjects<RemoteResource<TMetadata>>()
+            .Where(r => r.RemoteId == null).ToArrayAsync();
         var localResource = repo.LocalResourcesByIds(remoteResources.Select(r => r.Id));
         return await localResource.ToArrayAsync();
     }
@@ -108,8 +123,9 @@ public class ResourceService
         {
             foreach (var localResource in pendingUploads)
             {
-                var uploadResult = await remoteResourceService.UploadResource(localResource.Id, localResource.LocalPath);
-                changes.Add(new RemoteResourceUploadedChange(localResource.Id, uploadResult.RemoteId));
+                var uploadResult =
+                    await remoteResourceService.UploadResource(localResource.Id, localResource.LocalPath);
+                changes.Add(new RemoteResourceUploadedChange<TMetadata>(localResource.Id, uploadResult.RemoteId));
             }
         }
         finally
@@ -128,19 +144,21 @@ public class ResourceService
         await UploadPendingResource(localResource, clientId, remoteResourceService);
     }
 
-    public async Task UploadPendingResource(LocalResource localResource, Guid clientId, IRemoteResourceService remoteResourceService)
+    public async Task UploadPendingResource(LocalResource localResource, Guid clientId,
+        IRemoteResourceService remoteResourceService)
     {
         ValidateResourcesSetup();
         var uploadResult = await remoteResourceService.UploadResource(localResource.Id, localResource.LocalPath);
-        await _dataModel.AddChange(clientId, new RemoteResourceUploadedChange(localResource.Id, uploadResult.RemoteId));
+        await _dataModel.AddChange(clientId,
+            new RemoteResourceUploadedChange<TMetadata>(localResource.Id, uploadResult.RemoteId));
     }
 
-    public async Task<RemoteResource[]> ListResourcesPendingDownload()
+    public async Task<RemoteResource<TMetadata>[]> ListResourcesPendingDownload()
     {
         ValidateResourcesSetup();
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var localResourceIds = repo.LocalResourceIds();
-        var remoteResources = await repo.GetCurrentObjects<RemoteResource>()
+        var remoteResources = await repo.GetCurrentObjects<RemoteResource<TMetadata>>()
             .Where(r => r.RemoteId != null && !localResourceIds.Contains(r.Id))
             .ToArrayAsync();
         return remoteResources;
@@ -151,13 +169,13 @@ public class ResourceService
         ValidateResourcesSetup();
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         return await DownloadResourceInternal(repo,
-            await repo.GetCurrent<RemoteResource>(resourceId) ??
+            await repo.GetCurrent<RemoteResource<TMetadata>>(resourceId) ??
             throw new EntityNotFoundException("Unable to find remote resource"),
             remoteResourceService
         );
     }
 
-    public async Task<LocalResource> DownloadResource(RemoteResource remoteResource,
+    public async Task<LocalResource> DownloadResource(RemoteResource<TMetadata> remoteResource,
         IRemoteResourceService remoteResourceService)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
@@ -165,12 +183,13 @@ public class ResourceService
     }
 
     private async Task<LocalResource> DownloadResourceInternal(CrdtRepository repo,
-        RemoteResource remoteResource,
+        RemoteResource<TMetadata> remoteResource,
         IRemoteResourceService remoteResourceService)
     {
         ValidateResourcesSetup();
         ArgumentNullException.ThrowIfNull(remoteResource.RemoteId);
-        var downloadResult = await remoteResourceService.DownloadResource(remoteResource.RemoteId, _crdtConfig.Value.LocalResourceCachePath);
+        var downloadResult = await remoteResourceService.DownloadResource(remoteResource.RemoteId,
+            _crdtConfig.Value.LocalResourceCachePath);
         var localResource = new LocalResource
         {
             Id = remoteResource.Id,
@@ -185,28 +204,30 @@ public class ResourceService
         return await _crdtRepositoryFactory.Execute(repo => repo.GetLocalResource(resourceId));
     }
 
-    public async Task<HarmonyResource[]> AllResources()
+    public async Task<HarmonyResource<TMetadata>[]> AllResources()
     {
         return (await AllResourcesInternal()).ToArray();
     }
 
-    private async Task<IEnumerable<HarmonyResource>> AllResourcesInternal()
+    private async Task<IEnumerable<HarmonyResource<TMetadata>>> AllResourcesInternal()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        var remoteResources = await repo.GetCurrentObjects<RemoteResource>().ToArrayAsync();
+        var remoteResources = await repo.GetCurrentObjects<RemoteResource<TMetadata>>().ToArrayAsync();
         var localResources = await repo.LocalResources().ToArrayAsync();
-        return remoteResources.FullOuterJoin<RemoteResource, LocalResource, Guid, HarmonyResource>(localResources,
+        return remoteResources.FullOuterJoin<RemoteResource<TMetadata>, LocalResource, Guid, HarmonyResource<TMetadata>>(
+            localResources,
             r => r.Id,
             l => l.Id,
-            (r, l, id) => new HarmonyResource
+            (r, l, id) => new HarmonyResource<TMetadata>
             {
                 Id = id,
                 RemoteId = r?.RemoteId,
-                LocalPath = l?.LocalPath
+                LocalPath = l?.LocalPath,
+                Metadata = r?.Metadata
             });
     }
 
-    public async Task<HarmonyResource?> GetResource(Guid resourceId)
+    public async Task<HarmonyResource<TMetadata>?> GetResource(Guid resourceId)
     {
         var resources = await AllResourcesInternal();
         return resources.FirstOrDefault(r => r.Id == resourceId);
@@ -214,7 +235,7 @@ public class ResourceService
 
     public async Task DeleteResource(Guid clientId, Guid resourceId)
     {
-        await _dataModel.AddChange(clientId, new DeleteChange<RemoteResource>(resourceId));
+        await _dataModel.AddChange(clientId, new DeleteRemoteResourceChange<TMetadata>(resourceId));
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.DeleteLocalResource(resourceId);
     }

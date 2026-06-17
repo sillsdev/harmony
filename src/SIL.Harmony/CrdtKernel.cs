@@ -4,25 +4,38 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Db;
-
 namespace SIL.Harmony;
-
 public static class CrdtKernel
 {
     public static IServiceCollection AddCrdtDataDbFactory<TContext>(this IServiceCollection services,
         Action<CrdtConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
     {
-
         services.AddCrdtDataCore(configureCrdt);
         services.AddScoped<ICrdtDbContextFactory, CrdtDbContextFactory<TContext>>();
         return services;
     }
-
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
         Action<CrdtConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
     {
         services.AddCrdtDataCore(configureCrdt);
         services.AddScoped<ICrdtDbContextFactory, CrdtDbContextNoDisposeFactory<TContext>>();
+        return services;
+    }
+    public static IServiceCollection AddCrdtRemoteResources<TMetadata>(this IServiceCollection services,
+        Action<CrdtConfig>? configureCrdt = null, string? cachePath = null)
+        where TMetadata : class
+    {
+        services.Configure<CrdtConfig>(config =>
+        {
+            config.AddRemoteResourceEntity<TMetadata>(cachePath);
+            configureCrdt?.Invoke(config);
+        });
+        services.AddScoped<ResourceService<TMetadata>>(provider => new ResourceService<TMetadata>(
+            provider.GetRequiredService<CrdtRepositoryFactory>(),
+            provider.GetRequiredService<IOptions<CrdtConfig>>(),
+            provider.GetRequiredService<DataModel>(),
+            provider.GetRequiredService<ILogger<ResourceService<TMetadata>>>()
+        ));
         return services;
     }
     public static IServiceCollection AddCrdtDataCore(this IServiceCollection services, Action<CrdtConfig> configureCrdt)
@@ -42,16 +55,8 @@ public static class CrdtKernel
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
             provider.GetRequiredService<ILogger<DataModel>>()
         ));
-        //must use factory method because ResourceService constructor is internal
-        services.AddScoped<ResourceService>(provider => new ResourceService(
-            provider.GetRequiredService<CrdtRepositoryFactory>(),
-            provider.GetRequiredService<IOptions<CrdtConfig>>(),
-            provider.GetRequiredService<DataModel>(),
-            provider.GetRequiredService<ILogger<ResourceService>>()
-        ));
         return services;
     }
-
     public static HybridDateTimeProvider NewTimeProvider(IServiceProvider serviceProvider)
     {
         //todo, if this causes issues getting the order correct, we can update the last date time after the db is created
@@ -63,5 +68,3 @@ public static class CrdtKernel
         return ActivatorUtilities.CreateInstance<HybridDateTimeProvider>(serviceProvider, hybridDateTime);
     }
 }
-
-

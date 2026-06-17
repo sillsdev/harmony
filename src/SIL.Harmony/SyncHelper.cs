@@ -1,19 +1,16 @@
-using System.Text.Json;
-
+﻿using System.Text.Json;
 namespace SIL.Harmony;
-
 internal static class SyncHelper
 {
-    public static async Task<SyncResults> SyncWithResourceUpload(this DataModel localModel,
+    public static async Task<SyncResults> SyncWithResourceUpload<TMetadata>(this DataModel localModel,
         ISyncable remoteModel,
-        ResourceService resourceService,
+        ResourceService<TMetadata> resourceService,
         IRemoteResourceService remoteResourceService,
-        Guid localClientId)
+        Guid localClientId) where TMetadata : class
     {
         await resourceService.UploadPendingResources(localClientId, remoteResourceService);
         return await localModel.SyncWith(remoteModel);
     }
-
     /// <summary>
     /// simple sync example, each ISyncable could be over the wire or in memory
     /// prefer that remote is over the wire for the best performance, however they could both be remote
@@ -27,7 +24,6 @@ internal static class SyncHelper
     {
         if (!await localModel.ShouldSync() || !await remoteModel.ShouldSync()) return new SyncResults([], [], false);
         var localSyncState = await localModel.GetSyncState();
-
         var (missingFromLocal, remoteSyncState) = await remoteModel.GetChanges(localSyncState);
         //todo abort if local and remote heads are the same
         var (missingFromRemote, _) = await localModel.GetChanges(remoteSyncState);
@@ -37,14 +33,12 @@ internal static class SyncHelper
             missingFromLocal = Clone(missingFromLocal, serializerOptions);
             missingFromRemote = Clone(missingFromRemote, serializerOptions);
         }
-
         if (missingFromLocal.Length > 0)
             await localModel.AddRangeFromSync(missingFromLocal);
         if (missingFromRemote.Length > 0)
             await remoteModel.AddRangeFromSync(missingFromRemote);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
-
     internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions)
     {
         var localSyncState = await localModel.GetSyncState();
@@ -61,7 +55,6 @@ internal static class SyncHelper
             remoteSyncStates[i] = remoteSyncState;
             await localModel.AddRangeFromSync(missingFromLocal);
         }
-
         // Now the localModel has all the changes from all remotes, so all remotes will get the changes from the localModel as well as all other remotes
         for (var i = 0; i < remotes.Length; i++)
         {
@@ -76,7 +69,6 @@ internal static class SyncHelper
             await remote.AddRangeFromSync(missingFromRemote);
         }
     }
-
     private static T Clone<T>(this T source, JsonSerializerOptions options)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -85,3 +77,4 @@ internal static class SyncHelper
         return clone ?? throw new NullReferenceException("unable to clone object type " + typeof(T));
     }
 }
+

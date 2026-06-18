@@ -61,13 +61,22 @@ public class JsonSyncable : ISyncable
 
     public async Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads)
     {
-        var localState = await GetSyncState();
+        var heads = new ConcurrentDictionary<Guid, long>();
         var allCommits = new ConcurrentBag<Commit>();
-        await Parallel.ForEachAsync(localState.ClientHeads.Keys, async (clientId, ct) =>
+        var files = AllClientFiles().ToArray();
+        await Parallel.ForEachAsync(files, async (file, ct) =>
         {
-            await foreach (var commit in ReadAllCommitsAsync(FileForClientId(clientId), ct))
+            DateTimeOffset? latest = null;
+            await foreach (var commit in ReadAllCommitsAsync(file, ct))
+            {
+                if (latest is null || commit.HybridDateTime.DateTime > latest)
+                    latest = commit.HybridDateTime.DateTime;
                 allCommits.Add(commit);
+            }
+            if (latest is not null)
+                heads[ClientIdForFile(file)] = latest.Value.ToUnixTimeMilliseconds();
         });
+        var localState = new SyncState(new Dictionary<Guid, long>(heads));
         var missing = allCommits.GetMissingCommits<Commit, IChange>(localState, otherHeads).ToArray();
         return new ChangesResult<Commit>(missing, localState);
     }

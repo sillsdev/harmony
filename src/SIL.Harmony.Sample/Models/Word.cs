@@ -9,6 +9,7 @@ public class Word : IObjectBase<Word>
 
     public Guid Id { get; init; }
     public DateTimeOffset? DeletedAt { get; set; }
+    public Word? Antonym { get; set; }
     public Guid? AntonymId { get; set; }
     public Guid? ImageResourceId { get; set; }
     public List<Tag> Tags { get; set; } = new();
@@ -26,7 +27,11 @@ public class Word : IObjectBase<Word>
 
     public void RemoveReference(Guid id, CommitBase commit)
     {
-        if (AntonymId == id) AntonymId = null;
+        if (AntonymId == id)
+        {
+            AntonymId = null;
+            Antonym = null;
+        }
     }
 
     public IObjectBase Copy()
@@ -36,6 +41,7 @@ public class Word : IObjectBase<Word>
             Id = Id,
             Text = Text,
             Note = Note,
+            Antonym = Antonym,
             AntonymId = AntonymId,
             DeletedAt = DeletedAt,
             ImageResourceId = ImageResourceId,
@@ -46,7 +52,7 @@ public class Word : IObjectBase<Word>
     public override string ToString()
     {
         return
-            $"{nameof(Text)}: {Text}, {nameof(Id)}: {Id}, {nameof(Note)}: {Note}, {nameof(DeletedAt)}: {DeletedAt}, {nameof(AntonymId)}: {AntonymId}, {nameof(ImageResourceId)}: {ImageResourceId}" +
+            $"{nameof(Text)}: {Text}, {nameof(Id)}: {Id}, {nameof(Note)}: {Note}, {nameof(DeletedAt)}: {DeletedAt}, {nameof(Antonym)}: {Antonym}, {nameof(AntonymId)}: {AntonymId}, {nameof(ImageResourceId)}: {ImageResourceId}" +
             $", {nameof(Tags)}: {string.Join(", ", Tags.Select(t => t.Text))}";
     }
 }

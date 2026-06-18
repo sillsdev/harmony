@@ -30,6 +30,11 @@ internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbCo
         await using var repo = await CreateRepository();
         return await func(repo);
     }
+    public async Task Execute(Func<CrdtRepository, Task> func)
+    {
+        await using var repo = await CreateRepository();
+        await func(repo);
+    }
 
     public async ValueTask<T> Execute<T>(Func<CrdtRepository, ValueTask<T>> func)
     {
@@ -107,8 +112,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     public async Task<(Commit? oldestChange, Commit[] newCommits)> FilterExistingCommits(ICollection<Commit> commits)
     {
         Commit? oldestChange = null;
+        //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
+        var commitIds = commits.Select(c => c.Id);
         var commitIdsToExclude = await Commits
-            .Where(c => commits.Select(c => c.Id).Contains(c.Id))
+            .Where(c => EF.Parameter(commitIds).Contains(c.Id))
             .Select(c => c.Id)
             .ToArrayAsync();
         var newCommits = commits.ExceptBy(commitIdsToExclude, c => c.Id).Select(commit =>
@@ -202,7 +209,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return snapshots;
     }
 
-    public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, Commit[] pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
+    public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, SortedSet<Commit> pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
     {
         var snapshots = await CurrentSnapshots().Include(s => s.Commit).ToDictionaryAsync(s => s.EntityId);
 
@@ -212,7 +219,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         var newCommits = await CurrentCommits()
             .Include(c => c.ChangeEntities)
             .WhereAfter(lastCommit)
-            .ToArrayAsync();
+            .ToSortedSetAsync();
         return (snapshots, newCommits);
     }
 
@@ -294,16 +301,24 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
-        var projectedEntityIds = new HashSet<Guid>();
+        var latestProjectByEntityId = new Dictionary<Guid, (DateTimeOffset, long, Guid)>();
         foreach (var grouping in snapshots.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
         {
             foreach (var snapshot in grouping.DefaultOrderDescending())
             {
                 _dbContext.Add(snapshot);
-                if (projectedEntityIds.Add(snapshot.EntityId))
+                if (latestProjectByEntityId.TryGetValue(snapshot.EntityId, out var latestProjected))
                 {
-                    await ProjectSnapshot(snapshot);
+                    // there might be a deleted and un-deleted snapshot for the same entity in the same batch
+                    // in that case there's only a 50% chance that they're in the right order, so we need to explicitly only project the latest one
+                    if (snapshot.Commit.CompareKey.CompareTo(latestProjected) < 0)
+                    {
+                        continue;
+                    }
                 }
+                latestProjectByEntityId[snapshot.EntityId] = snapshot.Commit.CompareKey;
+
+                await ProjectSnapshot(snapshot);
             }
 
             try
@@ -313,7 +328,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             catch (DbUpdateException e)
             {
                 var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
-                var message = $"Error saving snapshots: {e.Message}{Environment.NewLine}{entries}";
+                var message = $"Error saving snapshots (deleted: {grouping.Key}): {e.Message}{Environment.NewLine}{entries}";
                 _logger.LogError(e, message);
                 throw new DbUpdateException(message, e);
             }
@@ -335,8 +350,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             //if we don't make a copy first then the entity will be tracked by the context and be modified
             //by future changes in the same session
             var entity = objectSnapshot.Entity.Copy().DbObject;
-            _dbContext.Add(entity)
-                .Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
+
+            var newEntry = _dbContext.Entry(entity);
+            // only mark this single entry as added, rather than the whole graph (this matches the update behaviour below)
+            newEntry.State = EntityState.Added;
+            newEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
         }
         else if (objectSnapshot.EntityIsDeleted) // delete
         {
@@ -362,16 +380,54 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return new CrdtRepository(_dbContext, _crdtConfig, _logger, excludeChangesAfterCommit);
     }
 
-    public async Task AddCommit(Commit commit)
+    /// <summary>
+    /// Adds a commit to the database. If the new commit was authored before any commits that
+    /// are already in the database, then history will be rewritten by updating those commit hashes.
+    /// </summary>
+    /// <returns>All added and updated commits.</returns>
+    public async Task<SortedSet<Commit>> AddCommit(Commit commit)
     {
-        _dbContext.Add(commit);
+        var updatedCommits = await AddNewCommits([commit]);
         await _dbContext.SaveChangesAsync();
+        return updatedCommits;
     }
 
-    public async Task AddCommits(IEnumerable<Commit> commits, bool save = true)
+    /// <summary>
+    /// Adds commits to the database. If any of the new commits were authored before any commits that
+    /// are already in the database, then history will be rewritten by updating those commit hashes.
+    /// </summary>
+    /// <returns>All added and updated commits.</returns>
+    public async Task<SortedSet<Commit>> AddCommits(IEnumerable<Commit> commits)
     {
-        _dbContext.AddRange(commits);
-        if (save) await _dbContext.SaveChangesAsync();
+        var updatedCommits = await AddNewCommits(commits);
+        await _dbContext.SaveChangesAsync();
+        return updatedCommits;
+    }
+
+    private async Task<SortedSet<Commit>> AddNewCommits(IEnumerable<Commit> newCommits)
+    {
+        if (newCommits is null || !newCommits.Any()) return [];
+        var oldestAddedCommit = newCommits.MinBy(c => c.CompareKey)
+            ?? throw new ArgumentException("Couldn't find oldest commit", nameof(newCommits));
+        var parentCommit = await FindPreviousCommit(oldestAddedCommit);
+        var existingCommitsToUpdate = await GetCommitsAfter(parentCommit);
+        var commitsToApply = existingCommitsToUpdate
+            .UnionBy(newCommits, c => c.Id)
+            .ToSortedSet();
+        //we're inserting commits in the past/rewriting history, so we need to update the previous commit hashes
+        UpdateCommitHashes(commitsToApply, parentCommit);
+        _dbContext.AddRange(newCommits);
+        return commitsToApply;
+    }
+
+    private void UpdateCommitHashes(SortedSet<Commit> commits, Commit? parentCommit = null)
+    {
+        var previousCommitHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
+        foreach (var commit in commits)
+        {
+            commit.SetParentHash(previousCommitHash);
+            previousCommitHash = commit.Hash;
+        }
     }
 
     public HybridDateTime? GetLatestDateTime()
@@ -388,6 +444,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     {
         _dbContext.Set<LocalResource>().Add(localResource);
         await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task DeleteLocalResource(Guid id)
+    {
+        await _dbContext.Set<LocalResource>().Where(r => r.Id == id).ExecuteDeleteAsync();
     }
 
     public IAsyncEnumerable<LocalResource> LocalResourcesByIds(IEnumerable<Guid> resourceIds)

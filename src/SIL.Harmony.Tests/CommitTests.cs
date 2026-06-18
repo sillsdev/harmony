@@ -114,17 +114,14 @@ public class CommitTests
         {
             ClientId = Guid.NewGuid(),
             HybridDateTime = Now(),
-            ChangeEntities =
-            {
-                new ChangeEntity<IChange>
-                {
-                    Change = change,
-                    Index = 0,
-                    CommitId = change.CommitId,
-                    EntityId = change.EntityId
-                }
-            }
         };
+        commit.ChangeEntities.Add(new ChangeEntity<IChange>
+        {
+            Change = change,
+            Index = 0,
+            CommitId = commit.Id,
+            EntityId = change.EntityId
+        });
         commit.SetParentHash(Convert.ToHexString(XxHash64.Hash(Guid.NewGuid().ToByteArray())));
         var json = JsonSerializer.Serialize(commit, serializerOptions);
         var commit2 = JsonSerializer.Deserialize<Commit>(json, serializerOptions);

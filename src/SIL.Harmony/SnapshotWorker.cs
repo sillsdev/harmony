@@ -31,12 +31,12 @@ internal class SnapshotWorker
     internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
         Dictionary<Guid, ObjectSnapshot> snapshots,
         CrdtRepository crdtRepository,
-        ICollection<Commit> commits,
+        SortedSet<Commit> commits,
         CrdtConfig crdtConfig)
     {
         //we need to pass in the snapshots because we expect it to be modified, this is intended.
         //if the constructor makes a copy in the future this will need to be updated
-        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig).ApplyCommitChanges(commits, false, null);
+        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig).ApplyCommitChanges(commits);
         return snapshots;
     }
 
@@ -49,12 +49,9 @@ internal class SnapshotWorker
     {
     }
 
-    public async Task UpdateSnapshots(Commit oldestAddedCommit, Commit[] newCommits)
+    public async Task UpdateSnapshots(SortedSet<Commit> commits)
     {
-        var previousCommit = await _crdtRepository.FindPreviousCommit(oldestAddedCommit);
-        var commits = await _crdtRepository.GetCommitsAfter(previousCommit);
-        await ApplyCommitChanges(commits.UnionBy(newCommits, c => c.Id), true, previousCommit?.Hash ?? CommitBase.NullParentHash);
-
+        await ApplyCommitChanges(commits);
         await _crdtRepository.AddSnapshots([
             .._rootSnapshots.Values,
             .._newIntermediateSnapshots,
@@ -62,45 +59,49 @@ internal class SnapshotWorker
         ]);
     }
 
-    private async ValueTask ApplyCommitChanges(IEnumerable<Commit> commits, bool updateCommitHash, string? previousCommitHash)
+    private async ValueTask ApplyCommitChanges(SortedSet<Commit> commits)
     {
         var intermediateSnapshots = new Dictionary<Guid, ObjectSnapshot>();
         var commitIndex = 0;
-        foreach (var commit in commits.DefaultOrder())
+        foreach (var commit in commits)
         {
-            if (updateCommitHash && previousCommitHash is not null)
-            {
-                //we're rewriting history, so we need to update the previous commit hash
-                commit.SetParentHash(previousCommitHash);
-            }
-
-            previousCommitHash = commit.Hash;
             commitIndex++;
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, commitIndex, intermediateSnapshots, this, _crdtConfig);
-                bool wasDeleted;
-                if (prevSnapshot is not null)
+
+                if (prevSnapshot is null)
                 {
+                    // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
+                    entity = await commitChange.Change.NewEntity(commit, changeContext);
+                }
+                else if (prevSnapshot.EntityIsDeleted && commitChange.Change.SupportsNewEntity())
+                {
+                    // revive deleted entity
+                    entity = await commitChange.Change.NewEntity(commit, changeContext);
+                }
+                else if (commitChange.Change.SupportsApplyChange())
+                {
+                    // update existing entity
                     entity = prevSnapshot.Entity.Copy();
-                    wasDeleted = entity.DeletedAt.HasValue;
+                    var wasDeleted = prevSnapshot.EntityIsDeleted;
+                    await commitChange.Change.ApplyChange(entity, changeContext);
+                    var deletedByChange = !wasDeleted && entity.DeletedAt.HasValue;
+                    if (deletedByChange)
+                    {
+                        await MarkDeleted(entity.Id, changeContext);
+                    }
                 }
                 else
                 {
-                    entity = await commitChange.Change.NewEntity(commit, changeContext);
-                    wasDeleted = false;
+                    // Entity already exists (and is not deleted)
+                    // and change does not support updating existing entities,
+                    // so do nothing.
+                    continue;
                 }
 
-                await commitChange.Change.ApplyChange(entity, changeContext);
-
-                var deletedByChange = !wasDeleted && entity.DeletedAt.HasValue;
-                if (deletedByChange)
-                {
-                    await MarkDeleted(entity.Id, changeContext);
-                }
-                
                 await GenerateSnapshotForEntity(entity, prevSnapshot, changeContext);
             }
             _newIntermediateSnapshots.AddRange(intermediateSnapshots.Values);

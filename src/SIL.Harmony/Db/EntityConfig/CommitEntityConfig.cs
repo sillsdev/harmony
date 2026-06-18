@@ -1,4 +1,5 @@
 using System.Text.Json;
+using EFCore.ComplexIndexes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
@@ -21,6 +22,13 @@ public class CommitEntityConfig : IEntityTypeConfiguration<Commit>
                     .HasColumnName("DateTime");
                 hybridEntity.Property(h => h.Counter).HasColumnName("Counter");
             });
+        // Supports Harmony's DefaultOrder (ASC) directly and DefaultOrderDescending via reverse scan.
+        // EF Core 10 cannot express indexes mixing ComplexProperty members + scalars (efcore#11336, targeted for 11).
+        // We use EFCore.ComplexIndexes instead. Both Harmony sorts are uniform-direction, so a single
+        // ASC index covers both — SQLite and Postgres reverse-scan it for the descending case.
+        builder.HasComplexCompositeIndex(
+            c => new { c.HybridDateTime.DateTime, c.HybridDateTime.Counter, c.Id },
+            indexName: "IX_Commits_DateTime_Counter_Id");
         builder.Property(c => c.Metadata)
             .HasColumnType("jsonb")
             .HasConversion(

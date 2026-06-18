@@ -83,7 +83,7 @@ public class ModelSnapshotTests : DataModelTestBase
 
     private Task ClearNonRootSnapshots()
     {
-        return DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync();
+        return DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
     }
 
     [Theory]
@@ -129,7 +129,7 @@ public class ModelSnapshotTests : DataModelTestBase
 
         var latestSnapshot = await DataModel.GetLatestSnapshotByObjectId(entityId);
         //delete snapshots so when we get at then we need to re-apply
-        await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync();
+        await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
 
         var computedModelSnapshots = await DataModel.GetSnapshotsAtCommit(latestSnapshot.Commit);
 

@@ -60,6 +60,21 @@ public static class QueryHelpers
         }
     }
 
+    public static SortedSet<T> ToSortedSet<T>(this IEnumerable<T> queryable) where T : CommitBase
+    {
+        return [.. queryable];
+    }
+
+    public static async Task<SortedSet<T>> ToSortedSetAsync<T>(this IQueryable<T> queryable) where T : CommitBase
+    {
+        var set = new SortedSet<T>();
+        await foreach (var item in queryable.AsAsyncEnumerable())
+        {
+            set.Add(item);
+        }
+        return set;
+    }
+
     public static IQueryable<T> DefaultOrder<T>(this IQueryable<T> queryable) where T: CommitBase
     {
         return queryable

@@ -1,4 +1,6 @@
 using SIL.Harmony.Sample.Models;
+using SIL.Harmony.Sample.Changes;
+using SIL.Harmony.Changes;
 using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Tests;
@@ -19,7 +21,7 @@ public class SnapshotTests : DataModelTestBase
     {
         var entityId = Guid.NewGuid();
         var commits = new List<Commit>();
-        for (int i = 0; i < 4; i++)
+        for (var i = 0; i < 4; i++)
         {
             commits.Add(await WriteChange(_localClientId,
                 new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(i),
@@ -29,7 +31,7 @@ public class SnapshotTests : DataModelTestBase
 
         await AddCommitsViaSync(commits);
 
-        var snapshots = await DbContext.Snapshots.ToArrayAsync();
+        var snapshots = await DbContext.Snapshots.ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().HaveCountGreaterThan(1);
         snapshots.Should().ContainSingle(s => s.IsRoot);
     }
@@ -39,7 +41,7 @@ public class SnapshotTests : DataModelTestBase
     {
         var entityId = Guid.NewGuid();
         var commits = new List<Commit>();
-        for (int i = 0; i < 6; i++)
+        for (var i = 0; i < 6; i++)
         {
             commits.Add(await WriteChange(_localClientId,
                 new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(i),
@@ -50,7 +52,7 @@ public class SnapshotTests : DataModelTestBase
         await AddCommitsViaSync(commits);
 
         var latestSnapshot = await DataModel.GetLatestSnapshotByObjectId(entityId);
-        var snapshots = await DbContext.Snapshots.ToArrayAsync();
+        var snapshots = await DbContext.Snapshots.ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().HaveCountGreaterThan(2);
         snapshots.Should().ContainSingle(s => s.Id == latestSnapshot.Id);
         snapshots.Should().ContainSingle(s => s.IsRoot);
@@ -117,7 +119,7 @@ public class SnapshotTests : DataModelTestBase
             ]);
 
         var word = await DataModel.QueryLatest<Word>(q => q.Include(w => w.Tags)
-            .Where(w => w.Id == wordId)).FirstOrDefaultAsync();
+            .Where(w => w.Id == wordId)).FirstOrDefaultAsync(TestContext.Current.CancellationToken);
         word.Should().NotBeNull();
         word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);
     }
@@ -135,8 +137,8 @@ public class SnapshotTests : DataModelTestBase
         var tagCreation = await WriteNextChange(TagWord(wordId, tagId));
         await WriteChangeBefore(tagCreation, TagWord(wordId, tagId));
 
-        var word = await DataModel.QueryLatest<Word>(q=> q.Include(w => w.Tags)
-            .Where(w => w.Id == wordId)).FirstOrDefaultAsync();
+        var word = await DataModel.QueryLatest<Word>(q => q.Include(w => w.Tags)
+            .Where(w => w.Id == wordId)).FirstOrDefaultAsync(TestContext.Current.CancellationToken);
         word.Should().NotBeNull();
         word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);
     }
@@ -149,13 +151,13 @@ public class SnapshotTests : DataModelTestBase
         await WriteNextChange(SetWord(entityId, "test1"));
         await WriteNextChange(SetWord(entityId, "test2"));
         await WriteNextChange(SetWord(entityId, "test3"));
-        var beforeSnapshotIds = await DbContext.Snapshots.Select(s => s.Id).ToArrayAsync();
-        var beforeRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync();
+        var beforeSnapshotIds = await DbContext.Snapshots.Select(s => s.Id).ToArrayAsync(TestContext.Current.CancellationToken);
+        var beforeRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync(TestContext.Current.CancellationToken);
 
         await DataModel.RegenerateSnapshots();
 
-        var afterRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync();
-        var afterSnapshotsIds = await DbContext.Snapshots.Select(s => s.Id).ToArrayAsync();
+        var afterRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync(TestContext.Current.CancellationToken);
+        var afterSnapshotsIds = await DbContext.Snapshots.Select(s => s.Id).ToArrayAsync(TestContext.Current.CancellationToken);
         afterRegenerate.Should().BeEquivalentTo(beforeRegenerate);
 
         //we probably won't have the same number of snapshots, which is ok. but none of the ids should be the same

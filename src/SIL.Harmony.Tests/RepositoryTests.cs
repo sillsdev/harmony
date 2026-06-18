@@ -2,6 +2,7 @@ using SIL.Harmony.Db;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests.Mocks;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
@@ -25,14 +26,14 @@ public class RepositoryTests : IAsyncLifetime
         _crdtDbContext = _services.GetRequiredService<SampleDbContext>();
     }
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         // Open the connection manually, otherwise it will be closed after each command, wiping out the in memory sqlite db
         await _crdtDbContext.Database.OpenConnectionAsync();
         await _crdtDbContext.Database.EnsureCreatedAsync();
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         await _repository.DisposeAsync();
         await _services.DisposeAsync();
@@ -115,7 +116,7 @@ public class RepositoryTests : IAsyncLifetime
             Commit(Guid.NewGuid(), commit1Time),
             Commit(Guid.NewGuid(), commit2Time),
         ]);
-        var commits = await _repository.CurrentCommits().ToArrayAsync();
+        var commits = await _repository.CurrentCommits().ToArrayAsync(TestContext.Current.CancellationToken);
         commits.Select(c => c.HybridDateTime).Should().ContainInConsecutiveOrder(commit1Time, commit2Time);
     }
 
@@ -128,7 +129,7 @@ public class RepositoryTests : IAsyncLifetime
             Commit(Guid.NewGuid(), commit1Time),
             Commit(Guid.NewGuid(), commit2Time),
         ]);
-        var commits = await _repository.CurrentCommits().ToArrayAsync();
+        var commits = await _repository.CurrentCommits().ToArrayAsync(TestContext.Current.CancellationToken);
         commits.Select(c => c.HybridDateTime).Should().ContainInConsecutiveOrder(commit1Time, commit2Time);
     }
 
@@ -141,7 +142,7 @@ public class RepositoryTests : IAsyncLifetime
             Commit(ids[0], commitTime),
             Commit(ids[1], commitTime),
         ]);
-        var commits = await _repository.CurrentCommits().ToArrayAsync();
+        var commits = await _repository.CurrentCommits().ToArrayAsync(TestContext.Current.CancellationToken);
         commits.Select(c => c.Id).Should().ContainInConsecutiveOrder(ids);
     }
 
@@ -149,7 +150,7 @@ public class RepositoryTests : IAsyncLifetime
     public async Task CurrentSnapshots_Works()
     {
         await _repository.AddSnapshots([Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0))]);
-        var snapshots = await _repository.CurrentSnapshots().ToArrayAsync();
+        var snapshots = await _repository.CurrentSnapshots().ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().ContainSingle();
     }
 
@@ -162,7 +163,7 @@ public class RepositoryTests : IAsyncLifetime
             Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
             Snapshot(entityId, Guid.NewGuid(), expectedTime),
         ]);
-        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(expectedTime);
     }
 
@@ -174,7 +175,7 @@ public class RepositoryTests : IAsyncLifetime
             Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
             Snapshot(entityId, Guid.NewGuid(), Time(1, 1)),
         ]);
-        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Counter.Should().Be(1);
     }
 
@@ -188,7 +189,7 @@ public class RepositoryTests : IAsyncLifetime
             Snapshot(entityId, ids[0], time),
             Snapshot(entityId, ids[1], time),
         ]);
-        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().ContainSingle().Which.Commit.Id.Should().Be(ids[1]);
     }
 
@@ -207,12 +208,12 @@ public class RepositoryTests : IAsyncLifetime
             snapshot2,
         ]);
 
-        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         var commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[2]);
 
         snapshots = await _repository.GetScopedRepository(snapshot2.Commit).CurrentSnapshots().Include(s => s.Commit)
-            .ToArrayAsync();
+            .ToArrayAsync(TestContext.Current.CancellationToken);
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
     }
@@ -232,11 +233,11 @@ public class RepositoryTests : IAsyncLifetime
             snapshot2,
         ]);
 
-        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         var commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[2]);
 
-        snapshots = await _repository.GetScopedRepository(snapshot2.Commit).CurrentSnapshots().Include(s => s.Commit).ToArrayAsync();
+        snapshots = await _repository.GetScopedRepository(snapshot2.Commit).CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
     }
@@ -342,5 +343,28 @@ public class RepositoryTests : IAsyncLifetime
 
         var previousCommit = await _repository.FindPreviousCommit(commit1);
         previousCommit.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task FilterExistingCommits_WorksWithMoreCommitsThanTheSqliteParameterLimit()
+    {
+        //lower the connection's variable limit so tripping it doesn't require such a slow test
+        //(currently 32,766 in the currently bundled SQLite) 
+        var connection = (SqliteConnection)_crdtDbContext.Database.GetDbConnection();
+        const int maxSqlVariables = 500;
+        SQLitePCL.raw.sqlite3_limit(connection.Handle, SQLitePCL.raw.SQLITE_LIMIT_VARIABLE_NUMBER, maxSqlVariables);
+
+        const int commitCount = 600;
+        commitCount.Should().BeGreaterThan(maxSqlVariables, "more commits must be filtered than SQLite allows variables");
+        var commits = Enumerable.Range(0, commitCount)
+            .Select(i => Commit(Guid.NewGuid(), Time(i, 0)))
+            .ToArray();
+        await _repository.AddCommits(commits.Take(2).ToArray());
+
+        var (oldestChange, newCommits) = await _repository.FilterExistingCommits(commits);
+
+        newCommits.Should().HaveCount(commitCount - 2);
+        oldestChange.Should().NotBeNull();
+        oldestChange.Id.Should().Be(commits[2].Id);
     }
 }

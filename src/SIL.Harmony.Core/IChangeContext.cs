@@ -12,7 +12,7 @@ public interface IChangeContext
     }
 
     public async ValueTask<bool> IsObjectDeleted(Guid entityId) => (await GetSnapshot(entityId))?.EntityIsDeleted ?? true;
-    internal IObjectBase Adapt(object obj);
+    internal IObjectBase Adapt(object obj) => throw new NotImplementedException(); /* allow mocking IChangeContext */
     IAsyncEnumerable<object> GetObjectsReferencing(Guid entityId, bool includeDeleted = false);
     IAsyncEnumerable<T> GetObjectsOfType<T>(string jsonTypeName, bool includeDeleted = false) where T : class;
 }

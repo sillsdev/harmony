@@ -3,12 +3,9 @@ using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Resource;
 
-public class CreateRemoteResourcePendingUploadChange: CreateChange<RemoteResource>, IPolyType
+public class CreateRemoteResourcePendingUploadChange(Guid entityId)
+    : CreateChange<RemoteResource>(entityId), IPolyType
 {
-    public CreateRemoteResourcePendingUploadChange(Guid resourceId) : base(resourceId)
-    {
-    }
-
     public override ValueTask<RemoteResource> NewEntity(Commit commit, IChangeContext context)
     {
         return ValueTask.FromResult(new RemoteResource

@@ -11,7 +11,6 @@ using JetBrains.Profiler.SelfApi;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
-using Xunit.Abstractions;
 
 namespace SIL.Harmony.Tests;
 
@@ -78,7 +77,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
     public async Task SimpleAddChangePerformanceTest()
     {
         //disable validation because it's slow
-        var dataModelTest = new DataModelTestBase(alwaysValidate: false);
+        var dataModelTest = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
         // warmup the code, this causes jit to run and keeps our actual test below consistent
         await dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity 0"));
         var runtimeAddChange1Snapshot = await MeasureTime(() => dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity 1")).AsTask());
@@ -87,6 +86,9 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         //fork the database, this creates a new DbContext which does not have a cache of all the snapshots created above
         //that cache causes DetectChanges (used by SaveChanges) to be slower than it should be
         dataModelTest = dataModelTest.ForkDatabase(false);
+        //warmup the forked context too — it has a fresh ServiceProvider/DbContext/DataModel,
+        //so the first WriteNextChange pays EF Core query-compilation cost that the measurement shouldn't include
+        await dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity warmup"));
 
         await StartTrace();
         var runtimeAddChange10000Snapshots = await MeasureTime(() => dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity1")).AsTask());
@@ -108,7 +110,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
             var commit = new Commit(commitId)
             {
                 ClientId = Guid.NewGuid(),
-                HybridDateTime = new HybridDateTime(dataModelTest.NextDate(), 0), 
+                HybridDateTime = new HybridDateTime(dataModelTest.NextDate(), 0),
                 ChangeEntities =
                 [
                     new ChangeEntity<IChange>()

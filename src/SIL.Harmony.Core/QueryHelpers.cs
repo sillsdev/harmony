@@ -31,29 +31,24 @@ public static class QueryHelpers
         if (includeChangeEntities) commits = commits.Include(c => c.ChangeEntities);
         foreach (var (clientId, localTimestamp) in localState.ClientHeads)
         {
-            //client is new to the other history
-            if (!remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp))
+            long? remoteTimestamp = remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp)
+                ? otherTimestamp
+                : null;
+            var clientCommits = commits.Where(c => c.ClientId == clientId);
+            if (remoteTimestamp is null)
             {
-                //todo slow, it would be better if we could query on client id and get latest changes per client
-                await foreach (var commit in commits
-                                   .DefaultOrder()
-                                   .Where(c => c.ClientId == clientId)
-                                   .AsAsyncEnumerable())
-                {
+                await foreach (var commit in clientCommits.DefaultOrder().AsAsyncEnumerable())
                     yield return commit;
-                }
             }
-            //client has newer history than the other history
-            else if (localTimestamp > otherTimestamp)
+            else if (localTimestamp > remoteTimestamp)
             {
-                var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(otherTimestamp);
-                //todo even slower because we need to filter out changes that are already in the other history
-                await foreach (var commit in commits
+                var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(remoteTimestamp.Value);
+                await foreach (var commit in clientCommits
+                                   .Where(c => c.HybridDateTime.DateTime > otherDt)
                                    .DefaultOrder()
-                                   .Where(c => c.ClientId == clientId && c.HybridDateTime.DateTime > otherDt)
                                    .AsAsyncEnumerable())
                 {
-                    if (commit.DateTime.ToUnixTimeMilliseconds() > otherTimestamp)
+                    if (commit.DateTime.ToUnixTimeMilliseconds() > remoteTimestamp)
                         yield return commit;
                 }
             }
@@ -73,6 +68,47 @@ public static class QueryHelpers
             set.Add(item);
         }
         return set;
+    }
+
+    public static IEnumerable<TCommit> GetMissingCommits<TCommit, TChange>(
+        this IEnumerable<TCommit> commits,
+        SyncState localState,
+        SyncState remoteState) where TCommit : CommitBase<TChange>
+    {
+        foreach (var (clientId, localTimestamp) in localState.ClientHeads)
+        {
+            long? remoteTimestamp = remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp)
+                ? otherTimestamp
+                : null;
+            foreach (var commit in GetMissingCommitsForClient(
+                         commits.Where(c => c.ClientId == clientId), localTimestamp, remoteTimestamp))
+            {
+                yield return commit;
+            }
+        }
+    }
+
+    private static IEnumerable<TCommit> GetMissingCommitsForClient<TCommit>(
+        IEnumerable<TCommit> clientCommits,
+        long localTimestamp,
+        long? remoteTimestamp) where TCommit : CommitBase
+    {
+        if (remoteTimestamp is null)
+        {
+            foreach (var commit in clientCommits.DefaultOrder())
+                yield return commit;
+        }
+        else if (localTimestamp > remoteTimestamp)
+        {
+            var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(remoteTimestamp.Value);
+            foreach (var commit in clientCommits
+                         .Where(c => c.HybridDateTime.DateTime > otherDt)
+                         .DefaultOrder())
+            {
+                if (commit.DateTime.ToUnixTimeMilliseconds() > remoteTimestamp)
+                    yield return commit;
+            }
+        }
     }
 
     public static IQueryable<T> DefaultOrder<T>(this IQueryable<T> queryable) where T: CommitBase

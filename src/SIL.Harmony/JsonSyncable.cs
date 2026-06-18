@@ -1,132 +1,141 @@
 using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
 using System.Text.Json;
-using System.Xml.Serialization;
 using Microsoft.Extensions.Logging;
-using Nito.Disposables.Internals;
+using Nito.AsyncEx;
+using SIL.Harmony.Changes;
 
 namespace SIL.Harmony;
 
 public class JsonSyncable : ISyncable
 {
-    DirectoryInfo RootDir { get; init; }
-    ILogger Logger { get; init; }
+    private readonly DirectoryInfo _rootDir;
+    private readonly JsonSerializerOptions _serializerOptions;
+    private readonly ILogger _logger;
+    private static readonly ConcurrentDictionary<Guid, AsyncLock> ClientLocks = new();
 
     public const string FilenamePrefix = "client_";
     public const string FilenameExtension = ".json";
 
-    public JsonSyncable(DirectoryInfo dir, ILogger logger)
+    public JsonSyncable(DirectoryInfo dir, JsonSerializerOptions serializerOptions, ILogger logger)
     {
         if (!dir.Exists) dir.Create();
-        RootDir = dir;
-        Logger = logger;
+        _rootDir = dir;
+        _serializerOptions = serializerOptions;
+        _logger = logger;
     }
 
-    public Task AddRangeFromSync(IEnumerable<Commit> commits)
+    public async Task AddRangeFromSync(IEnumerable<Commit> commits)
     {
-        // TODO: Is it better to initialize this *outside* the Task.Run, or *inside* it?
-        var clientFiles = new ConcurrentDictionary<Guid, FileInfo>();
-        return Task.Run(() => {
-            foreach (var commit in commits)
+        var commitArray = commits.ToArray();
+        if (commitArray.Length == 0) return;
+
+        var groups = commitArray.GroupBy(c => c.ClientId).ToArray();
+        await Parallel.ForEachAsync(groups, async (group, ct) =>
+        {
+            using (await ClientLocks.GetOrAdd(group.Key, _ => new AsyncLock()).LockAsync())
             {
-                var file = clientFiles.GetOrAdd(commit.ClientId, FileForClientId);
-                // TODO: Append this commit and the FileInfo to a set of concurrent queues, one for each client ID, and spool off one thread per client ID that will pull from its queue and write the commits one at a time to its own individual file
-                // For now, we instead do it serially with the code below
-                using var stream = file.AppendText();
-                WriteCommit(stream, commit);
+                var file = FileForClientId(group.Key);
+                var existingIds = await GetExistingCommitIdsAsync(file, ct);
+                var newCommits = group.Where(c => existingIds.Add(c.Id)).DefaultOrder().ToArray();
+                if (newCommits.Length == 0) return;
+
+                await using var stream = new StreamWriter(file.FullName, append: true);
+                foreach (var commit in newCommits)
+                    WriteCommit(stream, commit);
             }
         });
     }
 
-    public static Commit? LatestCommit(IEnumerable<Commit> commits)
-    {
-        return commits.MaxBy(c => c.HybridDateTime.DateTime);
-    }
-
-    public static DateTimeOffset LatestCommitDate(IEnumerable<Commit> commits)
-    {
-        return commits.Select(c => c.HybridDateTime.DateTime).Max(); // TODO: What will this return if no commits? DateTimeOffset.Min or something? Need to verify
-    }
-
-    public static async Task<DateTimeOffset> LatestCommitDateAsync(IAsyncEnumerable<Commit?> commits)
-    {
-        return await commits.Where(c => c is not null).MaxAsync(c => c!.HybridDateTime.DateTime); // TODO: What will this return if no commits? DateTimeOffset.Min or something? Need to verify
-    }
-
-    public Task<DateTimeOffset> LatestCommitDateForClient(Guid clientId)
-    {
-        var file = FileForClientId(clientId);
-        return LatestCommitDateForFile(file);
-        // TODO: Clean up these methods once I see which ones I'm going to need and which ones I won't
-    }
-
-    public Task<DateTimeOffset> LatestCommitDateForFile(FileInfo file)
-    {
-        var commits = ReadCommits(file);
-        return LatestCommitDateAsync(commits);
-        // NOTE: This parses the whole file just looking for the latest date, and later we're going to parse it again looking for commits.
-        // TODO: Find a better way to store this; maybe while commits are being written, the latest date is calculated and the file's modification date is set, after closing, to be that date? Probably not reliable enough.
-        // Or perhaps we keep a second per-client file that contains info like latest commit date and so on.
-    }
-
-    private IEnumerable<FileInfo> AllClientFiles()
-    {
-        return RootDir.EnumerateFiles($"{FilenamePrefix}*{FilenameExtension}");
-    }
-
-    private IEnumerable<Guid> AllKnownClientIds()
-    {
-        return AllClientFiles().Select(ClientIdForFile);
-    }
-
     public async Task<SyncState> GetSyncState()
     {
-        var clientIds = AllKnownClientIds().ToArray();
-        var dict = clientIds.ToDictionary(id => id, async id => (await LatestCommitDateForClient(id)).ToUnixTimeMilliseconds());
-        // TODO: Now we have a dict of Guid,Task<long> but we need to await each one
-        return new SyncState(dict);
+        var heads = new ConcurrentDictionary<Guid, long>();
+        await Parallel.ForEachAsync(AllClientFiles(), async (file, ct) =>
+        {
+            var ts = await GetHeadTimestampAsync(file, ct);
+            if (ts is not null)
+                heads[ClientIdForFile(file)] = ts.Value.ToUnixTimeMilliseconds();
+        });
+        return new SyncState(new Dictionary<Guid, long>(heads));
     }
 
-    public Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads)
+    public async Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads)
     {
-        return Task.FromResult(ChangesResult<Commit>.Empty);
+        var localState = await GetSyncState();
+        var allCommits = new ConcurrentBag<Commit>();
+        await Parallel.ForEachAsync(localState.ClientHeads.Keys, async (clientId, ct) =>
+        {
+            await foreach (var commit in ReadAllCommitsAsync(FileForClientId(clientId), ct))
+                allCommits.Add(commit);
+        });
+        var missing = allCommits.GetMissingCommits<Commit, IChange>(localState, otherHeads).ToArray();
+        return new ChangesResult<Commit>(missing, localState);
     }
 
     public Task<SyncResults> SyncWith(ISyncable remoteModel)
     {
-        return Task.FromResult(new SyncResults([], [], false));
+        return SyncHelper.SyncWith(this, remoteModel, _serializerOptions);
     }
 
     public Task SyncMany(ISyncable[] remotes)
     {
-        return Task.CompletedTask;
+        return SyncHelper.SyncMany(this, remotes, _serializerOptions);
     }
 
     public ValueTask<bool> ShouldSync()
     {
-        return new ValueTask<bool>(false);
+        return new ValueTask<bool>(true);
+    }
+
+    private IEnumerable<FileInfo> AllClientFiles()
+    {
+        return _rootDir.EnumerateFiles($"{FilenamePrefix}*{FilenameExtension}");
     }
 
     private FileInfo FileForClientId(Guid clientId)
     {
-        var path = Path.Join(RootDir.FullName, $"{FilenamePrefix}{clientId}{FilenameExtension}");
+        var path = Path.Join(_rootDir.FullName, $"{FilenamePrefix}{clientId}{FilenameExtension}");
         return new FileInfo(path);
     }
 
-    private Guid ClientIdForFile(FileInfo clientIdFile)
+    private static Guid ClientIdForFile(FileInfo clientIdFile)
     {
         var id = clientIdFile.Name[FilenamePrefix.Length..^FilenameExtension.Length];
         return Guid.Parse(id);
     }
 
-    private static void WriteCommit(StreamWriter stream, Commit commit)
+    private async IAsyncEnumerable<Commit> ReadAllCommitsAsync(FileInfo file, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        JsonSerializer.Serialize(stream.BaseStream, commit, JsonSerializerOptions.Web);
-        stream.Write('\n'); // Don't use WriteLine() as that could send "\r\n" on Windows
+        if (!file.Exists || file.Length == 0)
+            yield break;
+
+        await using var stream = file.OpenRead();
+        using var reader = new StreamReader(stream);
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (string.IsNullOrWhiteSpace(line))
+                continue;
+            var commit = JsonSerializer.Deserialize<Commit>(line, _serializerOptions);
+            if (commit is not null)
+                yield return commit;
+        }
     }
 
-    private static IAsyncEnumerable<Commit?> ReadCommits(FileInfo file)
+    private async Task<DateTimeOffset?> GetHeadTimestampAsync(FileInfo file, CancellationToken cancellationToken)
     {
-        return JsonSerializer.DeserializeAsyncEnumerable<Commit>(file.OpenRead(), topLevelValues: true, JsonSerializerOptions.Web);
-        // TODO: Find out if DeserializeAsyncEnumerable disposes of the Stream on completion, otherwise we need to do it in here
+        return await ReadAllCommitsAsync(file, cancellationToken).MaxAsync(c => (DateTimeOffset?)c.HybridDateTime.DateTime, cancellationToken);
+    }
+
+    private async Task<HashSet<Guid>> GetExistingCommitIdsAsync(FileInfo file, CancellationToken cancellationToken)
+    {
+        return await ReadAllCommitsAsync(file, cancellationToken).Select(c => c.Id)
+            .ToHashSetAsync(cancellationToken: cancellationToken);
+    }
+
+    private void WriteCommit(StreamWriter stream, Commit commit)
+    {
+        var json = JsonSerializer.Serialize(commit, _serializerOptions);
+        stream.WriteLine(json);
     }
 }

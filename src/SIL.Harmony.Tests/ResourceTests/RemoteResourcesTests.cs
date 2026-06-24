@@ -2,20 +2,23 @@
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Resource;
 using SIL.Harmony.Sample;
+
 namespace SIL.Harmony.Tests.ResourceTests;
+
 public class RemoteResourcesTests : DataModelTestBase
 {
     private RemoteServiceMock _remoteServiceMock = new();
-    private ResourceService<MediaMetadata> _resourceService => _services.GetRequiredService<ResourceService<MediaMetadata>>();
-    public RemoteResourcesTests()
-    {
-    }
+
+    private ResourceService<MediaMetadata> _resourceService =>
+        _services.GetRequiredService<ResourceService<MediaMetadata>>();
+
     private string CreateFile(string contents, [CallerMemberName] string fileName = "")
     {
         var filePath = Path.GetFullPath(fileName + ".txt");
         File.WriteAllText(filePath, contents);
         return filePath;
     }
+
     private async Task<(Guid resourceId, string remoteId)> SetupRemoteResource(string fileContents)
     {
         var remoteId = _remoteServiceMock.CreateRemoteResource(fileContents);
@@ -23,13 +26,16 @@ public class RemoteResourcesTests : DataModelTestBase
         await DataModel.AddChange(_localClientId, new CreateRemoteResourceChange<MediaMetadata>(resourceId, remoteId));
         return (resourceId, remoteId);
     }
-    private async Task<(Guid resourceId, string localPath)> SetupLocalFile(string contents, [CallerMemberName] string fileName = "")
+
+    private async Task<(Guid resourceId, string localPath)> SetupLocalFile(string contents,
+        [CallerMemberName] string fileName = "")
     {
         var file = CreateFile(contents, fileName);
         //because resource service is null the file is not uploaded
         var crdtResource = await _resourceService.AddLocalResource(file, _localClientId, resourceService: null);
         return (crdtResource.Id, file);
     }
+
     [Fact]
     public async Task CreatingAResourceResultsInPendingLocalResources()
     {
@@ -39,6 +45,7 @@ public class RemoteResourcesTests : DataModelTestBase
 
         pending.Should().ContainSingle().Which.LocalPath.Should().Be(file);
     }
+
     [Fact]
     public async Task ResourcesNotLocalShouldShowUpAsNotDownloaded()
     {
@@ -50,13 +57,15 @@ public class RemoteResourcesTests : DataModelTestBase
         remoteResource.RemoteId.Should().Be(remoteId);
         remoteResource.Id.Should().Be(resourceId);
     }
+
     [Fact]
     public async Task CanUploadFileToRemote()
     {
         var fileContents = "resource";
         var localFile = CreateFile(fileContents);
         //act
-        var crdtResource = await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
+        var crdtResource =
+            await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
 
         var resource = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(crdtResource.Id);
         ArgumentNullException.ThrowIfNull(resource);
@@ -65,6 +74,7 @@ public class RemoteResourcesTests : DataModelTestBase
         var pendingUpload = await _resourceService.ListResourcesPendingUpload();
         pendingUpload.Should().BeEmpty();
     }
+
     [Fact]
     public async Task IfUploadingFailsTheResourceIsStillAddedAsPendingUpload()
     {
@@ -73,7 +83,8 @@ public class RemoteResourcesTests : DataModelTestBase
         //todo setup a mock that throws an exception when uploading
         _remoteServiceMock.ThrowOnUpload(localFile);
         //act
-        var crdtResource = await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
+        var crdtResource =
+            await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: _remoteServiceMock);
         var harmonyResource = await _resourceService.GetResource(crdtResource.Id);
         harmonyResource.Should().NotBeNull();
         harmonyResource.Id.Should().Be(crdtResource.Id);
@@ -82,6 +93,18 @@ public class RemoteResourcesTests : DataModelTestBase
         var pendingUpload = await _resourceService.ListResourcesPendingUpload();
         pendingUpload.Should().ContainSingle().Which.Id.Should().Be(crdtResource.Id);
     }
+
+    [Fact]
+    public async Task CanUploadAPendingResource()
+    {
+        var fileContents = "resource";
+        var localFile = CreateFile(fileContents);
+        var crdtResource = await _resourceService.AddLocalResource(localFile, _localClientId, resourceService: null);
+        //act
+        await _resourceService.UploadPendingResource(crdtResource.Id, _localClientId, _remoteServiceMock);
+        _remoteServiceMock.ListRemoteFiles().Select(Path.GetFileName).Should().Contain(Path.GetFileName(localFile));
+    }
+
     [Fact]
     public async Task WillUploadMultiplePendingLocalFilesAtOnce()
     {
@@ -95,6 +118,7 @@ public class RemoteResourcesTests : DataModelTestBase
             .Should()
             .Contain(["file1.txt", "file2.txt"]);
     }
+
     [Fact]
     public async Task CanDownloadFileFromRemote()
     {
@@ -104,11 +128,13 @@ public class RemoteResourcesTests : DataModelTestBase
         var localResource = await _resourceService.DownloadResource(resourceId, _remoteServiceMock);
 
         localResource.Id.Should().Be(resourceId);
-        var actualFileContents = await File.ReadAllTextAsync(localResource.LocalPath, TestContext.Current.CancellationToken);
+        var actualFileContents =
+            await File.ReadAllTextAsync(localResource.LocalPath, TestContext.Current.CancellationToken);
         actualFileContents.Should().Be(fileContents);
         var pendingDownloads = await _resourceService.ListResourcesPendingDownload();
         pendingDownloads.Should().BeEmpty();
     }
+
     [Fact]
     public async Task CanGetALocalResourceGivenAnId()
     {
@@ -121,6 +147,7 @@ public class RemoteResourcesTests : DataModelTestBase
         localResource.Should().NotBeNull();
         localResource!.LocalPath.Should().Be(file);
     }
+
     [Fact]
     public async Task LocalResourceIsNullIfNotDownloaded()
     {
@@ -128,30 +155,33 @@ public class RemoteResourcesTests : DataModelTestBase
         var localResource = await _resourceService.GetLocalResource(resourceId);
         localResource.Should().BeNull();
     }
+
     [Fact]
     public async Task CanListAllResources()
     {
         var (localResourceId, localResourcePath) = await SetupLocalFile("localOnly", "localOnly.txt");
         var (remoteResourceId, remoteId) = await SetupRemoteResource("remoteOnly");
-        var localAndRemoteResource = await _resourceService.AddLocalResource(CreateFile("localAndRemove"), _localClientId, resourceService: _remoteServiceMock);
+        var localAndRemoteResource = await _resourceService.AddLocalResource(CreateFile("localAndRemove"),
+            _localClientId, resourceService: _remoteServiceMock);
         var crdtResources = await _resourceService.AllResources();
         crdtResources.Should().BeEquivalentTo(
-            [
-                new HarmonyResource<MediaMetadata>
-                {
-                    Id = localResourceId,
-                    LocalPath = localResourcePath,
-                    RemoteId = null
-                },
-                new HarmonyResource<MediaMetadata>
-                {
-                    Id = remoteResourceId,
-                    LocalPath = null, 
-                    RemoteId = remoteId
-                },
-                localAndRemoteResource
-            ]);
+        [
+            new HarmonyResource<MediaMetadata>
+            {
+                Id = localResourceId,
+                LocalPath = localResourcePath,
+                RemoteId = null
+            },
+            new HarmonyResource<MediaMetadata>
+            {
+                Id = remoteResourceId,
+                LocalPath = null,
+                RemoteId = remoteId
+            },
+            localAndRemoteResource
+        ]);
     }
+
     [Fact]
     public async Task CanGetAResourceGivenAnId()
     {
@@ -166,15 +196,17 @@ public class RemoteResourcesTests : DataModelTestBase
             LocalPath = localResourcePath,
             RemoteId = null
         });
-        (await _resourceService.GetResource(remoteResourceId)).Should().BeEquivalentTo(new HarmonyResource<MediaMetadata>
-        {
-            Id = remoteResourceId,
-            LocalPath = null,
-            RemoteId = remoteId
-        });
+        (await _resourceService.GetResource(remoteResourceId)).Should().BeEquivalentTo(
+            new HarmonyResource<MediaMetadata>
+            {
+                Id = remoteResourceId,
+                LocalPath = null,
+                RemoteId = remoteId
+            });
         (await _resourceService.GetResource(localAndRemoteResource.Id)).Should().BeEquivalentTo(localAndRemoteResource);
         (await _resourceService.GetResource(Guid.NewGuid())).Should().BeNull();
     }
+
     [Fact]
     public async Task DeleteResource_RemovesLocalResource()
     {
@@ -188,7 +220,9 @@ public class RemoteResourcesTests : DataModelTestBase
         (await _resourceService.GetResource(resourceId)).Should().BeNull();
         (await _resourceService.GetLocalResource(resourceId)).Should().BeNull();
         (await _resourceService.AllResources()).Should().NotContain(r => r.Id == resourceId);
+        (await _resourceService.ListResourcesPendingUpload()).Should().BeEmpty();
     }
+
     [Fact]
     public async Task DeleteResource_RemovesRemoteResource()
     {
@@ -202,6 +236,7 @@ public class RemoteResourcesTests : DataModelTestBase
         (await _resourceService.GetResource(resourceId)).Should().BeNull();
         (await _resourceService.GetLocalResource(resourceId)).Should().BeNull();
         (await _resourceService.AllResources()).Should().NotContain(r => r.Id == resourceId);
+        (await _resourceService.ListResourcesPendingDownload()).Should().BeEmpty();
     }
 }
 

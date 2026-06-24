@@ -22,7 +22,7 @@ public interface IRemoteResourceService<TMetadata> where TMetadata : class
     /// <param name="resourceId">id of the resource in the CRDT</param>
     /// <param name="localPath">full path to the resource on the local machine</param>
     /// <returns>an upload result with the remote id, the id will be stored and transmitted to other clients so they can also download the resource</returns>
-    Task<UploadResult<TMetadata>> UploadResource(Guid resourceId, string localPath);
+    Task<UploadResult<TMetadata>> UploadResource(Guid resourceId, string localPath, TMetadata? metadata = null);
 }
 
 public record DownloadResult(string LocalPath);

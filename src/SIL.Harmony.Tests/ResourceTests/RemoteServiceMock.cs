@@ -31,7 +31,7 @@ public class RemoteServiceMock : IRemoteResourceService<MediaMetadata>
     
     private readonly Queue<string> _throwOnUpload = new();
 
-    public async Task<UploadResult<MediaMetadata>> UploadResource(Guid resourceId, string localPath)
+    public async Task<UploadResult<MediaMetadata>> UploadResource(Guid resourceId, string localPath, MediaMetadata? metadata = null)
     {
         await Task.Yield();//yield back to the scheduler to emulate how exceptions are thrown
         if (_throwOnUpload.TryPeek(out var throwOnUpload))
@@ -44,8 +44,8 @@ public class RemoteServiceMock : IRemoteResourceService<MediaMetadata>
         }
         var remoteId = Path.Combine(RemotePath, Path.GetFileName(localPath));
         File.Copy(localPath, remoteId);
-        _metadata.TryGetValue(localPath, out var metadata);
-        return new UploadResult<MediaMetadata>(remoteId, metadata);
+        _metadata.TryGetValue(localPath, out var mockMetadata);
+        return new UploadResult<MediaMetadata>(remoteId, mockMetadata ?? metadata);
     }
 
     public void SetUploadMetadata(string localPath, MediaMetadata metadata) =>

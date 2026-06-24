@@ -49,7 +49,7 @@ public class RemoteServiceMock : IRemoteResourceService<MediaMetadata>
     }
 
     public void SetUploadMetadata(string localPath, MediaMetadata metadata) =>
-        _metadata[Path.GetFullPath(localPath)] = metadata;
+        _metadata[localPath] = metadata;
 
     public void ThrowOnUpload(string localPath)
     {

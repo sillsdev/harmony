@@ -63,6 +63,32 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task UploadPendingResource_IncludesMetadata()
+    {
+        var metadata = SampleMetadata("pending.mp4");
+        var localFile = CreateFile("video data");
+        var resource = await _resourceService.AddLocalResource(localFile, _localClientId, metadata,
+            resourceService: null);
+        _remoteServiceMock.SetUploadMetadata(localFile, SampleMetadata("FromUpload.mp4"));
+        await _resourceService.UploadPendingResource(resource.Id, _localClientId, _remoteServiceMock);
+        var stored = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(resource.Id);
+        stored!.Metadata.Should().BeEquivalentTo(SampleMetadata("FromUpload.mp4"));
+    }
+
+    [Fact]
+    public async Task UploadPendingResources_IncludesMetadata()
+    {
+        var metadata = SampleMetadata("pending.mp4");
+        var localFile = CreateFile("video data");
+        var resource = await _resourceService.AddLocalResource(localFile, _localClientId, metadata,
+            resourceService: null);
+        _remoteServiceMock.SetUploadMetadata(localFile, SampleMetadata("FromUpload.mp4"));
+        await _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock);
+        var stored = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(resource.Id);
+        stored!.Metadata.Should().BeEquivalentTo(SampleMetadata("FromUpload.mp4"));
+    }
+
+    [Fact]
     public async Task AllResources_IncludesMetadata()
     {
         var metadata = SampleMetadata();

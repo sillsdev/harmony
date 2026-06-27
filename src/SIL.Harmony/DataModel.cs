@@ -69,7 +69,8 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task AddManyChanges(Guid clientId,
         IEnumerable<IChange> changes,
         Func<CommitMetadata?> commitMetadata,
-        int changesPerCommitMax = 100)
+        int changesPerCommitMax = 100,
+        IProgress<HarmonyProgress>? progress = null)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var commits = changes
@@ -82,7 +83,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         await using var transaction = await repo.BeginTransactionAsync();
         var updatedCommits = await repo.AddCommits(commits);
-        await UpdateSnapshots(repo, updatedCommits);
+        await UpdateSnapshots(repo, updatedCommits, progress);
         await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
@@ -141,7 +142,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         };
     }
 
-    async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits)
+    async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits, IProgress<HarmonyProgress>? progress)
     {
         commits = commits.ToArray();
         try
@@ -156,7 +157,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
             await using var transaction = await repo.BeginTransactionAsync();
             var updatedCommits = await repo.AddCommits(newCommits);
-            await UpdateSnapshots(repo, updatedCommits);
+            await UpdateSnapshots(repo, updatedCommits, progress);
             await ValidateCommits(repo);
             await transaction.CommitAsync();
         }
@@ -193,7 +194,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply)
+    private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply, IProgress<HarmonyProgress>? progress = null)
     {
         if (commitsToApply.Count == 0) return;
         var oldestAddedCommit = commitsToApply.First();
@@ -213,7 +214,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             snapshotLookup = [];
         }
 
-        var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
+        var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value, progress);
         await snapshotWorker.UpdateSnapshots(commitsToApply);
     }
 
@@ -372,13 +373,13 @@ public class DataModel : ISyncable, IAsyncDisposable
         return await repo.GetChanges(remoteState);
     }
 
-    public async Task<SyncResults> SyncWith(ISyncable remoteModel)
+    public async Task<SyncResults> SyncWith(ISyncable remoteModel, IProgress<HarmonyProgress>? progress = null)
     {
-        return await SyncHelper.SyncWith(this, remoteModel, _serializerOptions);
+        return await SyncHelper.SyncWith(this, remoteModel, _serializerOptions, progress);
     }
 
-    public async Task SyncMany(ISyncable[] remotes)
+    public async Task SyncMany(ISyncable[] remotes, IProgress<HarmonyProgress>? progress = null)
     {
-        await SyncHelper.SyncMany(this, remotes, _serializerOptions);
+        await SyncHelper.SyncMany(this, remotes, _serializerOptions, progress);
     }
 }

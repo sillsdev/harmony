@@ -23,7 +23,8 @@ internal static class SyncHelper
     /// <param name="serializerOptions"></param>
     internal static async Task<SyncResults> SyncWith(ISyncable localModel,
         ISyncable remoteModel,
-        JsonSerializerOptions serializerOptions)
+        JsonSerializerOptions serializerOptions,
+        IProgress<HarmonyProgress>? progress = null)
     {
         if (!await localModel.ShouldSync() || !await remoteModel.ShouldSync()) return new SyncResults([], [], false);
         var localSyncState = await localModel.GetSyncState();
@@ -39,13 +40,13 @@ internal static class SyncHelper
         }
 
         if (missingFromLocal.Length > 0)
-            await localModel.AddRangeFromSync(missingFromLocal);
+            await localModel.AddRangeFromSync(missingFromLocal, progress);
         if (missingFromRemote.Length > 0)
             await remoteModel.AddRangeFromSync(missingFromRemote);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
 
-    internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions)
+    internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions, IProgress<HarmonyProgress>? progress = null)
     {
         var localSyncState = await localModel.GetSyncState();
         var remoteSyncStates = new SyncState[remotes.Length];
@@ -59,7 +60,7 @@ internal static class SyncHelper
                 missingFromLocal = Clone(missingFromLocal, serializerOptions);
             }
             remoteSyncStates[i] = remoteSyncState;
-            await localModel.AddRangeFromSync(missingFromLocal);
+            await localModel.AddRangeFromSync(missingFromLocal, progress);
         }
 
         // Now the localModel has all the changes from all remotes, so all remotes will get the changes from the localModel as well as all other remotes

@@ -47,7 +47,11 @@ internal static class SyncHelper
         if (missingFromLocal.Length > 0)
             await localModel.AddRangeFromSync(missingFromLocal, progress);
         if (missingFromRemote.Length > 0)
+        {
+            progress?.ReportUploadingChanges(missingFromRemote.Sum(c => c.ChangeEntities.Count));
             await remoteModel.AddRangeFromSync(missingFromRemote);
+            progress?.ReportUploadingChangesFinished();
+        }
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
 
@@ -81,7 +85,12 @@ internal static class SyncHelper
                 //cloning just to simulate the objects going over the wire
                 missingFromRemote = Clone(missingFromRemote, serializerOptions);
             }
-            await remote.AddRangeFromSync(missingFromRemote);
+            if (missingFromRemote.Length > 0)
+            {
+                progress?.ReportUploadingChanges(missingFromRemote.Sum(c => c.ChangeEntities.Count));
+                await remote.AddRangeFromSync(missingFromRemote);
+                progress?.ReportUploadingChangesFinished();
+            }
         }
     }
 

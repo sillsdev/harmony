@@ -7,5 +7,7 @@ public enum SyncStage
     ApplyingChanges,
     ApplyingChangesFinished,
     UploadingResources,
-    UploadingResourcesFinished
+    UploadingResourcesFinished,
+    UploadingChanges,
+    UploadingChangesFinished
 }

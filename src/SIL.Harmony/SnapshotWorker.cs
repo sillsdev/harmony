@@ -69,8 +69,7 @@ internal class SnapshotWorker
     {
         var intermediateSnapshots = new Dictionary<Guid, ObjectSnapshot>();
         var commitIndex = 0;
-        var totalChanges = commits.Sum(c => c.ChangeEntities.Count);
-        _progress?.ReportStartApplyingChanges(totalChanges);
+        _progress?.ReportStartApplyingChanges(commits);
         var currentChange = 0;
         foreach (var commit in commits)
         {

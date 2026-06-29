@@ -70,24 +70,34 @@ public class ProgressTests : DataModelTestBase
         var model2 = testBase2.DataModel;
 
         var clientId = Guid.NewGuid();
+        // remote changes to be downloaded by model1
         await model2.AddChanges(clientId, [new SetTagChange(Guid.NewGuid(), "Tag 1"), new SetTagChange(Guid.NewGuid(), "Tag 2")]);
+        // local changes to be uploaded to model2
+        await model1.AddChanges(clientId, [new SetTagChange(Guid.NewGuid(), "Tag 3")]);
 
-        var progressReports = new ConcurrentQueue<HarmonyProgress>();
-        var progress = new Progress<HarmonyProgress>(p =>
+        var progressReports = new ConcurrentQueue<HarmonyDetailedProgress>();
+        var progress = new Progress<HarmonyDetailedProgress>(p =>
         {
-            _output.WriteLine($"Sync Progress: {p.Current}/{p.Total} - {p.Stage}");
+            _output.WriteLine($"Sync Progress: {p.Current}/{p.Total} - {p.Status} ({p.Stage})");
             progressReports.Enqueue(p);
         });
         var reporter = new HarmonyProgressReporter(progress);
 
         await model1.SyncWith(model2, reporter);
 
-        await Task.Delay(100);
+        await Task.Delay(500);
+
+        _output.WriteLine($"Reports count: {progressReports.Count}");
+        foreach(var report in progressReports)
+        {
+            _output.WriteLine($"- {report.Stage}: {report.Current}/{report.Total} {report.Status}");
+        }
 
         Assert.NotEmpty(progressReports);
         Assert.Contains(progressReports, p => p.Stage == SyncStage.FetchingChanges);
         Assert.Contains(progressReports, p => p.Stage == SyncStage.FetchingChangesFinished);
-        Assert.Contains(progressReports, p => p.Current == 2 && p.Total == 2 && p.Stage == SyncStage.ApplyingChanges);
-        Assert.Contains(progressReports, p => p.Stage == SyncStage.ApplyingChangesFinished);
+        // We expect UploadingChanges happens when sending local changes to remote
+        Assert.Contains(progressReports, p => p.Stage == SyncStage.UploadingChanges && p.Total == 1 && p.Status.Contains("Uploading 1 changes"));
+        Assert.Contains(progressReports, p => p.Stage == SyncStage.UploadingChangesFinished);
     }
 }

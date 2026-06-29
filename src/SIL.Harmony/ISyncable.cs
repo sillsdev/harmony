@@ -2,11 +2,11 @@ namespace SIL.Harmony;
 
 public interface ISyncable
 {
-    Task AddRangeFromSync(IEnumerable<Commit> commits, IProgress<HarmonyProgress>? progress = null);
+    Task AddRangeFromSync(IEnumerable<Commit> commits, HarmonyProgressReporter? progress = null);
     Task<SyncState> GetSyncState();
     Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads);
-    Task<SyncResults> SyncWith(ISyncable remoteModel, IProgress<HarmonyProgress>? progress = null);
-    Task SyncMany(ISyncable[] remotes, IProgress<HarmonyProgress>? progress = null);
+    Task<SyncResults> SyncWith(ISyncable remoteModel, HarmonyProgressReporter? progress = null);
+    Task SyncMany(ISyncable[] remotes, HarmonyProgressReporter? progress = null);
     ValueTask<bool> ShouldSync();
 }
 
@@ -14,7 +14,7 @@ public class NullSyncable : ISyncable
 {
     public static readonly ISyncable Instance = new NullSyncable();
 
-    public Task AddRangeFromSync(IEnumerable<Commit> commits, IProgress<HarmonyProgress>? progress = null)
+    public Task AddRangeFromSync(IEnumerable<Commit> commits, HarmonyProgressReporter? progress = null)
     {
         return Task.CompletedTask;
     }
@@ -29,12 +29,12 @@ public class NullSyncable : ISyncable
         return Task.FromResult(ChangesResult<Commit>.Empty);
     }
 
-    public Task<SyncResults> SyncWith(ISyncable remoteModel, IProgress<HarmonyProgress>? progress = null)
+    public Task<SyncResults> SyncWith(ISyncable remoteModel, HarmonyProgressReporter? progress = null)
     {
         return Task.FromResult(new SyncResults([], [], false));
     }
 
-    public Task SyncMany(ISyncable[] remotes, IProgress<HarmonyProgress>? progress = null)
+    public Task SyncMany(ISyncable[] remotes, HarmonyProgressReporter? progress = null)
     {
         return Task.CompletedTask;
     }

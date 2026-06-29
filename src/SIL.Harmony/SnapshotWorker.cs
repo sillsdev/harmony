@@ -16,13 +16,13 @@ internal class SnapshotWorker
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots  = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
-    private readonly IProgress<HarmonyProgress>? _progress;
+    private readonly HarmonyProgressReporter? _progress;
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, Guid?> snapshotLookup,
         CrdtRepository crdtRepository,
         CrdtConfig crdtConfig,
-        IProgress<HarmonyProgress>? progress = null)
+        HarmonyProgressReporter? progress = null)
     {
         _pendingSnapshots = snapshots;
         _crdtRepository = crdtRepository;
@@ -36,7 +36,7 @@ internal class SnapshotWorker
         CrdtRepository crdtRepository,
         SortedSet<Commit> commits,
         CrdtConfig crdtConfig,
-        IProgress<HarmonyProgress>? progress = null)
+        HarmonyProgressReporter? progress = null)
     {
         //we need to pass in the snapshots because we expect it to be modified, this is intended.
         //if the constructor makes a copy in the future this will need to be updated
@@ -51,7 +51,7 @@ internal class SnapshotWorker
     internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup,
         CrdtRepository crdtRepository,
         CrdtConfig crdtConfig,
-        IProgress<HarmonyProgress>? progress = null): this([], snapshotLookup, crdtRepository, crdtConfig, progress)
+        HarmonyProgressReporter? progress = null): this([], snapshotLookup, crdtRepository, crdtConfig, progress)
     {
     }
 
@@ -77,7 +77,7 @@ internal class SnapshotWorker
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
                 currentChange++;
-                _progress?.Report(new HarmonyProgress(currentChange, totalChanges, $"Applying {commitChange.Change.GetType().Name}"));
+                _progress?.Report(SyncStage.ApplyingChanges, currentChange, totalChanges, commitChange.Change);
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, commitIndex, intermediateSnapshots, this, _crdtConfig);

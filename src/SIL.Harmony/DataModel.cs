@@ -70,7 +70,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         IEnumerable<IChange> changes,
         Func<CommitMetadata?> commitMetadata,
         int changesPerCommitMax = 100,
-        IProgress<HarmonyProgress>? progress = null)
+        HarmonyProgressReporter? progress = null)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var commits = changes
@@ -142,7 +142,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         };
     }
 
-    async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits, IProgress<HarmonyProgress>? progress)
+    async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits, HarmonyProgressReporter? progress)
     {
         commits = commits.ToArray();
         try
@@ -194,7 +194,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply, IProgress<HarmonyProgress>? progress = null)
+    private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply, HarmonyProgressReporter? progress = null)
     {
         if (commitsToApply.Count == 0) return;
         var oldestAddedCommit = commitsToApply.First();
@@ -373,12 +373,12 @@ public class DataModel : ISyncable, IAsyncDisposable
         return await repo.GetChanges(remoteState);
     }
 
-    public async Task<SyncResults> SyncWith(ISyncable remoteModel, IProgress<HarmonyProgress>? progress = null)
+    public async Task<SyncResults> SyncWith(ISyncable remoteModel, HarmonyProgressReporter? progress = null)
     {
         return await SyncHelper.SyncWith(this, remoteModel, _serializerOptions, progress);
     }
 
-    public async Task SyncMany(ISyncable[] remotes, IProgress<HarmonyProgress>? progress = null)
+    public async Task SyncMany(ISyncable[] remotes, HarmonyProgressReporter? progress = null)
     {
         await SyncHelper.SyncMany(this, remotes, _serializerOptions, progress);
     }

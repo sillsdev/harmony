@@ -8,10 +8,12 @@ internal static class SyncHelper
         ISyncable remoteModel,
         ResourceService resourceService,
         IRemoteResourceService remoteResourceService,
-        Guid localClientId)
+        Guid localClientId,
+        HarmonyProgressReporter? progress = null)
     {
+        progress?.Report(SyncStage.UploadingResources);
         await resourceService.UploadPendingResources(localClientId, remoteResourceService);
-        return await localModel.SyncWith(remoteModel);
+        return await localModel.SyncWith(remoteModel, progress);
     }
 
     /// <summary>
@@ -24,9 +26,10 @@ internal static class SyncHelper
     internal static async Task<SyncResults> SyncWith(ISyncable localModel,
         ISyncable remoteModel,
         JsonSerializerOptions serializerOptions,
-        IProgress<HarmonyProgress>? progress = null)
+        HarmonyProgressReporter? progress = null)
     {
         if (!await localModel.ShouldSync() || !await remoteModel.ShouldSync()) return new SyncResults([], [], false);
+        progress?.Report(SyncStage.FetchingChanges);
         var localSyncState = await localModel.GetSyncState();
 
         var (missingFromLocal, remoteSyncState) = await remoteModel.GetChanges(localSyncState);
@@ -46,8 +49,9 @@ internal static class SyncHelper
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
 
-    internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions, IProgress<HarmonyProgress>? progress = null)
+    internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions, HarmonyProgressReporter? progress = null)
     {
+        progress?.Report(SyncStage.FetchingChanges);
         var localSyncState = await localModel.GetSyncState();
         var remoteSyncStates = new SyncState[remotes.Length];
         for (var i = 0; i < remotes.Length; i++)

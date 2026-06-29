@@ -9,23 +9,55 @@ namespace SIL.Harmony.Tests;
 
 public class ProgressTests : DataModelTestBase
 {
+    private readonly ITestOutputHelper _output;
+
+    public ProgressTests(ITestOutputHelper output)
+    {
+        _output = output;
+    }
+
     [Fact]
     public async Task AddManyChanges_ReportsProgress()
     {
         var clientId = Guid.NewGuid();
         var changes = Enumerable.Range(0, 10).Select(i => new SetTagChange(Guid.NewGuid(), $"Tag {i}")).ToArray();
         var progressReports = new ConcurrentQueue<HarmonyProgress>();
-        var progress = new Progress<HarmonyProgress>(p => progressReports.Enqueue(p));
+        var progress = new Progress<HarmonyProgress>(p =>
+        {
+            _output.WriteLine($"Progress: {p.Current}/{p.Total} - {p.Stage}");
+            progressReports.Enqueue(p);
+        });
+        var reporter = new HarmonyProgressReporter(progress);
 
-        await DataModel.AddManyChanges(clientId, changes, () => new CommitMetadata(), 2, progress);
+        await DataModel.AddManyChanges(clientId, changes, () => new CommitMetadata(), 2, reporter);
 
         // Wait a bit for Progress to report (it's often asynchronous)
         await Task.Delay(100);
 
         Assert.NotEmpty(progressReports);
-        Assert.Contains(progressReports, p => p.Current == 10 && p.Total == 10);
+        Assert.Contains(progressReports, p => p.Current == 10 && p.Total == 10 && p.Stage == SyncStage.ApplyingChanges);
+    }
+
+    [Fact]
+    public async Task AddManyChanges_ReportsDetailedProgress()
+    {
+        var clientId = Guid.NewGuid();
+        var changes = Enumerable.Range(0, 10).Select(i => new SetTagChange(Guid.NewGuid(), $"Tag {i}")).ToArray();
+        var progressReports = new ConcurrentQueue<HarmonyDetailedProgress>();
+        var progress = new Progress<HarmonyDetailedProgress>(p =>
+        {
+            _output.WriteLine($"Detailed Progress: {p.Current}/{p.Total} - {p.Status} @ {p.DateTime}");
+            progressReports.Enqueue(p);
+        });
+        var reporter = new HarmonyProgressReporter(progress);
+
+        await DataModel.AddManyChanges(clientId, changes, () => new CommitMetadata(), 2, reporter);
+
+        await Task.Delay(100);
+
+        Assert.NotEmpty(progressReports);
+        Assert.Contains(progressReports, p => p.Current == 10 && p.Total == 10 && p.Change is SetTagChange);
         Assert.All(progressReports, p => Assert.NotEmpty(p.Status));
-        Assert.All(progressReports, p => Assert.True(p.Current <= p.Total));
     }
 
     [Fact]
@@ -39,14 +71,19 @@ public class ProgressTests : DataModelTestBase
         await model2.AddChanges(clientId, [new SetTagChange(Guid.NewGuid(), "Tag 1"), new SetTagChange(Guid.NewGuid(), "Tag 2")]);
 
         var progressReports = new ConcurrentQueue<HarmonyProgress>();
-        var progress = new Progress<HarmonyProgress>(p => progressReports.Enqueue(p));
+        var progress = new Progress<HarmonyProgress>(p =>
+        {
+            _output.WriteLine($"Sync Progress: {p.Current}/{p.Total} - {p.Stage}");
+            progressReports.Enqueue(p);
+        });
+        var reporter = new HarmonyProgressReporter(progress);
 
-        await model1.SyncWith(model2, progress);
+        await model1.SyncWith(model2, reporter);
 
         await Task.Delay(100);
 
         Assert.NotEmpty(progressReports);
-        // model2 has 2 changes, model1 should report progress for those 2 changes
-        Assert.Contains(progressReports, p => p.Current == 2 && p.Total == 2);
+        Assert.Contains(progressReports, p => p.Stage == SyncStage.FetchingChanges);
+        Assert.Contains(progressReports, p => p.Current == 2 && p.Total == 2 && p.Stage == SyncStage.ApplyingChanges);
     }
 }

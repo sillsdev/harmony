@@ -6,6 +6,7 @@ public class HarmonyProgressReporter
 {
     private readonly IProgress<HarmonyProgress>? _progress;
     private readonly IProgress<HarmonyDetailedProgress>? _detailedProgress;
+    private int? _totalChanges;
 
     public HarmonyProgressReporter(IProgress<HarmonyProgress> progress)
     {
@@ -17,7 +18,25 @@ public class HarmonyProgressReporter
         _detailedProgress = detailedProgress;
     }
 
-    public void Report(SyncStage stage, int? current = null, int? total = null, IChange? change = null)
+    public void ReportFetchingChanges() => Report(SyncStage.FetchingChanges);
+    public void ReportFetchingChangesFinished() => Report(SyncStage.FetchingChangesFinished);
+    public void ReportUploadingResources() => Report(SyncStage.UploadingResources);
+    public void ReportUploadingResourcesFinished() => Report(SyncStage.UploadingResourcesFinished);
+
+    public void ReportStartApplyingChanges(int total)
+    {
+        _totalChanges = total;
+        Report(SyncStage.ApplyingChanges, 0, total);
+    }
+
+    public void ReportApplyingChange(int current, IChange change)
+    {
+        Report(SyncStage.ApplyingChanges, current, _totalChanges, change);
+    }
+
+    public void ReportApplyingChangesFinished() => Report(SyncStage.ApplyingChangesFinished, _totalChanges, _totalChanges);
+
+    private void Report(SyncStage stage, int? current = null, int? total = null, IChange? change = null)
     {
         if (_progress is not null)
         {
@@ -25,8 +44,23 @@ public class HarmonyProgressReporter
         }
         else if (_detailedProgress is not null)
         {
-            var status = change != null ? $"Applying {change.GetType().Name}" : stage.ToString();
+            var status = GetStatus(stage, change);
             _detailedProgress.Report(new HarmonyDetailedProgress(stage, current, total, change, status, DateTimeOffset.Now));
         }
+    }
+
+    private static string GetStatus(SyncStage stage, IChange? change)
+    {
+        if (change != null) return $"Applying {change.GetType().Name}";
+        return stage switch
+        {
+            SyncStage.FetchingChanges => "Fetching changes...",
+            SyncStage.FetchingChangesFinished => "Finished fetching changes.",
+            SyncStage.ApplyingChanges => "Applying changes...",
+            SyncStage.ApplyingChangesFinished => "Finished applying changes.",
+            SyncStage.UploadingResources => "Uploading resources...",
+            SyncStage.UploadingResourcesFinished => "Finished uploading resources.",
+            _ => stage.ToString()
+        };
     }
 }

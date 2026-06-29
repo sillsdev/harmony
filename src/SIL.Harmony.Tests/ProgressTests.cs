@@ -36,6 +36,7 @@ public class ProgressTests : DataModelTestBase
 
         Assert.NotEmpty(progressReports);
         Assert.Contains(progressReports, p => p.Current == 10 && p.Total == 10 && p.Stage == SyncStage.ApplyingChanges);
+        Assert.Contains(progressReports, p => p.Stage == SyncStage.ApplyingChangesFinished);
     }
 
     [Fact]
@@ -57,6 +58,7 @@ public class ProgressTests : DataModelTestBase
 
         Assert.NotEmpty(progressReports);
         Assert.Contains(progressReports, p => p.Current == 10 && p.Total == 10 && p.Change is SetTagChange);
+        Assert.Contains(progressReports, p => p.Stage == SyncStage.ApplyingChangesFinished && p.Status == "Finished applying changes.");
         Assert.All(progressReports, p => Assert.NotEmpty(p.Status));
     }
 
@@ -84,6 +86,8 @@ public class ProgressTests : DataModelTestBase
 
         Assert.NotEmpty(progressReports);
         Assert.Contains(progressReports, p => p.Stage == SyncStage.FetchingChanges);
+        Assert.Contains(progressReports, p => p.Stage == SyncStage.FetchingChangesFinished);
         Assert.Contains(progressReports, p => p.Current == 2 && p.Total == 2 && p.Stage == SyncStage.ApplyingChanges);
+        Assert.Contains(progressReports, p => p.Stage == SyncStage.ApplyingChangesFinished);
     }
 }

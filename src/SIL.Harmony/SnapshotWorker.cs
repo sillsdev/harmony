@@ -70,6 +70,7 @@ internal class SnapshotWorker
         var intermediateSnapshots = new Dictionary<Guid, ObjectSnapshot>();
         var commitIndex = 0;
         var totalChanges = commits.Sum(c => c.ChangeEntities.Count);
+        _progress?.ReportStartApplyingChanges(totalChanges);
         var currentChange = 0;
         foreach (var commit in commits)
         {
@@ -77,7 +78,7 @@ internal class SnapshotWorker
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
                 currentChange++;
-                _progress?.Report(SyncStage.ApplyingChanges, currentChange, totalChanges, commitChange.Change);
+                _progress?.ReportApplyingChange(currentChange, commitChange.Change);
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, commitIndex, intermediateSnapshots, this, _crdtConfig);
@@ -117,6 +118,7 @@ internal class SnapshotWorker
             _newIntermediateSnapshots.AddRange(intermediateSnapshots.Values);
             intermediateSnapshots.Clear();
         }
+        _progress?.ReportApplyingChangesFinished();
     }
 
     /// <summary>

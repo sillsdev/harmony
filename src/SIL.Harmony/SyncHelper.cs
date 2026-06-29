@@ -11,8 +11,9 @@ internal static class SyncHelper
         Guid localClientId,
         HarmonyProgressReporter? progress = null)
     {
-        progress?.Report(SyncStage.UploadingResources);
+        progress?.ReportUploadingResources();
         await resourceService.UploadPendingResources(localClientId, remoteResourceService);
+        progress?.ReportUploadingResourcesFinished();
         return await localModel.SyncWith(remoteModel, progress);
     }
 
@@ -29,12 +30,13 @@ internal static class SyncHelper
         HarmonyProgressReporter? progress = null)
     {
         if (!await localModel.ShouldSync() || !await remoteModel.ShouldSync()) return new SyncResults([], [], false);
-        progress?.Report(SyncStage.FetchingChanges);
+        progress?.ReportFetchingChanges();
         var localSyncState = await localModel.GetSyncState();
 
         var (missingFromLocal, remoteSyncState) = await remoteModel.GetChanges(localSyncState);
         //todo abort if local and remote heads are the same
         var (missingFromRemote, _) = await localModel.GetChanges(remoteSyncState);
+        progress?.ReportFetchingChangesFinished();
         if (localModel is DataModel && remoteModel is DataModel)
         {
             //cloning just to simulate the objects going over the wire
@@ -51,7 +53,7 @@ internal static class SyncHelper
 
     internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions, HarmonyProgressReporter? progress = null)
     {
-        progress?.Report(SyncStage.FetchingChanges);
+        progress?.ReportFetchingChanges();
         var localSyncState = await localModel.GetSyncState();
         var remoteSyncStates = new SyncState[remotes.Length];
         for (var i = 0; i < remotes.Length; i++)
@@ -67,6 +69,7 @@ internal static class SyncHelper
             await localModel.AddRangeFromSync(missingFromLocal, progress);
         }
 
+        progress?.ReportFetchingChangesFinished();
         // Now the localModel has all the changes from all remotes, so all remotes will get the changes from the localModel as well as all other remotes
         for (var i = 0; i < remotes.Length; i++)
         {

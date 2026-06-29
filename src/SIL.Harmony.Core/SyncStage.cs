@@ -3,6 +3,9 @@ namespace SIL.Harmony.Core;
 public enum SyncStage
 {
     FetchingChanges,
+    FetchingChangesFinished,
     ApplyingChanges,
-    UploadingResources
+    ApplyingChangesFinished,
+    UploadingResources,
+    UploadingResourcesFinished
 }

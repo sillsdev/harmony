@@ -27,6 +27,7 @@ public class HarmonyProgressReporter
 
     public void ReportStartApplyingChanges(IEnumerable<Commit> commits)
     {
+        if (_progress is null && _detailedProgress is null) return;
         _totalChanges = commits.Sum(c => c.ChangeEntities.Count);
         Report(SyncStage.ApplyingChanges, 0, _totalChanges);
     }

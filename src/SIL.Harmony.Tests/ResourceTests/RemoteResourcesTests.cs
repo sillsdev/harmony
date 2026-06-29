@@ -1,4 +1,5 @@
 ﻿using System.Runtime.CompilerServices;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Resource;
 using SIL.Harmony.Sample;
@@ -11,6 +12,13 @@ public class RemoteResourcesTests : DataModelTestBase
 
     private ResourceService<MediaMetadata> _resourceService =>
         _services.GetRequiredService<ResourceService<MediaMetadata>>();
+
+    private static readonly CommitMetadata AuthorMetadata = new()
+    {
+        AuthorName = "Test Author",
+        AuthorId = "author-1",
+        ClientVersion = "1.0.0"
+    };
 
     private string CreateFile(string contents, [CallerMemberName] string fileName = "")
     {
@@ -34,6 +42,14 @@ public class RemoteResourcesTests : DataModelTestBase
         //because resource service is null the file is not uploaded
         var crdtResource = await _resourceService.AddLocalResource(file, _localClientId, resourceService: null);
         return (crdtResource.Id, file);
+    }
+
+    //setup commits carry empty metadata, so matching on AuthorName isolates the commit under test
+    private async Task AssertSingleCommitHasMetadata(CommitMetadata expected)
+    {
+        var commits = await DbContext.Commits.ToArrayAsync(TestContext.Current.CancellationToken);
+        commits.Should().ContainSingle(c => c.Metadata.AuthorName == expected.AuthorName)
+            .Which.Metadata.Should().BeEquivalentTo(expected);
     }
 
     [Fact]
@@ -237,6 +253,85 @@ public class RemoteResourcesTests : DataModelTestBase
         (await _resourceService.GetLocalResource(resourceId)).Should().BeNull();
         (await _resourceService.AllResources()).Should().NotContain(r => r.Id == resourceId);
         (await _resourceService.ListResourcesPendingDownload()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AddExistingRemoteResource_AttachesCommitMetadataToTheCommit()
+    {
+        var localFile = CreateFile("existing-remote");
+
+        await _resourceService.AddExistingRemoteResource(localFile,
+            _localClientId,
+            resourceId: Guid.NewGuid(),
+            remoteId: "remote-1",
+            commitMetadata: AuthorMetadata);
+
+        await AssertSingleCommitHasMetadata(AuthorMetadata);
+    }
+
+    [Fact]
+    public async Task AddLocalResource_AttachesCommitMetadataToTheCommit()
+    {
+        var localFile = CreateFile("resource");
+
+        await _resourceService.AddLocalResource(localFile, _localClientId,
+            resourceService: null, commitMetadata: AuthorMetadata);
+
+        await AssertSingleCommitHasMetadata(AuthorMetadata);
+    }
+
+    [Fact]
+    public async Task SetResourceMetadata_AttachesCommitMetadataToTheCommit()
+    {
+        var (resourceId, _) = await SetupLocalFile("set-metadata");
+
+        await _resourceService.SetResourceMetadata(resourceId, _localClientId,
+            new MediaMetadata("set-metadata.txt", "text/plain", 12), commitMetadata: AuthorMetadata);
+
+        await AssertSingleCommitHasMetadata(AuthorMetadata);
+    }
+
+    [Fact]
+    public async Task UploadPendingResources_AttachesCommitMetadataToTheCommit()
+    {
+        await SetupLocalFile("file1", "uploadPendingResources1");
+        await SetupLocalFile("file2", "uploadPendingResources2");
+
+        await _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock, commitMetadata: AuthorMetadata);
+
+        await AssertSingleCommitHasMetadata(AuthorMetadata);
+    }
+
+    [Fact]
+    public async Task UploadPendingResourceById_AttachesCommitMetadataToTheCommit()
+    {
+        var (resourceId, _) = await SetupLocalFile("upload-by-id");
+
+        await _resourceService.UploadPendingResource(resourceId, _localClientId, _remoteServiceMock, commitMetadata: AuthorMetadata);
+
+        await AssertSingleCommitHasMetadata(AuthorMetadata);
+    }
+
+    [Fact]
+    public async Task UploadPendingResourceByHarmonyResource_AttachesCommitMetadataToTheCommit()
+    {
+        var (resourceId, _) = await SetupLocalFile("upload-by-resource");
+        var resource = await _resourceService.GetResource(resourceId);
+        resource.Should().NotBeNull();
+
+        await _resourceService.UploadPendingResource(resource!, _localClientId, _remoteServiceMock, commitMetadata: AuthorMetadata);
+
+        await AssertSingleCommitHasMetadata(AuthorMetadata);
+    }
+
+    [Fact]
+    public async Task DeleteResource_AttachesCommitMetadataToTheCommit()
+    {
+        var (resourceId, _) = await SetupLocalFile("delete-me");
+
+        await _resourceService.DeleteResource(_localClientId, resourceId, commitMetadata: AuthorMetadata);
+
+        await AssertSingleCommitHasMetadata(AuthorMetadata);
     }
 }
 

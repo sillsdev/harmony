@@ -208,6 +208,25 @@ public class RemoteResourcesTests : DataModelTestBase
     }
 
     [Fact]
+    public void HarmonyResource_ThrowsWhenLocalAndRemoteIdsDoNotMatch()
+    {
+        var localResource = new LocalResource
+        {
+            Id = Guid.NewGuid(),
+            LocalPath = "local.txt"
+        };
+        var remoteResource = new RemoteResource<MediaMetadata>
+        {
+            Id = Guid.NewGuid(),
+            RemoteId = "remote-id"
+        };
+
+        var action = () => new HarmonyResource<MediaMetadata>(localResource, remoteResource);
+
+        action.Should().Throw<ArgumentException>().WithMessage("*matching IDs*");
+    }
+
+    [Fact]
     public async Task DeleteResource_RemovesLocalResource()
     {
         // Arrange: create a local resource

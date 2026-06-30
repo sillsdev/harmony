@@ -13,6 +13,11 @@ public class HarmonyResource<TMetadata> where TMetadata : class
     [SetsRequiredMembers]
     public HarmonyResource(LocalResource? localResource, RemoteResource<TMetadata>? remoteResource)
     {
+        if (localResource is not null && remoteResource is not null && localResource.Id != remoteResource.Id)
+        {
+            throw new ArgumentException("Local and remote resources must have matching IDs.", nameof(remoteResource));
+        }
+
         Id = localResource?.Id ?? remoteResource?.Id ?? throw new ArgumentNullException("Either localResource or remoteResource must be provided");
         RemoteId = remoteResource?.RemoteId;
         LocalPath = localResource?.LocalPath;

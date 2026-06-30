@@ -89,6 +89,21 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task UploadPendingResources_PreservesMetadataWhenUploadReturnsNone()
+    {
+        var metadata = SampleMetadata("pending.mp4");
+        var localFile = CreateFile("video data");
+        var resource = await _resourceService.AddLocalResource(localFile, _localClientId, metadata,
+            resourceService: null);
+
+        await _resourceService.UploadPendingResources(_localClientId, new NullMetadataRemoteService());
+
+        var stored = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(resource.Id);
+        stored!.RemoteId.Should().NotBeNull();
+        stored.Metadata.Should().BeEquivalentTo(metadata);
+    }
+
+    [Fact]
     public async Task AllResources_IncludesMetadata()
     {
         var metadata = SampleMetadata();
@@ -124,6 +139,24 @@ public class RemoteResourcesMetadataTests : DataModelTestBase
         var stored = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(resourceId);
         stored!.Metadata.Should().BeNull();
         stored.RemoteId.Should().Be(remoteId);
+    }
+
+    private sealed class NullMetadataRemoteService : IRemoteResourceService<MediaMetadata>
+    {
+        private static readonly string RemotePath = Directory.CreateTempSubdirectory("NullMetadataRemoteService").FullName;
+
+        public Task<DownloadResult> DownloadResource(string remoteId, string localResourceCachePath)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task<UploadResult<MediaMetadata>> UploadResource(Guid resourceId, string localPath,
+            MediaMetadata? metadata = null)
+        {
+            var remoteId = Path.Combine(RemotePath, $"{Guid.NewGuid():N}-{Path.GetFileName(localPath)}");
+            File.Copy(localPath, remoteId);
+            return Task.FromResult(new UploadResult<MediaMetadata>(remoteId));
+        }
     }
 }
 

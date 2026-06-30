@@ -17,7 +17,11 @@ public class RemoteResourceUploadedChange<TMetadata>(Guid entityId, string remot
     public override ValueTask ApplyChange(RemoteResource<TMetadata> entity, IChangeContext context)
     {
         entity.RemoteId = RemoteId;
-        entity.Metadata = Metadata;
+        if (Metadata is not null)
+        {
+            entity.Metadata = Metadata;
+        }
+
         return ValueTask.CompletedTask;
     }
 }

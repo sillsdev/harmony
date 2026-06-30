@@ -33,7 +33,8 @@ public class ResourceService<TMetadata> where TMetadata : class
         Guid clientId,
         Guid resourceId,
         string remoteId,
-        TMetadata? metadata = null)
+        TMetadata? metadata = null,
+        CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
         var localResource = new LocalResource
@@ -44,7 +45,8 @@ public class ResourceService<TMetadata> where TMetadata : class
         if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
 
         await _dataModel.AddChange(clientId,
-            new CreateRemoteResourceChange<TMetadata>(localResource.Id, remoteId, metadata));
+            new CreateRemoteResourceChange<TMetadata>(localResource.Id, remoteId, metadata),
+            commitMetadata);
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.AddLocalResource(localResource);
     }
@@ -57,12 +59,14 @@ public class ResourceService<TMetadata> where TMetadata : class
     /// <param name="metadata">metadata for the resource, this metadata will be overridden by the remote service if returned by <see cref="IRemoteResourceService{TMetadata}.UploadResource"/></param>
     /// <param name="id">id of the resource</param>
     /// <param name="resourceService">service to upload the resource to the remote server</param>
+    /// <param name="commitMetadata">metadata for the commit that records this change, for example the author</param>
     /// <returns>the HarmonyResource created</returns>
     public async Task<HarmonyResource<TMetadata>> AddLocalResource(string resourcePath,
         Guid clientId,
         TMetadata? metadata = null,
         Guid id = default,
-        IRemoteResourceService<TMetadata>? resourceService = null)
+        IRemoteResourceService<TMetadata>? resourceService = null,
+        CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
         var localResource = new LocalResource
@@ -89,12 +93,14 @@ public class ResourceService<TMetadata> where TMetadata : class
         if (uploadResult is not null)
         {
             await _dataModel.AddChange(clientId,
-                new CreateRemoteResourceChange<TMetadata>(localResource.Id, uploadResult.RemoteId, metadata));
+                new CreateRemoteResourceChange<TMetadata>(localResource.Id, uploadResult.RemoteId, metadata),
+                commitMetadata);
         }
         else
         {
             await _dataModel.AddChange(clientId,
-                new CreateRemoteResourcePendingUploadChange<TMetadata>(localResource.Id, metadata));
+                new CreateRemoteResourcePendingUploadChange<TMetadata>(localResource.Id, metadata),
+                commitMetadata);
         }
 
         await _crdtRepositoryFactory.Execute(repo => repo.AddLocalResource(localResource));
@@ -107,10 +113,10 @@ public class ResourceService<TMetadata> where TMetadata : class
         };
     }
 
-    public async Task SetResourceMetadata(Guid resourceId, Guid clientId, TMetadata metadata)
+    public async Task SetResourceMetadata(Guid resourceId, Guid clientId, TMetadata metadata, CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
-        await _dataModel.AddChange(clientId, new SetRemoteResourceMetadataChange<TMetadata>(resourceId, metadata));
+        await _dataModel.AddChange(clientId, new SetRemoteResourceMetadataChange<TMetadata>(resourceId, metadata), commitMetadata);
     }
 
     public async Task<HarmonyResource<TMetadata>[]> ListResourcesPendingUpload()
@@ -123,7 +129,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         return await localResource.Select(l => new HarmonyResource<TMetadata>(l, remoteResources.GetValueOrDefault(l.Id))).ToArrayAsync();
     }
 
-    public async Task UploadPendingResources(Guid clientId, IRemoteResourceService<TMetadata> remoteResourceService)
+    public async Task UploadPendingResources(Guid clientId, IRemoteResourceService<TMetadata> remoteResourceService, CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
         var pendingUploads = await ListResourcesPendingUpload();
@@ -141,26 +147,28 @@ public class ResourceService<TMetadata> where TMetadata : class
         finally
         {
             //if upload throws at any point we will at least save the changes that did get made.
-            await _dataModel.AddChanges(clientId, changes);
+            await _dataModel.AddChanges(clientId, changes, commitMetadata);
         }
     }
 
-    public async Task UploadPendingResource(Guid resourceId, Guid clientId, IRemoteResourceService<TMetadata> remoteResourceService)
+    public async Task UploadPendingResource(Guid resourceId, Guid clientId, IRemoteResourceService<TMetadata> remoteResourceService, CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
         var resource = await GetResource(resourceId) ??
                             throw new ArgumentException($"unable to find local resource with id {resourceId}");
-        await UploadPendingResource(resource, clientId, remoteResourceService);
+        await UploadPendingResource(resource, clientId, remoteResourceService, commitMetadata);
     }
 
     public async Task UploadPendingResource(HarmonyResource<TMetadata> resource, Guid clientId,
-        IRemoteResourceService<TMetadata> remoteResourceService)
+        IRemoteResourceService<TMetadata> remoteResourceService,
+        CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
         if (resource is not {Local: true, Remote: false}) throw new ArgumentException("Resource is not pending upload");
         var uploadResult = await remoteResourceService.UploadResource(resource.Id, resource.LocalPath, resource.Metadata);
         await _dataModel.AddChange(clientId,
-            new RemoteResourceUploadedChange<TMetadata>(resource.Id, uploadResult.RemoteId, uploadResult.Metadata));
+            new RemoteResourceUploadedChange<TMetadata>(resource.Id, uploadResult.RemoteId, uploadResult.Metadata),
+            commitMetadata);
     }
 
     public async Task<RemoteResource<TMetadata>[]> ListResourcesPendingDownload()
@@ -237,9 +245,9 @@ public class ResourceService<TMetadata> where TMetadata : class
         return new HarmonyResource<TMetadata>(localResource, remoteResource);
     }
 
-    public async Task DeleteResource(Guid clientId, Guid resourceId)
+    public async Task DeleteResource(Guid clientId, Guid resourceId, CommitMetadata? commitMetadata = null)
     {
-        await _dataModel.AddChange(clientId, new DeleteRemoteResourceChange<TMetadata>(resourceId));
+        await _dataModel.AddChange(clientId, new DeleteRemoteResourceChange<TMetadata>(resourceId), commitMetadata);
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         await repo.DeleteLocalResource(resourceId);
     }

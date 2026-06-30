@@ -232,7 +232,8 @@ public class ResourceService<TMetadata> where TMetadata : class
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var remoteResource = await repo.GetCurrent<RemoteResource<TMetadata>>(resourceId);
         var localResource = await repo.GetLocalResource(resourceId);
-        if (localResource is null && remoteResource is null or {DeletedAt: not null}) return null;
+        if (remoteResource is {DeletedAt: not null}) remoteResource = null;
+        if (localResource is null && remoteResource is null) return null;
         return new HarmonyResource<TMetadata>(localResource, remoteResource);
     }
 

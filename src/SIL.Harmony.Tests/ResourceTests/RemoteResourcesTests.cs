@@ -208,6 +208,23 @@ public class RemoteResourcesTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task GetResource_IgnoresDeletedRemoteResourceWhenLocalResourceExists()
+    {
+        var localAndRemoteResource = await _resourceService.AddLocalResource(CreateFile("localAndRemote"),
+            _localClientId,
+            resourceService: _remoteServiceMock);
+
+        await DataModel.AddChange(_localClientId, new DeleteRemoteResourceChange<MediaMetadata>(localAndRemoteResource.Id));
+
+        (await _resourceService.GetResource(localAndRemoteResource.Id)).Should().BeEquivalentTo(new HarmonyResource<MediaMetadata>
+        {
+            Id = localAndRemoteResource.Id,
+            LocalPath = localAndRemoteResource.LocalPath,
+            RemoteId = null
+        });
+    }
+
+    [Fact]
     public void HarmonyResource_ThrowsWhenLocalAndRemoteIdsDoNotMatch()
     {
         var localResource = new LocalResource

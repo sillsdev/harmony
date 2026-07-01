@@ -1,17 +1,22 @@
+using SIL.Harmony.Sample;
+
 namespace SIL.Harmony.Tests.ResourceTests;
 
-public class RemoteServiceMock : IRemoteResourceService
+public class RemoteServiceMock : IRemoteResourceService<MediaMetadata>
 {
     public static readonly string RemotePath = Directory.CreateTempSubdirectory("RemoteServiceMock").FullName;
+    private readonly Dictionary<string, MediaMetadata> _metadata = new();
 
     /// <summary>
     /// directly creates a remote resource
     /// </summary>
     /// <returns>the remote id</returns>
-    public string CreateRemoteResource(string contents)
+    public string CreateRemoteResource(string contents, MediaMetadata? metadata = null)
     {
         var filePath = Path.Combine(RemotePath, Guid.NewGuid().ToString("N") + ".txt");
         File.WriteAllText(filePath, contents);
+        if (metadata is not null) _metadata.Add(filePath, metadata);
+
         return filePath;
     }
 
@@ -26,7 +31,7 @@ public class RemoteServiceMock : IRemoteResourceService
     
     private readonly Queue<string> _throwOnUpload = new();
 
-    public async Task<UploadResult> UploadResource(Guid resourceId, string localPath)
+    public async Task<UploadResult<MediaMetadata>> UploadResource(Guid resourceId, string localPath, MediaMetadata? metadata = null)
     {
         await Task.Yield();//yield back to the scheduler to emulate how exceptions are thrown
         if (_throwOnUpload.TryPeek(out var throwOnUpload))
@@ -39,8 +44,12 @@ public class RemoteServiceMock : IRemoteResourceService
         }
         var remoteId = Path.Combine(RemotePath, Path.GetFileName(localPath));
         File.Copy(localPath, remoteId);
-        return new UploadResult(remoteId);
+        _metadata.TryGetValue(localPath, out var mockMetadata);
+        return new UploadResult<MediaMetadata>(remoteId, mockMetadata ?? metadata);
     }
+
+    public void SetUploadMetadata(string localPath, MediaMetadata metadata) =>
+        _metadata[localPath] = metadata;
 
     public void ThrowOnUpload(string localPath)
     {

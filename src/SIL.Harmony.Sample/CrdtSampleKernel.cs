@@ -36,7 +36,6 @@ public static class CrdtSampleKernel
         services.AddCrdtData<SampleDbContext>(config =>
         {
             config.EnableProjectedTables = true;
-            config.AddRemoteResourceEntity();
             config.ChangeTypeListBuilder
                 .Add<NewWordChange>()
                 .Add<NewDefinitionChange>()
@@ -84,6 +83,7 @@ public static class CrdtSampleKernel
                     builder.HasIndex(wt => new { wt.WordId, wt.TagId }).IsUnique();
                 });
         });
+        services.AddCrdtRemoteResources<MediaMetadata>();
         return services;
     }
 }

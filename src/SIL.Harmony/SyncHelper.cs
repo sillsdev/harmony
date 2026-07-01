@@ -8,10 +8,13 @@ internal static class SyncHelper
         ISyncable remoteModel,
         ResourceService resourceService,
         IRemoteResourceService remoteResourceService,
-        Guid localClientId)
+        Guid localClientId,
+        HarmonyProgressReporter? progress = null)
     {
+        progress?.ReportUploadingResources();
         await resourceService.UploadPendingResources(localClientId, remoteResourceService);
-        return await localModel.SyncWith(remoteModel);
+        progress?.ReportUploadingResourcesFinished();
+        return await localModel.SyncWith(remoteModel, progress);
     }
 
     /// <summary>
@@ -23,14 +26,17 @@ internal static class SyncHelper
     /// <param name="serializerOptions"></param>
     internal static async Task<SyncResults> SyncWith(ISyncable localModel,
         ISyncable remoteModel,
-        JsonSerializerOptions serializerOptions)
+        JsonSerializerOptions serializerOptions,
+        HarmonyProgressReporter? progress = null)
     {
         if (!await localModel.ShouldSync() || !await remoteModel.ShouldSync()) return new SyncResults([], [], false);
+        progress?.ReportFetchingChanges();
         var localSyncState = await localModel.GetSyncState();
 
         var (missingFromLocal, remoteSyncState) = await remoteModel.GetChanges(localSyncState);
         //todo abort if local and remote heads are the same
         var (missingFromRemote, _) = await localModel.GetChanges(remoteSyncState);
+        progress?.ReportFetchingChangesFinished();
         if (localModel is DataModel && remoteModel is DataModel)
         {
             //cloning just to simulate the objects going over the wire
@@ -39,14 +45,19 @@ internal static class SyncHelper
         }
 
         if (missingFromLocal.Length > 0)
-            await localModel.AddRangeFromSync(missingFromLocal);
+            await localModel.AddRangeFromSync(missingFromLocal, progress);
         if (missingFromRemote.Length > 0)
+        {
+            progress?.ReportUploadingChanges(missingFromRemote.Sum(c => c.ChangeEntities.Count));
             await remoteModel.AddRangeFromSync(missingFromRemote);
+            progress?.ReportUploadingChangesFinished();
+        }
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
 
-    internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions)
+    internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions, HarmonyProgressReporter? progress = null)
     {
+        progress?.ReportFetchingChanges();
         var localSyncState = await localModel.GetSyncState();
         var remoteSyncStates = new SyncState[remotes.Length];
         for (var i = 0; i < remotes.Length; i++)
@@ -59,9 +70,10 @@ internal static class SyncHelper
                 missingFromLocal = Clone(missingFromLocal, serializerOptions);
             }
             remoteSyncStates[i] = remoteSyncState;
-            await localModel.AddRangeFromSync(missingFromLocal);
+            await localModel.AddRangeFromSync(missingFromLocal, progress);
         }
 
+        progress?.ReportFetchingChangesFinished();
         // Now the localModel has all the changes from all remotes, so all remotes will get the changes from the localModel as well as all other remotes
         for (var i = 0; i < remotes.Length; i++)
         {
@@ -73,7 +85,12 @@ internal static class SyncHelper
                 //cloning just to simulate the objects going over the wire
                 missingFromRemote = Clone(missingFromRemote, serializerOptions);
             }
-            await remote.AddRangeFromSync(missingFromRemote);
+            if (missingFromRemote.Length > 0)
+            {
+                progress?.ReportUploadingChanges(missingFromRemote.Sum(c => c.ChangeEntities.Count));
+                await remote.AddRangeFromSync(missingFromRemote);
+                progress?.ReportUploadingChangesFinished();
+            }
         }
     }
 

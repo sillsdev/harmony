@@ -16,36 +16,42 @@ internal class SnapshotWorker
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots  = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
+    private readonly HarmonyProgressReporter? _progress;
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, Guid?> snapshotLookup,
         CrdtRepository crdtRepository,
-        CrdtConfig crdtConfig)
+        CrdtConfig crdtConfig,
+        HarmonyProgressReporter? progress = null)
     {
         _pendingSnapshots = snapshots;
         _crdtRepository = crdtRepository;
         _snapshotLookup = snapshotLookup;
         _crdtConfig = crdtConfig;
+        _progress = progress;
     }
 
     internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
         Dictionary<Guid, ObjectSnapshot> snapshots,
         CrdtRepository crdtRepository,
         SortedSet<Commit> commits,
-        CrdtConfig crdtConfig)
+        CrdtConfig crdtConfig,
+        HarmonyProgressReporter? progress = null)
     {
         //we need to pass in the snapshots because we expect it to be modified, this is intended.
         //if the constructor makes a copy in the future this will need to be updated
-        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig).ApplyCommitChanges(commits);
+        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig, progress).ApplyCommitChanges(commits);
         return snapshots;
     }
 
     /// <param name="snapshotLookup">a dictionary of entity id to latest snapshot id</param>
     /// <param name="crdtRepository"></param>
     /// <param name="crdtConfig"></param>
+    /// <param name="progress"></param>
     internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup,
         CrdtRepository crdtRepository,
-        CrdtConfig crdtConfig): this([], snapshotLookup, crdtRepository, crdtConfig)
+        CrdtConfig crdtConfig,
+        HarmonyProgressReporter? progress = null): this([], snapshotLookup, crdtRepository, crdtConfig, progress)
     {
     }
 
@@ -63,11 +69,15 @@ internal class SnapshotWorker
     {
         var intermediateSnapshots = new Dictionary<Guid, ObjectSnapshot>();
         var commitIndex = 0;
+        _progress?.ReportStartApplyingChanges(commits);
+        var currentChange = 0;
         foreach (var commit in commits)
         {
             commitIndex++;
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
+                currentChange++;
+                _progress?.ReportApplyingChange(currentChange, commitChange.Change);
                 IObjectBase entity;
                 var prevSnapshot = await GetSnapshot(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, commitIndex, intermediateSnapshots, this, _crdtConfig);
@@ -107,6 +117,7 @@ internal class SnapshotWorker
             _newIntermediateSnapshots.AddRange(intermediateSnapshots.Values);
             intermediateSnapshots.Clear();
         }
+        _progress?.ReportApplyingChangesFinished();
     }
 
     /// <summary>

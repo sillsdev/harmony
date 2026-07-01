@@ -15,7 +15,7 @@ public class JsonSyncable : ISyncable
     private static readonly ConcurrentDictionary<Guid, AsyncLock> ClientLocks = new();
 
     public const string FilenamePrefix = "client_";
-    public const string FilenameExtension = ".json";
+    public const string FilenameExtension = ".jsonl";
 
     public JsonSyncable(DirectoryInfo dir, JsonSerializerOptions serializerOptions, ILogger logger)
     {

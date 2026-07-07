@@ -69,6 +69,67 @@ public class DbContextTests: DataModelTestBase
     [InlineData(1)]
     public async Task CanFilterCommitsByDateTime(double scale)
     {
+        var baseDateTime = await SeedCommitsAtTickScale(scale);
+        var commits = await DbContext.Commits
+            .Where(c => c.HybridDateTime.DateTime > baseDateTime.Add(new TimeSpan((long)(25 * scale))))
+            .OrderBy(c => c.HybridDateTime.DateTime)
+            .ToArrayAsyncEF(TestContext.Current.CancellationToken);
+        commits.Should().HaveCount(24);
+    }
+
+    //no sub-millisecond scales here: linq2db wraps SQLite timestamp comparisons in
+    //strftime('%Y-%m-%d %H:%M:%f', ...), which normalizes both sides to milliseconds
+    [Theory]
+    [InlineData(TimeSpan.TicksPerHour)]
+    [InlineData(TimeSpan.TicksPerMinute)]
+    [InlineData(TimeSpan.TicksPerSecond)]
+    [InlineData(TimeSpan.TicksPerMillisecond)]
+    public async Task CanFilterCommitsByDateTimeViaLinq2db(double scale)
+    {
+        var baseDateTime = await SeedCommitsAtTickScale(scale);
+        var cutoff = baseDateTime.Add(new TimeSpan((long)(25 * scale)));
+        var commits = await DbContext.Commits
+            .ToLinqToDB()
+            .Where(c => c.HybridDateTime.DateTime > cutoff)
+            .OrderBy(c => c.HybridDateTime.DateTime)
+            .ToArrayAsyncLinqToDB(TestContext.Current.CancellationToken);
+        commits.Should().HaveCount(24);
+    }
+
+    //commits sharing a millisecond compare equal under linq2db (see above), so WhereAfter must
+    //never see the target itself as "after": the parameter has to render byte-identical to the
+    //stored text or strftime can normalize the two differently and delete the target commit
+    [Fact]
+    public async Task WhereAfterViaLinq2dbExcludesTheTargetCommit()
+    {
+        //sub-millisecond part must be >= 0.5ms: SQLite's strftime rounds to the nearest millisecond
+        //while a truncating parameter rendering lands one millisecond lower, which is the disagreement
+        var baseDateTime = new DateTimeOffset(2000, 1, 1, 1, 11, 11, TimeSpan.Zero).Add(TimeSpan.FromTicks(6000));
+        for (int i = 0; i < 50; i++)
+        {
+            DbContext.Add(new Commit
+            {
+                ClientId = Guid.NewGuid(),
+                HybridDateTime = new HybridDateTime(baseDateTime.Add(TimeSpan.FromTicks(i)), 0)
+            });
+        }
+
+        await DbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var commits = await DbContext.Commits.ToArrayAsyncEF(TestContext.Current.CancellationToken);
+        foreach (var target in commits)
+        {
+            var after = await DbContext.Commits
+                .WhereAfter(target)
+                .ToLinqToDB()
+                .Select(c => c.Id)
+                .ToArrayAsyncLinqToDB(TestContext.Current.CancellationToken);
+            after.Should().NotContain(target.Id,
+                $"WhereAfter via linq2db should never include the target commit itself (target at {target.HybridDateTime.DateTime:O})");
+        }
+    }
+
+    private async Task<DateTimeOffset> SeedCommitsAtTickScale(double scale)
+    {
         var baseDateTime = new DateTimeOffset(2000, 1, 1, 1, 11, 11, TimeSpan.Zero);
         for (int i = 0; i < 50; i++)
         {
@@ -81,10 +142,6 @@ public class DbContextTests: DataModelTestBase
         }
 
         await DbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-        var commits = await DbContext.Commits
-            .Where(c => c.HybridDateTime.DateTime > baseDateTime.Add(new TimeSpan((long)(25 * scale))))
-            .OrderBy(c => c.HybridDateTime.DateTime)
-            .ToArrayAsyncEF(TestContext.Current.CancellationToken);
-        commits.Should().HaveCount(24);
+        return baseDateTime;
     }
 }

@@ -128,6 +128,37 @@ public class DbContextTests: DataModelTestBase
         }
     }
 
+    //characterizes the limitation documented in Linq2dbKernel rather than a desired behavior:
+    //if the linq2db side starts seeing the later commit, its SQLite translation has changed —
+    //revisit whether timestamp comparisons still need to stay in EF
+    [Fact]
+    public async Task Linq2dbCannotOrderCommitsWithinTheSameMillisecond()
+    {
+        var baseDateTime = new DateTimeOffset(2000, 1, 1, 1, 11, 11, TimeSpan.Zero);
+        var earlier = new Commit(Guid.NewGuid())
+        {
+            ClientId = Guid.NewGuid(),
+            HybridDateTime = new HybridDateTime(baseDateTime.Add(TimeSpan.FromTicks(100)), 0)
+        };
+        var later = new Commit(Guid.NewGuid())
+        {
+            ClientId = Guid.NewGuid(),
+            HybridDateTime = new HybridDateTime(baseDateTime.Add(TimeSpan.FromTicks(200)), 0)
+        };
+        DbContext.AddRange(earlier, later);
+        await DbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var linq2dbCount = await DbContext.Commits.ToLinqToDB()
+            .Where(c => c.HybridDateTime.DateTime > earlier.HybridDateTime.DateTime)
+            .CountAsyncLinqToDB(TestContext.Current.CancellationToken);
+        linq2dbCount.Should().Be(0, "linq2db compares SQLite timestamps at millisecond precision (strftime '%f')");
+
+        var efCount = await DbContext.Commits
+            .Where(c => c.HybridDateTime.DateTime > earlier.HybridDateTime.DateTime)
+            .CountAsyncEF(TestContext.Current.CancellationToken);
+        efCount.Should().Be(1, "EF compares the stored text at full precision");
+    }
+
     private async Task<DateTimeOffset> SeedCommitsAtTickScale(double scale)
     {
         var baseDateTime = new DateTimeOffset(2000, 1, 1, 1, 11, 11, TimeSpan.Zero);

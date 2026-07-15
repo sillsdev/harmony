@@ -27,13 +27,42 @@ public class CrdtConfig
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
     private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
+    private Dictionary<Type, string>? _changeTypeDiscriminators;
 
     public CrdtConfig()
     {
-        _lazyJsonSerializerOptions = new Lazy<JsonSerializerOptions>(() => new JsonSerializerOptions(JsonSerializerDefaults.General)
+        _lazyJsonSerializerOptions = new Lazy<JsonSerializerOptions>(CreateJsonSerializerOptions);
+    }
+
+    private JsonSerializerOptions CreateJsonSerializerOptions()
+    {
+        var knownChanges = BuildChangeDiscriminatorMaps();
+
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.General)
         {
             TypeInfoResolver = MakeJsonTypeResolver()
-        });
+        };
+        options.Converters.Add(new PeekThenConcreteChangeConverter(knownChanges));
+        return options;
+    }
+
+    private Dictionary<string, Type> BuildChangeDiscriminatorMaps()
+    {
+        ChangeTypeListBuilder.Freeze();
+
+        var knownChanges = new Dictionary<string, Type>(ChangeTypeListBuilder.Types.Count);
+        _changeTypeDiscriminators = new Dictionary<Type, string>(ChangeTypeListBuilder.Types.Count);
+        foreach (var derived in ChangeTypeListBuilder.Types)
+        {
+            if (derived.TypeDiscriminator is not string discriminator)
+                throw new InvalidOperationException(
+                    $"Change type {derived.DerivedType} must use a string $type discriminator");
+
+            knownChanges.Add(discriminator, derived.DerivedType);
+            _changeTypeDiscriminators.Add(derived.DerivedType, discriminator);
+        }
+
+        return knownChanges;
     }
 
     public Action<JsonTypeInfo> MakeJsonTypeModifier()
@@ -53,12 +82,15 @@ public class CrdtConfig
     {
         ChangeTypeListBuilder.Freeze();
         ObjectTypeListBuilder.Freeze();
-        if (typeInfo.Type == typeof(IChange))
+        if (_changeTypeDiscriminators is null)
+            BuildChangeDiscriminatorMaps();
+
+        // IChange polymorphism is owned by PeekThenConcreteChangeConverter — do not set PolymorphismOptions.
+        if (_changeTypeDiscriminators is not null
+            && typeInfo.Kind == JsonTypeInfoKind.Object
+            && _changeTypeDiscriminators.TryGetValue(typeInfo.Type, out var discriminator))
         {
-            foreach (var type in ChangeTypeListBuilder.Types)
-            {
-                typeInfo.PolymorphismOptions!.DerivedTypes.Add(type);
-            }
+            AddSyntheticTypeDiscriminator(typeInfo, discriminator);
         }
 
         if (ObjectTypeListBuilder.JsonTypes?.TryGetValue(typeInfo.Type, out var types) == true)
@@ -69,6 +101,19 @@ public class CrdtConfig
                 typeInfo.PolymorphismOptions!.DerivedTypes.Add(type);
             }
         }
+    }
+
+    /// <summary>
+    /// Serialize-only <c>$type</c> on concrete change types so write stays a plain concrete serialize
+    /// (converter Write does not inject the discriminator). Order forces <c>$type</c> first for the read path.
+    /// </summary>
+    private static void AddSyntheticTypeDiscriminator(JsonTypeInfo typeInfo, string discriminator)
+    {
+        var typeName = discriminator;
+        var prop = typeInfo.CreateJsonPropertyInfo(typeof(string), CrdtConstants.ChangeDiscriminatorProperty);
+        prop.Get = _ => typeName;
+        prop.Order = int.MinValue;
+        typeInfo.Properties.Add(prop);
     }
 
     public bool RemoteResourcesEnabled { get; private set; }

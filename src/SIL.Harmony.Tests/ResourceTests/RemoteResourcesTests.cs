@@ -136,6 +136,35 @@ public class RemoteResourcesTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task UploadPendingResources_ReturnsTheUploadedResources()
+    {
+        var (id1, _) = await SetupLocalFile("file1", "file1");
+        var (id2, _) = await SetupLocalFile("file2", "file2");
+        //act
+        var uploaded = await _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock);
+
+        uploaded.Select(r => r.Id).Should().BeEquivalentTo([id1, id2]);
+        uploaded.Should().OnlyContain(r => r.Remote);
+    }
+
+    [Fact]
+    public async Task UploadPendingResources_WhenAnUploadFails_ThrowsWithCountsAndSavesSuccessfulUploads()
+    {
+        await SetupLocalFile("file1", "file1");
+        var (_, failPath) = await SetupLocalFile("file2", "file2");
+        _remoteServiceMock.ThrowOnUpload(failPath);
+        //act
+        var upload = async () => await _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock);
+
+        var exception = (await upload.Should().ThrowAsync<ResourceUploadException>()).Which;
+        (exception.Uploaded + exception.Remaining).Should().Be(2);
+        exception.Remaining.Should().BeGreaterThanOrEqualTo(1);
+        //resources uploaded before the failure are still saved, so only the remaining ones stay pending
+        var stillPending = await _resourceService.ListResourcesPendingUpload();
+        stillPending.Should().HaveCount(exception.Remaining);
+    }
+
+    [Fact]
     public async Task CanDownloadFileFromRemote()
     {
         var fileContents = "resource";

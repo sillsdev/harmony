@@ -7,7 +7,8 @@ namespace SIL.Harmony.Refs;
 public static class HarmonyRefsKernel
 {
     /// <summary>
-    /// Registers branch ref entities, change types, and main-line-only materialization on an existing Harmony <see cref="CrdtConfig"/>.
+    /// Registers branch ref entities and change types. Sets a main-line-only materialization filter
+    /// as a fallback when <see cref="AddHarmonyRefsDataModel"/> is not used.
     /// </summary>
     public static CrdtConfig AddHarmonyRefs(this CrdtConfig config)
     {
@@ -18,10 +19,14 @@ public static class HarmonyRefsKernel
     }
 
     /// <summary>
-    /// Registers <see cref="RefsDataModel"/> for DI. Call alongside <see cref="AddHarmonyRefs"/>.
+    /// Registers checkout-aware materialization and <see cref="RefsDataModel"/>.
+    /// Prefer this for apps that switch between main and branch views.
     /// </summary>
     public static IServiceCollection AddHarmonyRefsDataModel(this IServiceCollection services)
     {
+        services.AddScoped<CheckoutMaterializationFilter>();
+        services.AddScoped<ICommitMaterializationFilter>(sp =>
+            sp.GetRequiredService<CheckoutMaterializationFilter>());
         services.AddScoped<RefsDataModel>();
         return services;
     }

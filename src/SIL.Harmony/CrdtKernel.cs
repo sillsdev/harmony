@@ -40,7 +40,8 @@ public static class CrdtKernel
             provider.GetRequiredService<JsonSerializerOptions>(),
             provider.GetRequiredService<IHybridDateTimeProvider>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
-            provider.GetRequiredService<ILogger<DataModel>>()
+            provider.GetRequiredService<ILogger<DataModel>>(),
+            provider.GetService<ICommitMaterializationFilter>()
         ));
         //must use factory method because ResourceService constructor is internal
         services.AddScoped<ResourceService>(provider => new ResourceService(

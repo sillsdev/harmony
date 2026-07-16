@@ -23,20 +23,26 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly IHybridDateTimeProvider _timeProvider;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
+    private readonly ICommitMaterializationFilter? _materializationFilter;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
         JsonSerializerOptions serializerOptions,
         IHybridDateTimeProvider timeProvider,
         IOptions<CrdtConfig> crdtConfig,
-        ILogger<DataModel> logger)
+        ILogger<DataModel> logger,
+        ICommitMaterializationFilter? materializationFilter = null)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _serializerOptions = serializerOptions;
         _timeProvider = timeProvider;
         _crdtConfig = crdtConfig;
         _logger = logger;
+        _materializationFilter = materializationFilter;
     }
+
+    private ICommitMaterializationFilter MaterializationFilter =>
+        _materializationFilter ?? _crdtConfig.Value.CommitMaterializationFilter;
 
 
     /// <summary>
@@ -186,7 +192,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply)
     {
         if (commitsToApply.Count == 0) return;
-        var filter = _crdtConfig.Value.CommitMaterializationFilter;
+        var filter = MaterializationFilter;
         var commitsToMaterialize = commitsToApply
             .Where(filter.Include)
             .ToSortedSet();

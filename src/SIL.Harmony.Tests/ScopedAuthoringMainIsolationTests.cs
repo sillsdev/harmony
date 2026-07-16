@@ -26,10 +26,10 @@ public class ScopedAuthoringMainIsolationTests : DataModelTestBase
         var wordId = Guid.NewGuid();
         await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
 
-        _refs.CheckoutBranch(branchId);
+        await _refs.CheckoutBranch(branchId);
         await _refs.AddChange(_localClientId, SetWord(wordId, "on-branch"));
 
-        _refs.CheckoutMain();
+        await _refs.CheckoutMain();
         var word = await DataModel.GetLatest<Word>(wordId);
         word.Should().BeNull();
         DataModel.QueryLatest<Word>().ToBlockingEnumerable(TestContext.Current.CancellationToken)
@@ -43,7 +43,7 @@ public class ScopedAuthoringMainIsolationTests : DataModelTestBase
         var wordId = Guid.NewGuid();
         await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
 
-        _refs.CheckoutBranch(branchId);
+        await _refs.CheckoutBranch(branchId);
         var commit = await _refs.AddChange(_localClientId, SetWord(wordId, "on-branch"));
 
         RefMetadata.GetBranchId(commit.Metadata).Should().Be(branchId);
@@ -64,7 +64,7 @@ public class ScopedAuthoringMainIsolationTests : DataModelTestBase
         await DataModel.AddChange(_localClientId, new CreateBranchChange(featureId, "feature"));
         await DataModel.AddChange(_localClientId, new CreateBranchChange(otherId, "other"));
 
-        _refs.CheckoutBranch(featureId);
+        await _refs.CheckoutBranch(featureId);
 
         var mainCommit = await _refs.AddChange(
             _localClientId,

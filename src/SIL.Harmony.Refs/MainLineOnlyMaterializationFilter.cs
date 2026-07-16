@@ -2,7 +2,8 @@ namespace SIL.Harmony.Refs;
 
 /// <summary>
 /// Materializes only main-line commits (no <see cref="RefMetadata.BranchIdKey"/>).
-/// Branch-scoped commits remain stored and synced; they become queryable after merge (later) or on a branch checkout view (ticket 11).
+/// Used as the <see cref="CrdtConfig"/> fallback when checkout-aware DI is not registered.
+/// Prefer <see cref="CheckoutMaterializationFilter"/> via <c>AddHarmonyRefsDataModel</c> for branch views.
 /// </summary>
 public sealed class MainLineOnlyMaterializationFilter : ICommitMaterializationFilter
 {

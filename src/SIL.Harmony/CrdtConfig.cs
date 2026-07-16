@@ -21,6 +21,12 @@ public class CrdtConfig
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
+    /// <summary>
+    /// Selects which stored commits are applied when materializing snapshots.
+    /// Default includes every commit (unchanged behaviour). Commits are still persisted and synced regardless.
+    /// </summary>
+    public ICommitMaterializationFilter CommitMaterializationFilter { get; set; } =
+        IncludeAllCommitsFilter.Instance;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public IEnumerable<Type> ChangeTypes => ChangeTypeListBuilder.Types.Select(t => t.DerivedType);
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();

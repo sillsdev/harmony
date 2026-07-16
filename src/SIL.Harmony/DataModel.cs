@@ -186,13 +186,22 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply)
     {
         if (commitsToApply.Count == 0) return;
-        var oldestAddedCommit = commitsToApply.First();
-        await repo.DeleteStaleSnapshots(oldestAddedCommit);
+        var filter = _crdtConfig.Value.CommitMaterializationFilter;
+        var commitsToMaterialize = commitsToApply
+            .Where(filter.Include)
+            .ToSortedSet();
+        if (commitsToMaterialize.Count == 0) return;
+
+        // Stale boundary is the unfiltered apply-window head. If that head is excluded,
+        // DeleteStaleSnapshots(filtered.First()) would not clear already-materialized later
+        // commits (WhereAfter is strict), and re-applying them would duplicate snapshots.
+        var oldestInApplyWindow = commitsToApply.First();
+        await repo.DeleteStaleSnapshots(oldestInApplyWindow);
         Dictionary<Guid, Guid?> snapshotLookup = [];
-        if (commitsToApply.Count > 10)
+        if (commitsToMaterialize.Count > 10)
         {
             // Bulk-load relevant snapshots to minimize DB queries
-            var entityIds = commitsToApply
+            var entityIds = commitsToMaterialize
                 .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
                 .Distinct();
 
@@ -204,7 +213,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
 
         var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
-        await snapshotWorker.UpdateSnapshots(commitsToApply);
+        await snapshotWorker.UpdateSnapshots(commitsToMaterialize);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)

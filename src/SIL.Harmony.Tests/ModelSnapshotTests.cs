@@ -55,6 +55,28 @@ public class ModelSnapshotTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task CanGetWordBeforeASpecificCommit()
+    {
+        var entityId = Guid.NewGuid();
+        var firstCommit = await WriteNextChange(SetWord(entityId, "first"));
+        var secondCommit = await WriteNextChange(SetWord(entityId, "second"));
+        var thirdCommit = await WriteNextChange(SetWord(entityId, "third"));
+        await ClearNonRootSnapshots();
+
+        //there's no state before the first commit created the entity
+        var beforeFirst = await DataModel.GetBeforeCommit<Word>(firstCommit.Id, entityId);
+        beforeFirst.Should().BeNull();
+
+        var beforeSecond = await DataModel.GetBeforeCommit<Word>(secondCommit.Id, entityId);
+        beforeSecond.Should().NotBeNull();
+        beforeSecond!.Text.Should().Be("first");
+
+        var beforeThird = await DataModel.GetBeforeCommit<Word>(thirdCommit.Id, entityId);
+        beforeThird.Should().NotBeNull();
+        beforeThird!.Text.Should().Be("second");
+    }
+
+    [Fact]
     public async Task CanGetWordForASpecificTime()
     {
         var entityId = Guid.NewGuid();

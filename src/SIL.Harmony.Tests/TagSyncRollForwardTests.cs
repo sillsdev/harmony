@@ -46,13 +46,13 @@ public class TagSyncRollForwardTests : IAsyncLifetime
         var tagId = Guid.NewGuid();
         await _refs1.CreateTag(_client1.LocalClientId, tagId, "release", first.Id);
 
-        await _refs1.SyncWith(_client2.DataModel);
+        await _client1.DataModel.SyncWith(_client2.DataModel);
 
         await _refs2.CheckoutTag(tagId);
         (await _client2.DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("first");
 
         await _refs1.MoveTag(_client1.LocalClientId, tagId, second.Id);
-        await _refs2.SyncWith(_client1.DataModel);
+        await _client2.DataModel.SyncWith(_client1.DataModel);
 
         (await _client2.DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("second");
     }

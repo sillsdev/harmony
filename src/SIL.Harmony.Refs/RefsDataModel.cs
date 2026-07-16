@@ -1,13 +1,14 @@
 using Microsoft.Extensions.Options;
-using SIL.Harmony.Changes;
 using SIL.Harmony.Refs.Changes;
 using SIL.Harmony.Refs.Entities;
 
 namespace SIL.Harmony.Refs;
 
 /// <summary>
-/// Thin authoring/checkout wrapper over <see cref="DataModel"/>.
-/// Checkout lives on <see cref="CheckoutMaterializationFilter"/> (single source of truth);
+/// Checkout switching and ref lifecycle over <see cref="DataModel"/>.
+/// Authoring and sync go through <see cref="DataModel"/> directly; the refs handler stamps
+/// branch assignment on commit and rolls tag checkouts forward after apply.
+/// Checkout state lives on <see cref="CheckoutMaterializationFilter"/> (single source of truth);
 /// changing it rematerializes snapshots for the new view.
 /// </summary>
 public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter filter, IOptions<CrdtConfig> config)
@@ -50,16 +51,11 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
 
     public Task<Commit> CreateTag(Guid clientId, Guid tagId, string name, Guid targetCommitId) =>
         DataModel.AddChange(clientId, new CreateTagChange(tagId, name, targetCommitId),
-            ApplyAssignment(null, BranchAssignment.Main));
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 
-    public async Task<Commit> MoveTag(Guid clientId, Guid tagId, Guid targetCommitId)
-    {
-        var commit = await DataModel.AddChange(clientId, new MoveTagChange(tagId, targetCommitId),
-            ApplyAssignment(null, BranchAssignment.Main));
-        if (Checkout is TagCheckout tag && tag.TagId == tagId)
-            await RollForwardActiveTag(tagId);
-        return commit;
-    }
+    public Task<Commit> MoveTag(Guid clientId, Guid tagId, Guid targetCommitId) =>
+        DataModel.AddChange(clientId, new MoveTagChange(tagId, targetCommitId),
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 
     /// <summary>
     /// Incorporates <paramref name="branchId"/> into main visibility and deletes the branch entity.
@@ -68,78 +64,8 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
     public async Task<Commit> MergeBranch(Guid clientId, Guid branchId)
     {
         await CheckoutMain();
-        return await AddChange(clientId, new MergeBranchChange(branchId), BranchAssignment.Main);
-    }
-
-    /// <summary>
-    /// Syncs via <see cref="DataModel.SyncWith"/> then rolls forward an active tag checkout if the tip moved.
-    /// </summary>
-    public async Task<SyncResults> SyncWith(ISyncable remote)
-    {
-        Guid? tipBefore = null;
-        if (Checkout is TagCheckout active)
-        {
-            try { tipBefore = (await ResolveTagTip(active.TagId)).Id; }
-            catch (InvalidOperationException) { /* tag not projected yet */ }
-        }
-
-        var results = await DataModel.SyncWith(remote);
-
-        if (Checkout is TagCheckout checkedOut)
-        {
-            var tipAfter = await ResolveTagTip(checkedOut.TagId);
-            if (tipBefore != tipAfter.Id)
-                await RollForwardActiveTag(checkedOut.TagId);
-        }
-
-        return results;
-    }
-
-    /// <summary>
-    /// After sync (or external apply), refresh tag checkout if the tip moved.
-    /// </summary>
-    public async Task RefreshCheckoutAfterSync()
-    {
-        if (Checkout is not TagCheckout tag) return;
-        await RollForwardActiveTag(tag.TagId);
-    }
-
-    public Task<Commit> AddChange(
-        Guid clientId,
-        IChange change,
-        BranchAssignment assignment = default,
-        CommitMetadata? commitMetadata = null)
-    {
-        EnsureCanAuthor();
-        if (assignment == default) assignment = BranchAssignment.FromCheckout;
-        return DataModel.AddChange(clientId, change, ApplyAssignment(commitMetadata, assignment));
-    }
-
-    public Task<Commit> AddChanges(
-        Guid clientId,
-        IEnumerable<IChange> changes,
-        BranchAssignment assignment = default,
-        CommitMetadata? commitMetadata = null)
-    {
-        EnsureCanAuthor();
-        if (assignment == default) assignment = BranchAssignment.FromCheckout;
-        return DataModel.AddChanges(clientId, changes, ApplyAssignment(commitMetadata, assignment));
-    }
-
-    private void EnsureCanAuthor()
-    {
-        if (Checkout is not TagCheckout) return;
-        if (AllowAuthoringOnTagToMain) return;
-        throw new InvalidOperationException(
-            "Authoring is not allowed while checked out on a tag. Set AllowAuthoringOnTagToMain to write to main, or checkout main/branch first.");
-    }
-
-    private async Task RollForwardActiveTag(Guid tagId)
-    {
-        var tip = await ResolveTagTip(tagId);
-        filter.Checkout = RefCheckout.ForTag(tagId);
-        filter.SetAsOfTip(tip);
-        await DataModel.RegenerateSnapshots();
+        return await DataModel.AddChange(clientId, new MergeBranchChange(branchId),
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
     }
 
     private async Task<Commit> ResolveTagTip(Guid tagId)
@@ -148,28 +74,4 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
                   ?? throw new InvalidOperationException($"Tag {tagId} was not found.");
         return await DataModel.GetCommit(tag.TargetCommitId);
     }
-
-    private CommitMetadata ApplyAssignment(CommitMetadata? commitMetadata, BranchAssignment assignment)
-    {
-        var metadata = commitMetadata ?? new CommitMetadata();
-        // Resolve to a concrete assignment and mark it, so the commit interceptor treats it as
-        // already-decided (and does not re-derive or reject it, e.g. ref-lifecycle writes to main
-        // while a tag is checked out).
-        var branchId = ResolveBranchId(assignment);
-        RefMetadata.SetAssignment(metadata, branchId is null ? BranchAssignment.Main : BranchAssignment.ToBranch(branchId.Value));
-        return metadata;
-    }
-
-    private Guid? ResolveBranchId(BranchAssignment assignment) => assignment.Kind switch
-    {
-        BranchAssignmentKind.Main => null,
-        BranchAssignmentKind.Branch => assignment.BranchId,
-        BranchAssignmentKind.FromCheckout => Checkout switch
-        {
-            BranchCheckout branch => branch.BranchId,
-            TagCheckout when AllowAuthoringOnTagToMain => null,
-            _ => null
-        },
-        _ => null
-    };
 }

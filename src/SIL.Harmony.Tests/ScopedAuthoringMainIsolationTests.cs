@@ -27,7 +27,7 @@ public class ScopedAuthoringMainIsolationTests : DataModelTestBase
         await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
 
         await _refs.CheckoutBranch(branchId);
-        await _refs.AddChange(_localClientId, SetWord(wordId, "on-branch"));
+        await DataModel.AddChange(_localClientId, SetWord(wordId, "on-branch"));
 
         await _refs.CheckoutMain();
         var word = await DataModel.GetLatest<Word>(wordId);
@@ -44,12 +44,12 @@ public class ScopedAuthoringMainIsolationTests : DataModelTestBase
         await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
 
         await _refs.CheckoutBranch(branchId);
-        var commit = await _refs.AddChange(_localClientId, SetWord(wordId, "on-branch"));
+        var commit = await DataModel.AddChange(_localClientId, SetWord(wordId, "on-branch"));
 
         RefMetadata.GetBranchId(commit.Metadata).Should().Be(branchId);
 
         // later commits do not rewrite earlier assignment
-        await _refs.AddChange(_localClientId, SetWord(wordId, "again"));
+        await DataModel.AddChange(_localClientId, SetWord(wordId, "again"));
         var stored = await DbContext.Commits.AsNoTracking().SingleAsync(c => c.Id == commit.Id, TestContext.Current.CancellationToken);
         RefMetadata.GetBranchId(stored.Metadata).Should().Be(branchId);
     }
@@ -66,17 +66,17 @@ public class ScopedAuthoringMainIsolationTests : DataModelTestBase
 
         await _refs.CheckoutBranch(featureId);
 
-        var mainCommit = await _refs.AddChange(
+        var mainCommit = await DataModel.AddChange(
             _localClientId,
             SetWord(mainWordId, "forced-main"),
-            BranchAssignment.Main);
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
         RefMetadata.GetBranchId(mainCommit.Metadata).Should().BeNull();
         (await DataModel.GetLatest<Word>(mainWordId))!.Text.Should().Be("forced-main");
 
-        var otherCommit = await _refs.AddChange(
+        var otherCommit = await DataModel.AddChange(
             _localClientId,
             SetWord(otherWordId, "other-branch"),
-            BranchAssignment.ToBranch(otherId));
+            RefMetadata.SetAssignment(new(), BranchAssignment.ToBranch(otherId)));
         RefMetadata.GetBranchId(otherCommit.Metadata).Should().Be(otherId);
         (await DataModel.GetLatest<Word>(otherWordId)).Should().BeNull();
     }

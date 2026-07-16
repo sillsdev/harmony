@@ -45,7 +45,7 @@ public class TagCheckoutTests : DataModelTestBase
         await _refs.CreateTag(_localClientId, tagId, "v1", tip.Id);
         await _refs.CheckoutTag(tagId);
 
-        var act = () => _refs.AddChange(_localClientId, SetWord(Guid.NewGuid(), "nope"));
+        var act = () => DataModel.AddChange(_localClientId, SetWord(Guid.NewGuid(), "nope"));
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
@@ -90,7 +90,7 @@ public class TagCheckoutTests : DataModelTestBase
         await refs.CheckoutTag(tagId);
 
         var newWordId = Guid.NewGuid();
-        await refs.AddChange(withConfig.LocalClientId, withConfig.SetWord(newWordId, "authored-to-main"));
+        await withConfig.DataModel.AddChange(withConfig.LocalClientId, withConfig.SetWord(newWordId, "authored-to-main"));
 
         // The change was authored to main (no branch id), so it is visible on the main checkout.
         await refs.CheckoutMain();
@@ -103,15 +103,17 @@ public class TagCheckoutTests : DataModelTestBase
         var branchId = Guid.NewGuid();
         var wordId = Guid.NewGuid();
         await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
-        await _refs.AddChange(_localClientId, SetWord(wordId, "main"), BranchAssignment.Main);
+        await DataModel.AddChange(_localClientId, SetWord(wordId, "main"),
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 
         await _refs.CheckoutBranch(branchId);
-        var branchTip = await _refs.AddChange(_localClientId, SetWord(wordId, "on-branch"));
+        var branchTip = await DataModel.AddChange(_localClientId, SetWord(wordId, "on-branch"));
 
         var tagId = Guid.NewGuid();
         await _refs.CheckoutMain();
         await _refs.CreateTag(_localClientId, tagId, "wip", branchTip.Id);
-        await _refs.AddChange(_localClientId, SetWord(wordId, "later-main"), BranchAssignment.Main);
+        await DataModel.AddChange(_localClientId, SetWord(wordId, "later-main"),
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 
         await _refs.CheckoutTag(tagId);
         (await DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("on-branch");

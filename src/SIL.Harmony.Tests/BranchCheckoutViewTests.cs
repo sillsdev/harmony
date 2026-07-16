@@ -24,10 +24,11 @@ public class BranchCheckoutViewTests : DataModelTestBase
         var branchId = Guid.NewGuid();
         var wordId = Guid.NewGuid();
         await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
-        await _refs.AddChange(_localClientId, SetWord(wordId, "main"), BranchAssignment.Main);
+        await DataModel.AddChange(_localClientId, SetWord(wordId, "main"),
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 
         await _refs.CheckoutBranch(branchId);
-        await _refs.AddChange(_localClientId, SetWord(wordId, "on-branch"));
+        await DataModel.AddChange(_localClientId, SetWord(wordId, "on-branch"));
 
         (await DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("on-branch");
 
@@ -46,10 +47,10 @@ public class BranchCheckoutViewTests : DataModelTestBase
         await DataModel.AddChange(_localClientId, new CreateBranchChange(otherId, "other"));
 
         await _refs.CheckoutBranch(featureId);
-        await _refs.AddChange(_localClientId, SetWord(featureWordId, "feature-word"));
+        await DataModel.AddChange(_localClientId, SetWord(featureWordId, "feature-word"));
 
         await _refs.CheckoutBranch(otherId);
-        await _refs.AddChange(_localClientId, SetWord(otherWordId, "other-word"));
+        await DataModel.AddChange(_localClientId, SetWord(otherWordId, "other-word"));
 
         await _refs.CheckoutBranch(featureId);
         (await DataModel.GetLatest<Word>(featureWordId))!.Text.Should().Be("feature-word");
@@ -65,13 +66,15 @@ public class BranchCheckoutViewTests : DataModelTestBase
         await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
 
         // t1 main
-        await _refs.AddChange(_localClientId, SetWord(earlyId, "early-main"), BranchAssignment.Main);
+        await DataModel.AddChange(_localClientId, SetWord(earlyId, "early-main"),
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
         await _refs.CheckoutBranch(branchId);
         // t2 branch (between main commits chronologically once late main is written)
-        await _refs.AddChange(_localClientId, SetWord(Guid.NewGuid(), "mid-branch"));
+        await DataModel.AddChange(_localClientId, SetWord(Guid.NewGuid(), "mid-branch"));
         await _refs.CheckoutMain();
         // t3 main
-        await _refs.AddChange(_localClientId, SetWord(lateId, "late-main"), BranchAssignment.Main);
+        await DataModel.AddChange(_localClientId, SetWord(lateId, "late-main"),
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 
         await _refs.CheckoutBranch(branchId);
         var words = DataModel.QueryLatest<Word>()

@@ -1,0 +1,26 @@
+name: Format
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+
+      # Verifies the code matches .editorconfig (whitespace + code style + analyzers).
+      # Fails the build if anything is out of format. To fix locally, run:
+      #   dotnet format
+      - name: Verify formatting
+        run: dotnet format --verify-no-changes

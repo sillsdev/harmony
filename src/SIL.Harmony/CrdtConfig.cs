@@ -51,7 +51,7 @@ public class CrdtConfig
         ChangeTypeListBuilder.Freeze();
 
         var knownChanges = new Dictionary<string, Type>(ChangeTypeListBuilder.Types.Count);
-        _changeTypeDiscriminators = new Dictionary<Type, string>(ChangeTypeListBuilder.Types.Count);
+        var discriminators = new Dictionary<Type, string>(ChangeTypeListBuilder.Types.Count);
         foreach (var derived in ChangeTypeListBuilder.Types)
         {
             if (derived.TypeDiscriminator is not string discriminator)
@@ -59,9 +59,12 @@ public class CrdtConfig
                     $"Change type {derived.DerivedType} must use a string $type discriminator");
 
             knownChanges.Add(discriminator, derived.DerivedType);
-            _changeTypeDiscriminators.Add(derived.DerivedType, discriminator);
+            discriminators.Add(derived.DerivedType, discriminator);
         }
 
+        // Publish the field only once fully built: JsonTypeModifier reads it from arbitrary
+        // threads, so a partially-populated dictionary must never be observable.
+        _changeTypeDiscriminators = discriminators;
         return knownChanges;
     }
 

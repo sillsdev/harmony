@@ -402,7 +402,3 @@ FodyWeavers.xsd
 *.received.*
 
 *.lscache
-
-# Agent skills (local-only)
-.scratch/
-docs/agents/

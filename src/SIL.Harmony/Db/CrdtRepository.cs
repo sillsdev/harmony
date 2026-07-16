@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Entities;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
@@ -245,6 +246,52 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .WhereAfter(commit)
             .DefaultOrder()
             .ToArrayAsync();
+    }
+
+    /// <summary>
+    /// Distinct entity ids from ChangeEntities whose JSON change has the given polymorphic type name.
+    /// </summary>
+    public async Task<Guid[]> GetEntityIdsForChangeType(string changeTypeName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(changeTypeName);
+        // Discriminator key is "$type"; SQLite requires a quoted JSON path for the leading $.
+        var typePath = $"$.\"{CrdtConstants.ChangeDiscriminatorProperty}\"";
+        return await _dbContext.Database
+            .SqlQuery<Guid>(
+                $"""
+                 SELECT DISTINCT "EntityId" AS "Value"
+                 FROM "ChangeEntities"
+                 WHERE "Change" ->> {typePath} = {changeTypeName}
+                 """)
+            .ToArrayAsync();
+    }
+
+    /// <summary>
+    /// Distinct entity ids from ChangeEntities for the given change type's <see cref="IPolyType.TypeName"/>.
+    /// </summary>
+    public Task<Guid[]> GetEntityIdsForChangeType<TChange>() where TChange : IPolyType =>
+        GetEntityIdsForChangeType(TChange.TypeName);
+
+    /// <summary>
+    /// Distinct entity ids from ChangeEntities for a change type that implements <see cref="IPolyType"/>.
+    /// </summary>
+    public Task<Guid[]> GetEntityIdsForChangeType(Type changeType)
+    {
+        ArgumentNullException.ThrowIfNull(changeType);
+        if (!typeof(IPolyType).IsAssignableFrom(changeType))
+        {
+            throw new ArgumentException($"Change type {changeType} must implement {nameof(IPolyType)}.", nameof(changeType));
+        }
+
+        var typeName = changeType
+            .GetProperty(nameof(IPolyType.TypeName), BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            ?.GetValue(null) as string;
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            throw new ArgumentException($"Change type {changeType} does not expose a static {nameof(IPolyType.TypeName)}.", nameof(changeType));
+        }
+
+        return GetEntityIdsForChangeType(typeName);
     }
 
     public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)

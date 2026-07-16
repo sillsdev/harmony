@@ -152,8 +152,11 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
     private CommitMetadata ApplyAssignment(CommitMetadata? commitMetadata, BranchAssignment assignment)
     {
         var metadata = commitMetadata ?? new CommitMetadata();
+        // Resolve to a concrete assignment and mark it, so the commit interceptor treats it as
+        // already-decided (and does not re-derive or reject it, e.g. ref-lifecycle writes to main
+        // while a tag is checked out).
         var branchId = ResolveBranchId(assignment);
-        RefMetadata.SetBranchId(metadata, branchId);
+        RefMetadata.SetAssignment(metadata, branchId is null ? BranchAssignment.Main : BranchAssignment.ToBranch(branchId.Value));
         return metadata;
     }
 

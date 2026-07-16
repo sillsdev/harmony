@@ -32,6 +32,7 @@ public static class HarmonyRefsKernel
         services.AddScoped<CheckoutMaterializationFilter>();
         services.AddScoped<ICommitMaterializationFilter>(sp =>
             sp.GetRequiredService<CheckoutMaterializationFilter>());
+        services.AddScoped<ICommitInterceptor, CheckoutCommitInterceptor>();
         services.AddScoped<RefsDataModel>();
         return services;
     }

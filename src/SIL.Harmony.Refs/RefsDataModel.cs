@@ -4,27 +4,26 @@ namespace SIL.Harmony.Refs;
 
 /// <summary>
 /// Thin authoring/checkout wrapper over <see cref="DataModel"/>.
-/// Checkout is local and not synced; changing it rematerializes snapshots for the new view.
+/// Checkout lives on <see cref="CheckoutMaterializationFilter"/> (single source of truth);
+/// changing it rematerializes snapshots for the new view.
 /// </summary>
 public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter filter)
 {
     public DataModel DataModel { get; } = dataModel;
 
-    public RefCheckout Checkout { get; private set; } = RefCheckout.Main;
+    public RefCheckout Checkout => filter.Checkout;
 
     public async Task CheckoutMain()
     {
         if (Checkout is MainCheckout) return;
-        Checkout = RefCheckout.Main;
-        filter.Checkout = Checkout;
+        filter.Checkout = RefCheckout.Main;
         await DataModel.RegenerateSnapshots();
     }
 
     public async Task CheckoutBranch(Guid branchId)
     {
         if (Checkout is BranchCheckout current && current.BranchId == branchId) return;
-        Checkout = RefCheckout.ForBranch(branchId);
-        filter.Checkout = Checkout;
+        filter.Checkout = RefCheckout.ForBranch(branchId);
         await DataModel.RegenerateSnapshots();
     }
 

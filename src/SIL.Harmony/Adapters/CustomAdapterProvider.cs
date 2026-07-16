@@ -18,7 +18,7 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
         _objectTypeListBuilder = objectTypeListBuilder;
         JsonTypes.AddDerivedType(typeof(IObjectBase), typeof(TCustomAdapter), TCustomAdapter.TypeName);
     }
-    
+
     public CustomAdapterProvider<TCommonInterface, TCustomAdapter> AddWithCustomPolymorphicMapping<T>(string typeName,
         Action<EntityTypeBuilder<T>>? configureEntry = null
     ) where T : class, TCommonInterface

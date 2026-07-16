@@ -1,13 +1,13 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Db;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests.Mocks;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Tests;
 
@@ -47,7 +47,7 @@ public class DataModelTestBase : IAsyncLifetime
         DbContext.Database.EnsureCreated();
         DataModel = _services.GetRequiredService<DataModel>();
     }
-    
+
     public DataModelTestBase ForkDatabase(bool alwaysValidate = true)
     {
         var connection = new SqliteConnection("Data Source=:memory:");
@@ -110,7 +110,10 @@ public class DataModelTestBase : IAsyncLifetime
             };
             commit.ChangeEntities.AddRange(changes.Select((change, index) => new ChangeEntity<IChange>
             {
-                Change = change, Index = index, CommitId = commit.Id, EntityId = change.EntityId
+                Change = change,
+                Index = index,
+                CommitId = commit.Id,
+                EntityId = change.EntityId
             }));
             return commit;
         }

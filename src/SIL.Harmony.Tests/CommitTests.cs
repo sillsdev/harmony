@@ -1,9 +1,9 @@
 using System.IO.Hashing;
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace SIL.Harmony.Tests;
 

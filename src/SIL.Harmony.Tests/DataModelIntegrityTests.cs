@@ -1,4 +1,4 @@
-﻿using SIL.Harmony.Sample.Models;
+using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
 

@@ -1,5 +1,5 @@
-using SIL.Harmony.Sample.Models;
 using Microsoft.EntityFrameworkCore;
+using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
 

@@ -1,4 +1,4 @@
-﻿
+
 namespace SIL.Harmony.Core;
 
 /// <summary>

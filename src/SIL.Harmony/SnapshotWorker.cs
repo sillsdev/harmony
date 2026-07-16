@@ -13,7 +13,7 @@ internal class SnapshotWorker
     private readonly Dictionary<Guid, Guid?> _snapshotLookup;
     private readonly CrdtRepository _crdtRepository;
     private readonly CrdtConfig _crdtConfig;
-    private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots  = [];
+    private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
 
@@ -45,7 +45,7 @@ internal class SnapshotWorker
     /// <param name="crdtConfig"></param>
     internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup,
         CrdtRepository crdtRepository,
-        CrdtConfig crdtConfig): this([], snapshotLookup, crdtRepository, crdtConfig)
+        CrdtConfig crdtConfig) : this([], snapshotLookup, crdtRepository, crdtConfig)
     {
     }
 

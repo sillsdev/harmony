@@ -1,4 +1,4 @@
-﻿namespace SIL.Harmony.Resource;
+namespace SIL.Harmony.Resource;
 
 /// <summary>
 /// a non CRDT object that tracks local resource files

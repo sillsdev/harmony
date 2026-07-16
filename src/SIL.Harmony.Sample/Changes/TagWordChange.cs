@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Entities;
 using SIL.Harmony.Sample.Models;

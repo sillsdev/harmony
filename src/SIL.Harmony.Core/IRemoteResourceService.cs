@@ -1,4 +1,4 @@
-﻿namespace SIL.Harmony.Core;
+namespace SIL.Harmony.Core;
 
 /// <summary>
 /// interface to facilitate downloading of resources, typically implemented in application code

@@ -20,9 +20,9 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
     [Fact]
     public void AddingChangePerformance()
     {
-        #if DEBUG
+#if DEBUG
         Assert.Fail("This test is disabled in debug builds, not reliable");
-        #endif
+#endif
         var summary =
             BenchmarkRunner.Run<DataModelPerformanceBenchmarks>(
                 ManualConfig.CreateEmpty()
@@ -38,7 +38,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
             ratio.Should().BeInRange(0, 7, "performance should not get worse, benchmark " + benchmarkCase.DisplayInfo);
         }
     }
-    
+
     //enable this to profile tests
     private static readonly bool trace = (Environment.GetEnvironmentVariable("DOTNET_TRACE") ?? "false") != "false";
     private async Task StartTrace()
@@ -53,14 +53,14 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         DotTrace.Attach(config);
         DotTrace.StartCollectingData();
     }
-    
+
     private void StopTrace()
     {
         if (!trace) return;
         DotTrace.SaveData();
         DotTrace.Detach();
     }
-    
+
     private static async Task<TimeSpan> MeasureTime(Func<Task> action, int iterations = 10)
     {
         var total = TimeSpan.Zero;
@@ -105,7 +105,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         var parentHash = (await dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity 1"))).Hash;
         for (var i = 0; i < count; i++)
         {
-            var change = (SetWordTextChange) dataModelTest.SetWord(Guid.NewGuid(), $"entity {i}");
+            var change = (SetWordTextChange)dataModelTest.SetWord(Guid.NewGuid(), $"entity {i}");
             var commitId = Guid.NewGuid();
             var commit = new Commit(commitId)
             {
@@ -206,13 +206,13 @@ public class DataModelPerformanceBenchmarks
         _ = _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result;
         _dataModelTestBase = _templateModel.ForkDatabase(false);
     }
-    
+
     [Benchmark(Baseline = true), BenchmarkCategory("WriteChange")]
     public Commit AddSingleChangePerformance()
     {
         return _emptyDataModel.WriteNextChange(_emptyDataModel.SetWord(Guid.NewGuid(), "entity1")).Result;
     }
-    
+
     [Benchmark, BenchmarkCategory("WriteChange")]
     public Commit AddSingleChangeWithManySnapshots()
     {

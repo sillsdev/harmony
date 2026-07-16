@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
@@ -121,7 +121,7 @@ public class SyncTests : IAsyncLifetime
         _client2.DataModel.QueryLatest<Definition>().ToBlockingEnumerable(TestContext.Current.CancellationToken).Should()
             .BeEquivalentTo(_client1.DataModel.QueryLatest<Definition>().ToBlockingEnumerable(TestContext.Current.CancellationToken));
     }
-    
+
     [Fact]
     public async Task CanSyncCommitsWithMoreEntitiesThanTheSqliteParameterLimit()
     {

@@ -1,9 +1,8 @@
-using SIL.Harmony.Refs;
-using SIL.Harmony.Refs.Changes;
-using SIL.Harmony.Refs.Entities;
 using Microsoft.Extensions.DependencyInjection;
+using SIL.Harmony.Refs;
+using SIL.Harmony.Refs.Entities;
 
-namespace SIL.Harmony.Tests;
+namespace SIL.Harmony.Tests.Refs;
 
 public class CreateBranchTests : DataModelTestBase
 {

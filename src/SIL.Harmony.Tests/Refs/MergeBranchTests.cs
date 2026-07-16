@@ -1,12 +1,12 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Refs;
 using SIL.Harmony.Refs.Changes;
 using SIL.Harmony.Refs.Entities;
 using SIL.Harmony.Sample.Models;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
-namespace SIL.Harmony.Tests;
+namespace SIL.Harmony.Tests.Refs;
 
 public class MergeBranchTests : DataModelTestBase
 {

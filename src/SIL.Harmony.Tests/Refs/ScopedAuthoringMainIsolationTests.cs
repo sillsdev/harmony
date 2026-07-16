@@ -1,9 +1,9 @@
-using SIL.Harmony.Refs;
-using SIL.Harmony.Sample.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using SIL.Harmony.Refs;
+using SIL.Harmony.Sample.Models;
 
-namespace SIL.Harmony.Tests;
+namespace SIL.Harmony.Tests.Refs;
 
 public class ScopedAuthoringMainIsolationTests : DataModelTestBase
 {

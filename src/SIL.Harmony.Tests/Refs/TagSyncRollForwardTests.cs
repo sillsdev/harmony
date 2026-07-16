@@ -1,8 +1,8 @@
+using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Refs;
 using SIL.Harmony.Sample.Models;
-using Microsoft.Extensions.DependencyInjection;
 
-namespace SIL.Harmony.Tests;
+namespace SIL.Harmony.Tests.Refs;
 
 public class TagSyncRollForwardTests : IAsyncLifetime
 {

@@ -1,10 +1,10 @@
+using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Refs;
 using SIL.Harmony.Refs.Changes;
 using SIL.Harmony.Sample.Models;
-using Microsoft.Data.Sqlite;
-using Microsoft.Extensions.DependencyInjection;
 
-namespace SIL.Harmony.Tests;
+namespace SIL.Harmony.Tests.Refs;
 
 /// <summary>
 /// Ticket 05: with refs registered, an active tag checkout rolls forward automatically after any

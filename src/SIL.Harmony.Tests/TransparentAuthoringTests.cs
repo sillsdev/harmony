@@ -1,5 +1,4 @@
 using SIL.Harmony.Refs;
-using SIL.Harmony.Refs.Changes;
 using SIL.Harmony.Sample.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -29,7 +28,7 @@ public class TransparentAuthoringTests : DataModelTestBase
     {
         var branchId = Guid.NewGuid();
         var wordId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
+        await _refs.CreateBranch(_localClientId, branchId, "feature");
 
         await _refs.CheckoutBranch(branchId);
         var commit = await DataModel.AddChange(_localClientId, SetWord(wordId, "on-branch"));
@@ -97,8 +96,8 @@ public class TransparentAuthoringTests : DataModelTestBase
         var otherId = Guid.NewGuid();
         var mainWordId = Guid.NewGuid();
         var otherWordId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(featureId, "feature"));
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(otherId, "other"));
+        await _refs.CreateBranch(_localClientId, featureId, "feature");
+        await _refs.CreateBranch(_localClientId, otherId, "other");
 
         await _refs.CheckoutBranch(featureId);
 
@@ -131,7 +130,7 @@ public class TransparentAuthoringTests : DataModelTestBase
         var refs = tb.GetRequiredService<RefsDataModel>();
 
         var branchId = Guid.NewGuid();
-        await tb.DataModel.AddChange(tb.LocalClientId, new CreateBranchChange(branchId, "feature"));
+        await refs.CreateBranch(tb.LocalClientId, branchId, "feature");
         await refs.CheckoutBranch(branchId);
         var commit = await tb.DataModel.AddChange(tb.LocalClientId, tb.SetWord(Guid.NewGuid(), "x"));
 
@@ -145,7 +144,7 @@ public class TransparentAuthoringTests : DataModelTestBase
     public async Task ExplicitAssignmentMarkerIsNotPersisted()
     {
         var featureId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(featureId, "feature"));
+        await _refs.CreateBranch(_localClientId, featureId, "feature");
         await _refs.CheckoutBranch(featureId);
 
         var wordId = Guid.NewGuid();

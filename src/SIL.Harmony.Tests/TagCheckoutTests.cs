@@ -1,5 +1,4 @@
 using SIL.Harmony.Refs;
-using SIL.Harmony.Refs.Changes;
 using SIL.Harmony.Sample.Models;
 using Microsoft.Extensions.DependencyInjection;
 using RefTag = SIL.Harmony.Refs.Entities.Tag;
@@ -102,7 +101,7 @@ public class TagCheckoutTests : DataModelTestBase
     {
         var branchId = Guid.NewGuid();
         var wordId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
+        await _refs.CreateBranch(_localClientId, branchId, "feature");
         await DataModel.AddChange(_localClientId, SetWord(wordId, "main"),
             RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 

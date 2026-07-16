@@ -1,5 +1,4 @@
 using SIL.Harmony.Refs;
-using SIL.Harmony.Refs.Changes;
 using SIL.Harmony.Sample.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,7 +22,7 @@ public class BranchCheckoutViewTests : DataModelTestBase
     {
         var branchId = Guid.NewGuid();
         var wordId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
+        await _refs.CreateBranch(_localClientId, branchId, "feature");
         await DataModel.AddChange(_localClientId, SetWord(wordId, "main"),
             RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 
@@ -43,8 +42,8 @@ public class BranchCheckoutViewTests : DataModelTestBase
         var otherId = Guid.NewGuid();
         var featureWordId = Guid.NewGuid();
         var otherWordId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(featureId, "feature"));
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(otherId, "other"));
+        await _refs.CreateBranch(_localClientId, featureId, "feature");
+        await _refs.CreateBranch(_localClientId, otherId, "other");
 
         await _refs.CheckoutBranch(featureId);
         await DataModel.AddChange(_localClientId, SetWord(featureWordId, "feature-word"));
@@ -63,7 +62,7 @@ public class BranchCheckoutViewTests : DataModelTestBase
         var branchId = Guid.NewGuid();
         var earlyId = Guid.NewGuid();
         var lateId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
+        await _refs.CreateBranch(_localClientId, branchId, "feature");
 
         // t1 main
         await DataModel.AddChange(_localClientId, SetWord(earlyId, "early-main"),

@@ -26,7 +26,7 @@ public class MergeBranchTests : DataModelTestBase
     {
         var branchId = Guid.NewGuid();
         var wordId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
+        await _refs.CreateBranch(_localClientId, branchId, "feature");
 
         // main: 1, 2, 3 — branch: A, B, C interleaved by time on the same entity
         await AddAt(_localClientId, NextDate(), SetWord(wordId, "1"));
@@ -67,7 +67,7 @@ public class MergeBranchTests : DataModelTestBase
         var branchId = Guid.NewGuid();
         var earlyId = Guid.NewGuid();
         var lateId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature"));
+        await _refs.CreateBranch(_localClientId, branchId, "feature");
 
         await _refs.CheckoutBranch(branchId);
         var earlyBranch = await AddAt(_localClientId, NextDate(), SetWord(earlyId, "early-branch"),

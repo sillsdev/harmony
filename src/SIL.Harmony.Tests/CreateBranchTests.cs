@@ -7,18 +7,22 @@ namespace SIL.Harmony.Tests;
 
 public class CreateBranchTests : DataModelTestBase
 {
+    private readonly RefsDataModel _refs;
+
     public CreateBranchTests() : base(configure: services =>
     {
         services.Configure<CrdtConfig>(config => config.AddHarmonyRefs());
+        services.AddHarmonyRefsDataModel();
     })
     {
+        _refs = _services.GetRequiredService<RefsDataModel>();
     }
 
     [Fact]
     public async Task CanCreateAndReadBranch()
     {
         var branchId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(branchId, "feature-x"));
+        await _refs.CreateBranch(_localClientId, branchId, "feature-x");
 
         var branch = await DataModel.GetLatest<Branch>(branchId);
         branch.Should().NotBeNull();
@@ -31,8 +35,8 @@ public class CreateBranchTests : DataModelTestBase
     {
         var firstId = Guid.NewGuid();
         var secondId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(firstId, "dup"));
-        await DataModel.AddChange(_localClientId, new CreateBranchChange(secondId, "dup"));
+        await _refs.CreateBranch(_localClientId, firstId, "dup");
+        await _refs.CreateBranch(_localClientId, secondId, "dup");
 
         var first = await DataModel.GetLatest<Branch>(firstId);
         var second = await DataModel.GetLatest<Branch>(secondId);
@@ -40,7 +44,9 @@ public class CreateBranchTests : DataModelTestBase
         second!.Name.Should().Be("dup");
         first.Id.Should().NotBe(second.Id);
 
-        var both = DataModel.QueryLatest<Branch>().ToBlockingEnumerable(TestContext.Current.CancellationToken).ToArray();
+        var both = _refs.ListBranches()
+            .ToBlockingEnumerable(TestContext.Current.CancellationToken)
+            .ToArray();
         both.Should().HaveCount(2);
     }
 }

@@ -7,11 +7,15 @@ namespace SIL.Harmony.Tests;
 
 public class CreateTagTests : DataModelTestBase
 {
+    private readonly RefsDataModel _refs;
+
     public CreateTagTests() : base(configure: services =>
     {
         services.Configure<CrdtConfig>(config => config.AddHarmonyRefs());
+        services.AddHarmonyRefsDataModel();
     })
     {
+        _refs = _services.GetRequiredService<RefsDataModel>();
     }
 
     [Fact]
@@ -21,7 +25,7 @@ public class CreateTagTests : DataModelTestBase
         var tip = await DataModel.AddChange(_localClientId, SetWord(wordId, "at-tip"));
         var tagId = Guid.NewGuid();
 
-        await DataModel.AddChange(_localClientId, new CreateTagChange(tagId, "release", tip.Id));
+        await _refs.CreateTag(_localClientId, tagId, "release", tip.Id);
 
         var tag = await DataModel.GetLatest<Tag>(tagId);
         tag.Should().NotBeNull();
@@ -36,10 +40,12 @@ public class CreateTagTests : DataModelTestBase
         var tip = await DataModel.AddChange(_localClientId, SetWord(Guid.NewGuid(), "x"));
         var firstId = Guid.NewGuid();
         var secondId = Guid.NewGuid();
-        await DataModel.AddChange(_localClientId, new CreateTagChange(firstId, "dup", tip.Id));
-        await DataModel.AddChange(_localClientId, new CreateTagChange(secondId, "dup", tip.Id));
+        await _refs.CreateTag(_localClientId, firstId, "dup", tip.Id);
+        await _refs.CreateTag(_localClientId, secondId, "dup", tip.Id);
 
-        var both = DataModel.QueryLatest<Tag>().ToBlockingEnumerable(TestContext.Current.CancellationToken).ToArray();
+        var both = _refs.ListTags()
+            .ToBlockingEnumerable(TestContext.Current.CancellationToken)
+            .ToArray();
         both.Should().HaveCount(2);
         both.Select(t => t.Name).Should().AllBe("dup");
     }

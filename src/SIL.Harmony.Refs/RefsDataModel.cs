@@ -43,11 +43,14 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
 
     public async Task CheckoutTag(Guid tagId)
     {
-        var tip = await ResolveTagTip(tagId);
+        var tip = await TagTipResolver.ResolveTagTip(DataModel, tagId);
         filter.Checkout = RefCheckout.ForTag(tagId);
         filter.SetAsOfTip(tip);
         await DataModel.RegenerateSnapshots();
     }
+
+    public Task<Commit> CreateBranch(Guid clientId, Guid branchId, string name) =>
+        DataModel.AddChange(clientId, new CreateBranchChange(branchId, name), RefMetadata.SetAssignment(new(), BranchAssignment.Main));
 
     public Task<Commit> CreateTag(Guid clientId, Guid tagId, string name, Guid targetCommitId) =>
         DataModel.AddChange(clientId, new CreateTagChange(tagId, name, targetCommitId),
@@ -56,6 +59,10 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
     public Task<Commit> MoveTag(Guid clientId, Guid tagId, Guid targetCommitId) =>
         DataModel.AddChange(clientId, new MoveTagChange(tagId, targetCommitId),
             RefMetadata.SetAssignment(new(), BranchAssignment.Main));
+
+    public IAsyncEnumerable<Branch> ListBranches() => DataModel.QueryLatest<Branch>();
+
+    public IAsyncEnumerable<Tag> ListTags() => DataModel.QueryLatest<Tag>();
 
     /// <summary>
     /// Incorporates <paramref name="branchId"/> into main visibility and deletes the branch entity.
@@ -66,12 +73,5 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
         await CheckoutMain();
         return await DataModel.AddChange(clientId, new MergeBranchChange(branchId),
             RefMetadata.SetAssignment(new(), BranchAssignment.Main));
-    }
-
-    private async Task<Commit> ResolveTagTip(Guid tagId)
-    {
-        var tag = await DataModel.GetLatest<Tag>(tagId)
-                  ?? throw new InvalidOperationException($"Tag {tagId} was not found.");
-        return await DataModel.GetCommit(tag.TargetCommitId);
     }
 }

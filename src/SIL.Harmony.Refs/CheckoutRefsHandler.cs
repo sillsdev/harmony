@@ -1,6 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using SIL.Harmony.Refs.Entities;
 
 namespace SIL.Harmony.Refs;
 
@@ -49,18 +48,11 @@ public sealed class CheckoutRefsHandler(
         if (filter.Checkout is not TagCheckout tag) return;
 
         var dataModel = serviceProvider.GetRequiredService<DataModel>();
-        var tip = await ResolveTagTip(dataModel, tag.TagId);
+        var tip = await TagTipResolver.ResolveTagTip(dataModel, tag.TagId);
         // Skip rematerialization unless the tag's tip actually moved.
         if (filter.AsOfTipId == tip.Id) return;
 
         filter.SetAsOfTip(tip);
         await dataModel.RegenerateSnapshots();
-    }
-
-    private static async Task<Commit> ResolveTagTip(DataModel dataModel, Guid tagId)
-    {
-        var tag = await dataModel.GetLatest<Tag>(tagId)
-                  ?? throw new InvalidOperationException($"Tag {tagId} was not found.");
-        return await dataModel.GetCommit(tag.TargetCommitId);
     }
 }

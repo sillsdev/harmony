@@ -42,7 +42,7 @@ public static class CrdtKernel
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
             provider.GetRequiredService<ILogger<DataModel>>(),
             provider.GetService<ICommitMaterializationFilter>(),
-            provider.GetService<ICommitInterceptor>()
+            provider.GetServices<ICommitInterceptor>()
         ));
         //must use factory method because ResourceService constructor is internal
         services.AddScoped<ResourceService>(provider => new ResourceService(

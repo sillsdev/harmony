@@ -6,7 +6,7 @@ namespace SIL.Harmony.Refs;
 /// Applies the current checkout's branch assignment to locally-authored commits so that
 /// clients can author through <see cref="DataModel.AddChange"/> directly without routing
 /// through <see cref="RefsDataModel"/>. Commits that already carry an explicit assignment
-/// (see <see cref="RefMetadata.IsAssigned"/>) are left untouched.
+/// are left untouched.
 /// </summary>
 public sealed class CheckoutCommitInterceptor(CheckoutMaterializationFilter filter, IOptions<CrdtConfig> config)
     : ICommitInterceptor
@@ -14,7 +14,8 @@ public sealed class CheckoutCommitInterceptor(CheckoutMaterializationFilter filt
     public void OnCommitAuthored(Commit commit)
     {
         // Explicit per-call override or a ref-lifecycle assignment already decided this commit.
-        if (RefMetadata.IsAssigned(commit.Metadata)) return;
+        // ConsumeAssignment also clears the transient marker so it is never persisted or synced.
+        if (RefMetadata.ConsumeAssignment(commit.Metadata)) return;
 
         switch (filter.Checkout)
         {

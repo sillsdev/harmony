@@ -118,6 +118,56 @@ public class TransparentAuthoringTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task AllRegisteredInterceptorsAreInvoked()
+    {
+        await using var tb = new DataModelTestBase(configure: services =>
+        {
+            services.Configure<CrdtConfig>(config => config.AddHarmonyRefs());
+            services.AddHarmonyRefsDataModel();
+            services.AddScoped<RecordingInterceptor>();
+            services.AddScoped<ICommitInterceptor>(sp => sp.GetRequiredService<RecordingInterceptor>());
+        });
+        var recording = tb.GetRequiredService<RecordingInterceptor>();
+        var refs = tb.GetRequiredService<RefsDataModel>();
+
+        var branchId = Guid.NewGuid();
+        await tb.DataModel.AddChange(tb.LocalClientId, new CreateBranchChange(branchId, "feature"));
+        await refs.CheckoutBranch(branchId);
+        var commit = await tb.DataModel.AddChange(tb.LocalClientId, tb.SetWord(Guid.NewGuid(), "x"));
+
+        // The extra interceptor ran alongside the checkout interceptor...
+        recording.Count.Should().BeGreaterThan(0);
+        // ...and the checkout interceptor still applied the branch assignment.
+        RefMetadata.GetBranchId(commit.Metadata).Should().Be(branchId);
+    }
+
+    [Fact]
+    public async Task ExplicitAssignmentMarkerIsNotPersisted()
+    {
+        var featureId = Guid.NewGuid();
+        await DataModel.AddChange(_localClientId, new CreateBranchChange(featureId, "feature"));
+        await _refs.CheckoutBranch(featureId);
+
+        var wordId = Guid.NewGuid();
+        var commit = await DataModel.AddChange(
+            _localClientId,
+            SetWord(wordId, "forced-main"),
+            RefMetadata.SetAssignment(new(), BranchAssignment.Main));
+
+        // Explicit main leaves no branch id and no transient marker behind.
+        var stored = await DbContext.Commits.AsNoTracking()
+            .SingleAsync(c => c.Id == commit.Id, TestContext.Current.CancellationToken);
+        RefMetadata.GetBranchId(stored.Metadata).Should().BeNull();
+        stored.Metadata.ExtraMetadata.Should().BeEmpty();
+    }
+
+    private sealed class RecordingInterceptor : ICommitInterceptor
+    {
+        public int Count { get; private set; }
+        public void OnCommitAuthored(Commit commit) => Count++;
+    }
+
+    [Fact]
     public async Task PerCallOverrideToMainOnTagCheckoutDoesNotThrow()
     {
         await using var withConfig = new DataModelTestBase(configure: services =>

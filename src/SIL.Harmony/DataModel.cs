@@ -24,7 +24,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
     private readonly ICommitMaterializationFilter? _materializationFilter;
-    private readonly ICommitInterceptor? _commitInterceptor;
+    private readonly IReadOnlyList<ICommitInterceptor> _commitInterceptors;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
@@ -33,7 +33,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         IOptions<CrdtConfig> crdtConfig,
         ILogger<DataModel> logger,
         ICommitMaterializationFilter? materializationFilter = null,
-        ICommitInterceptor? commitInterceptor = null)
+        IEnumerable<ICommitInterceptor>? commitInterceptors = null)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _serializerOptions = serializerOptions;
@@ -41,7 +41,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         _crdtConfig = crdtConfig;
         _logger = logger;
         _materializationFilter = materializationFilter;
-        _commitInterceptor = commitInterceptor;
+        _commitInterceptors = commitInterceptors?.ToArray() ?? [];
     }
 
     private ICommitMaterializationFilter MaterializationFilter =>
@@ -107,11 +107,12 @@ public class DataModel : ISyncable, IAsyncDisposable
             Metadata = commitMetadata ?? new()
         };
         commit.ChangeEntities.AddRange(changes.Select((c, i) => ToChangeEntity(c, i, commit.Id)));
-        // Single author choke point: let an optional interceptor (e.g. refs branch assignment)
-        // stamp metadata or reject authoring before the commit is persisted. Metadata is not
-        // part of the commit hash, so this is safe to do here. Sync-applied commits never pass
-        // through NewCommit, so their assignment is left untouched.
-        _commitInterceptor?.OnCommitAuthored(commit);
+        // Single author choke point: let any registered interceptors (e.g. refs branch assignment)
+        // stamp metadata or reject authoring before the commit is persisted. Metadata is not part
+        // of the commit hash, so this is safe to do here. Sync-applied commits never pass through
+        // NewCommit, so their assignment is left untouched.
+        foreach (var interceptor in _commitInterceptors)
+            interceptor.OnCommitAuthored(commit);
         return commit;
     }
 

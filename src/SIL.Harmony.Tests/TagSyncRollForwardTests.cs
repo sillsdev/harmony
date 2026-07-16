@@ -51,14 +51,9 @@ public class TagSyncRollForwardTests : IAsyncLifetime
         await _refs2.CheckoutTag(tagId);
         (await _client2.DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("first");
 
-        RefCheckoutChangedEventArgs? notified = null;
-        _refs2.CheckoutChanged += (_, args) => notified = args;
-
         await _refs1.MoveTag(_client1.LocalClientId, tagId, second.Id);
         await _refs2.SyncWith(_client1.DataModel);
 
         (await _client2.DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("second");
-        notified.Should().NotBeNull();
-        notified!.TipCommitId.Should().Be(second.Id);
     }
 }

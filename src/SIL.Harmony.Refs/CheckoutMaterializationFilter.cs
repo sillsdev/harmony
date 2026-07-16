@@ -13,28 +13,19 @@ namespace SIL.Harmony.Refs;
 public sealed class CheckoutMaterializationFilter : ICommitMaterializationFilter, IMaterializationApplyWindow
 {
     private readonly HashSet<Guid> _incorporatedBranchIds = [];
-    private (DateTimeOffset, long, Guid)? _asOfCompareKey;
-    private Guid? _tipBranchId;
+    private Commit? _asOfTip;
 
     public RefCheckout Checkout { get; set; } = RefCheckout.Main;
 
-    public bool HasAsOfTip => _asOfCompareKey is not null;
+    public bool HasAsOfTip => _asOfTip is not null;
 
     /// <summary>
-    /// When set (tag checkout), only commits at or before this compare key are included,
+    /// When set (tag checkout), only commits at or before this tip are included,
     /// and merge incorporation is evaluated only through this tip.
     /// </summary>
-    public void SetAsOfTip(Commit tip)
-    {
-        _asOfCompareKey = tip.CompareKey;
-        _tipBranchId = RefMetadata.GetBranchId(tip.Metadata);
-    }
+    public void SetAsOfTip(Commit tip) => _asOfTip = tip;
 
-    public void ClearAsOfTip()
-    {
-        _asOfCompareKey = null;
-        _tipBranchId = null;
-    }
+    public void ClearAsOfTip() => _asOfTip = null;
 
     public bool Include(Commit commit)
     {
@@ -42,7 +33,7 @@ public sealed class CheckoutMaterializationFilter : ICommitMaterializationFilter
         if (Checkout is TagCheckout tag && TouchesTag(commit, tag.TagId))
             return true;
 
-        if (_asOfCompareKey is { } asOf && commit.CompareKey.CompareTo(asOf) > 0)
+        if (_asOfTip is { } tip && commit.CompareKey.CompareTo(tip.CompareKey) > 0)
             return false;
 
         var branchId = RefMetadata.GetBranchId(commit.Metadata);
@@ -51,7 +42,7 @@ public sealed class CheckoutMaterializationFilter : ICommitMaterializationFilter
         return Checkout switch
         {
             BranchCheckout branch => branchId == branch.BranchId || _incorporatedBranchIds.Contains(branchId.Value),
-            TagCheckout when _tipBranchId is Guid tipBranch =>
+            TagCheckout when _asOfTip is { } asOfTip && RefMetadata.GetBranchId(asOfTip.Metadata) is Guid tipBranch =>
                 branchId == tipBranch || _incorporatedBranchIds.Contains(branchId.Value),
             _ => _incorporatedBranchIds.Contains(branchId.Value)
         };
@@ -93,23 +84,10 @@ public sealed class CheckoutMaterializationFilter : ICommitMaterializationFilter
     private async Task RefreshIncorporatedBranchIds(CrdtRepository repo)
     {
         _incorporatedBranchIds.Clear();
-        if (_asOfCompareKey is { } asOf)
-        {
-            // Only merges at or before the tip count for tag (as-of) visibility.
-            var commits = await repo.CurrentCommits()
-                .Include(c => c.ChangeEntities)
-                .ToListAsync();
-            foreach (var commit in commits)
-            {
-                if (commit.CompareKey.CompareTo(asOf) > 0) break;
-                foreach (var merge in MergesIn(commit))
-                    _incorporatedBranchIds.Add(merge.EntityId);
-            }
-        }
-        else
-        {
-            _incorporatedBranchIds.UnionWith(await repo.GetEntityIdsForChangeType<MergeBranchChange>());
-        }
+        // Scoping to the tip bounds GetEntityIdsForChangeType to merges at or before it (see issue 15),
+        // so a single query serves both the tag (as-of) and unscoped cases.
+        if (_asOfTip is { } tip) repo = repo.GetScopedRepository(tip);
+        _incorporatedBranchIds.UnionWith(await repo.GetEntityIdsForChangeType<MergeBranchChange>());
     }
 
     private static IEnumerable<MergeBranchChange> MergesIn(Commit commit) =>

@@ -50,16 +50,13 @@ public class TagCheckoutTests : DataModelTestBase
     }
 
     [Fact]
-    public async Task MoveTagWhileCheckedOutRematerializesAndNotifies()
+    public async Task MoveTagWhileCheckedOutRematerializes()
     {
         var wordId = Guid.NewGuid();
         var first = await DataModel.AddChange(_localClientId, SetWord(wordId, "first"));
         var second = await DataModel.AddChange(_localClientId, SetWord(wordId, "second"));
         var tagId = Guid.NewGuid();
         await _refs.CreateTag(_localClientId, tagId, "moving", first.Id);
-
-        RefCheckoutChangedEventArgs? notified = null;
-        _refs.CheckoutChanged += (_, args) => notified = args;
 
         await _refs.CheckoutTag(tagId);
         (await DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("first");
@@ -68,9 +65,36 @@ public class TagCheckoutTests : DataModelTestBase
 
         (await DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("second");
         (await DataModel.GetLatest<RefTag>(tagId))!.TargetCommitId.Should().Be(second.Id);
-        notified.Should().NotBeNull();
-        notified!.Checkout.Should().BeOfType<TagCheckout>().Which.TagId.Should().Be(tagId);
-        notified.TipCommitId.Should().Be(second.Id);
+        _refs.Checkout.Should().BeOfType<TagCheckout>().Which.TagId.Should().Be(tagId);
+    }
+
+    [Fact]
+    public async Task AuthoringOnTagCheckoutWritesToMainWhenConfigured()
+    {
+        // Fresh model with AllowAuthoringOnTagToMain enabled via CrdtConfig.
+        await using var withConfig = new DataModelTestBase(configure: services =>
+        {
+            services.Configure<CrdtConfig>(config =>
+            {
+                config.AddHarmonyRefs();
+                config.AllowAuthoringOnTagToMain = true;
+            });
+            services.AddHarmonyRefsDataModel();
+        });
+        var refs = withConfig.GetRequiredService<RefsDataModel>();
+        refs.AllowAuthoringOnTagToMain.Should().BeTrue();
+
+        var tip = await withConfig.DataModel.AddChange(withConfig.LocalClientId, withConfig.SetWord(Guid.NewGuid(), "at-tag"));
+        var tagId = Guid.NewGuid();
+        await refs.CreateTag(withConfig.LocalClientId, tagId, "v1", tip.Id);
+        await refs.CheckoutTag(tagId);
+
+        var newWordId = Guid.NewGuid();
+        await refs.AddChange(withConfig.LocalClientId, withConfig.SetWord(newWordId, "authored-to-main"));
+
+        // The change was authored to main (no branch id), so it is visible on the main checkout.
+        await refs.CheckoutMain();
+        (await withConfig.DataModel.GetLatest<Word>(newWordId))!.Text.Should().Be("authored-to-main");
     }
 
     [Fact]

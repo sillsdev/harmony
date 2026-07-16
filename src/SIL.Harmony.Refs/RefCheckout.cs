@@ -17,12 +17,3 @@ public sealed record MainCheckout : RefCheckout;
 public sealed record BranchCheckout(Guid BranchId) : RefCheckout;
 
 public sealed record TagCheckout(Guid TagId) : RefCheckout;
-
-/// <summary>
-/// Raised when the active checkout's tip advances (e.g. tag move / roll-forward after sync).
-/// </summary>
-public sealed class RefCheckoutChangedEventArgs(RefCheckout checkout, Guid tipCommitId) : EventArgs
-{
-    public RefCheckout Checkout { get; } = checkout;
-    public Guid TipCommitId { get; } = tipCommitId;
-}

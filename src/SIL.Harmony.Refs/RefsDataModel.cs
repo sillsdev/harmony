@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Refs.Changes;
 using SIL.Harmony.Refs.Entities;
@@ -9,7 +10,7 @@ namespace SIL.Harmony.Refs;
 /// Checkout lives on <see cref="CheckoutMaterializationFilter"/> (single source of truth);
 /// changing it rematerializes snapshots for the new view.
 /// </summary>
-public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter filter)
+public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter filter, IOptions<CrdtConfig> config)
 {
     public DataModel DataModel { get; } = dataModel;
 
@@ -17,13 +18,9 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
 
     /// <summary>
     /// When true, authoring on a tag checkout writes to main. Default is false (rejected).
+    /// Configured via <see cref="CrdtConfig.AllowAuthoringOnTagToMain"/>.
     /// </summary>
-    public bool AllowAuthoringOnTagToMain { get; set; }
-
-    /// <summary>
-    /// Fired when the active checkout tip advances (tag move / roll-forward).
-    /// </summary>
-    public event EventHandler<RefCheckoutChangedEventArgs>? CheckoutChanged;
+    public bool AllowAuthoringOnTagToMain => config.Value.AllowAuthoringOnTagToMain;
 
     public async Task CheckoutMain()
     {
@@ -143,7 +140,6 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
         filter.Checkout = RefCheckout.ForTag(tagId);
         filter.SetAsOfTip(tip);
         await DataModel.RegenerateSnapshots();
-        CheckoutChanged?.Invoke(this, new RefCheckoutChangedEventArgs(filter.Checkout, tip.Id));
     }
 
     private async Task<Commit> ResolveTagTip(Guid tagId)

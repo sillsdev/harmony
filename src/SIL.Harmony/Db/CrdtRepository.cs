@@ -52,12 +52,14 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     private readonly ICrdtDbContext _dbContext;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<CrdtRepository> _logger;
+    private readonly Commit? _ignoreChangesAfter;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
         Commit? ignoreChangesAfter = null)
     {
         _crdtConfig = crdtConfig;
+        _ignoreChangesAfter = ignoreChangesAfter;
         _dbContext = ignoreChangesAfter is not null ? new ScopedDbContext(dbContext, ignoreChangesAfter) : dbContext;
         _logger = logger;
         //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
@@ -256,12 +258,24 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(changeTypeName);
         // Discriminator key is "$type"; SQLite requires a quoted JSON path for the leading $.
         var typePath = $"$.\"{CrdtConstants.ChangeDiscriminatorProperty}\"";
+        // When scoped (as-of / tag tip), only count changes on commits at or before the tip, matching the
+        // before/at-tip ordering ScopedDbContext applies to Commits/Snapshots (WhereBefore inclusive).
+        // A null tip disables the bound, so this one query serves both scoped and unscoped repos.
+        var ignoreAfterDate = _ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
+        var ignoreAfterCounter = _ignoreChangesAfter?.HybridDateTime.Counter;
+        var ignoreAfterCommitId = _ignoreChangesAfter?.Id;
         return await _dbContext.Database
             .SqlQuery<Guid>(
                 $"""
-                 SELECT DISTINCT "EntityId" AS "Value"
-                 FROM "ChangeEntities"
-                 WHERE "Change" ->> {typePath} = {changeTypeName}
+                 SELECT DISTINCT "ce"."EntityId" AS "Value"
+                 FROM "ChangeEntities" AS "ce"
+                          INNER JOIN "Commits" AS "c" ON "ce"."CommitId" = "c"."Id"
+                 WHERE "ce"."Change" ->> {typePath} = {changeTypeName}
+                   AND ({ignoreAfterDate} IS NULL
+                        OR "c"."DateTime" < {ignoreAfterDate}
+                        OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter})
+                        OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId})
+                        OR "c"."Id" = {ignoreAfterCommitId})
                  """)
             .ToArrayAsync();
     }

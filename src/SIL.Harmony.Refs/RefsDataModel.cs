@@ -1,4 +1,5 @@
 using SIL.Harmony.Changes;
+using SIL.Harmony.Refs.Changes;
 
 namespace SIL.Harmony.Refs;
 
@@ -25,6 +26,16 @@ public class RefsDataModel(DataModel dataModel, CheckoutMaterializationFilter fi
         if (Checkout is BranchCheckout current && current.BranchId == branchId) return;
         filter.Checkout = RefCheckout.ForBranch(branchId);
         await DataModel.RegenerateSnapshots();
+    }
+
+    /// <summary>
+    /// Incorporates <paramref name="branchId"/> into main visibility and deletes the branch entity.
+    /// Authored as a main-line commit; materialization expands from the earliest branch commit.
+    /// </summary>
+    public async Task<Commit> MergeBranch(Guid clientId, Guid branchId)
+    {
+        await CheckoutMain();
+        return await AddChange(clientId, new MergeBranchChange(branchId), BranchAssignment.Main);
     }
 
     public Task<Commit> AddChange(

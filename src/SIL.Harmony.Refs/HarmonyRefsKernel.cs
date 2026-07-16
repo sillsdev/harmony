@@ -14,6 +14,7 @@ public static class HarmonyRefsKernel
     {
         config.ObjectTypeListBuilder.DefaultAdapter().Add<Branch>();
         config.ChangeTypeListBuilder.Add<CreateBranchChange>();
+        config.ChangeTypeListBuilder.Add<MergeBranchChange>();
         config.CommitMaterializationFilter = MainLineOnlyMaterializationFilter.Instance;
         return config;
     }

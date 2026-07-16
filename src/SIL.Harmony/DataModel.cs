@@ -193,6 +193,9 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         if (commitsToApply.Count == 0) return;
         var filter = MaterializationFilter;
+        if (filter is IMaterializationApplyWindow applyWindow)
+            commitsToApply = await applyWindow.PrepareApplyWindowAsync(repo, commitsToApply);
+
         var commitsToMaterialize = commitsToApply
             .Where(filter.Include)
             .ToSortedSet();

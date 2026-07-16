@@ -213,7 +213,7 @@ public class SyncableTests
         var syncResults = await remote.Syncable.SyncWith(local.Syncable);
         await SyncableTestHelpers.MirrorToReadModelsAsync(remote, local, syncResults);
 
-        remote.ReadModel.QueryLatest<Definition>().ToBlockingEnumerable().Should()
-            .BeEquivalentTo(local.ReadModel.QueryLatest<Definition>().ToBlockingEnumerable());
+        remote.ReadModel.QueryLatest<Definition>().ToBlockingEnumerable(TestContext.Current.CancellationToken).Should()
+            .BeEquivalentTo(local.ReadModel.QueryLatest<Definition>().ToBlockingEnumerable(TestContext.Current.CancellationToken));
     }
 }

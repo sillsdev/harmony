@@ -67,7 +67,7 @@ public class JsonSyncableTests
 
             var file = new FileInfo(Path.Combine(dir.FullName,
                 $"{JsonSyncable.FilenamePrefix}{commit.ClientId}{JsonSyncable.FilenameExtension}"));
-            var lines = await File.ReadAllLinesAsync(file.FullName);
+            var lines = await File.ReadAllLinesAsync(file.FullName, TestContext.Current.CancellationToken);
             lines.Should().HaveCount(1);
         }
         finally

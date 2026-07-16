@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <RootNamespace>SIL.Harmony.Refs</RootNamespace>
+        <IsPackable>true</IsPackable>
+        <Description>Optional branches and tags layer for SIL.Harmony.</Description>
+    </PropertyGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\SIL.Harmony\SIL.Harmony.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="SIL.Harmony.Core"/>
+    </ItemGroup>
+
+</Project>

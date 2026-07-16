@@ -32,7 +32,11 @@ public static class HarmonyRefsKernel
         services.AddScoped<CheckoutMaterializationFilter>();
         services.AddScoped<ICommitMaterializationFilter>(sp =>
             sp.GetRequiredService<CheckoutMaterializationFilter>());
-        services.AddScoped<ICommitInterceptor, CheckoutCommitInterceptor>();
+        // One handler instance serves both extension points: the authoring interceptor and the
+        // post-apply roll-forward listener.
+        services.AddScoped<CheckoutRefsHandler>();
+        services.AddScoped<ICommitInterceptor>(sp => sp.GetRequiredService<CheckoutRefsHandler>());
+        services.AddScoped<ICommitAppliedListener>(sp => sp.GetRequiredService<CheckoutRefsHandler>());
         services.AddScoped<RefsDataModel>();
         return services;
     }

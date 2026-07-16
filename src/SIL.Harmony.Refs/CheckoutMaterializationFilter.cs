@@ -20,6 +20,12 @@ public sealed class CheckoutMaterializationFilter : ICommitMaterializationFilter
     public bool HasAsOfTip => _asOfTip is not null;
 
     /// <summary>
+    /// The commit the current tag checkout is pinned to, or null when not pinned to a tip.
+    /// Lets the roll-forward listener skip rematerialization when the tag tip has not moved.
+    /// </summary>
+    public Guid? AsOfTipId => _asOfTip?.Id;
+
+    /// <summary>
     /// When set (tag checkout), only commits at or before this tip are included,
     /// and merge incorporation is evaluated only through this tip.
     /// </summary>

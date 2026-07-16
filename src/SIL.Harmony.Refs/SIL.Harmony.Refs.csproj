@@ -3,7 +3,7 @@
     <PropertyGroup>
         <RootNamespace>SIL.Harmony.Refs</RootNamespace>
         <IsPackable>true</IsPackable>
-        <Description>Optional branches layer for SIL.Harmony.</Description>
+        <Description>Optional branches and tags layer for SIL.Harmony.</Description>
     </PropertyGroup>
 
     <ItemGroup>

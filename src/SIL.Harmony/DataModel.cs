@@ -245,6 +245,12 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
     }
 
+    public async Task<Commit> GetCommit(Guid commitId)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await repo.CurrentCommits().AsNoTracking().SingleAsync(c => c.Id == commitId);
+    }
+
     public async Task RegenerateSnapshots()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();

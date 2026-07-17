@@ -27,26 +27,27 @@ public class CrdtConfig
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
     private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
-    private Dictionary<Type, string>? _changeTypeDiscriminators;
+    private readonly Lazy<ChangeDiscriminatorMaps> _lazyChangeDiscriminatorMaps;
 
     public CrdtConfig()
     {
+        _lazyChangeDiscriminatorMaps = new Lazy<ChangeDiscriminatorMaps>(BuildChangeDiscriminatorMaps);
         _lazyJsonSerializerOptions = new Lazy<JsonSerializerOptions>(CreateJsonSerializerOptions);
     }
 
     private JsonSerializerOptions CreateJsonSerializerOptions()
     {
-        var knownChanges = BuildChangeDiscriminatorMaps();
+        var changeDiscriminators = _lazyChangeDiscriminatorMaps.Value;
 
         var options = new JsonSerializerOptions(JsonSerializerDefaults.General)
         {
             TypeInfoResolver = MakeJsonTypeResolver()
         };
-        options.Converters.Add(new PeekThenConcreteChangeConverter(knownChanges));
+        options.Converters.Add(new PeekThenConcreteChangeConverter(changeDiscriminators.ByDiscriminator));
         return options;
     }
 
-    private Dictionary<string, Type> BuildChangeDiscriminatorMaps()
+    private ChangeDiscriminatorMaps BuildChangeDiscriminatorMaps()
     {
         ChangeTypeListBuilder.Freeze();
 
@@ -62,11 +63,12 @@ public class CrdtConfig
             discriminators.Add(derived.DerivedType, discriminator);
         }
 
-        // Publish the field only once fully built: JsonTypeModifier reads it from arbitrary
-        // threads, so a partially-populated dictionary must never be observable.
-        _changeTypeDiscriminators = discriminators;
-        return knownChanges;
+        return new ChangeDiscriminatorMaps(knownChanges, discriminators);
     }
+
+    private sealed record ChangeDiscriminatorMaps(
+        IReadOnlyDictionary<string, Type> ByDiscriminator,
+        IReadOnlyDictionary<Type, string> ByType);
 
     public Action<JsonTypeInfo> MakeJsonTypeModifier()
     {
@@ -85,13 +87,11 @@ public class CrdtConfig
     {
         ChangeTypeListBuilder.Freeze();
         ObjectTypeListBuilder.Freeze();
-        if (_changeTypeDiscriminators is null)
-            BuildChangeDiscriminatorMaps();
+        var changeTypeDiscriminators = _lazyChangeDiscriminatorMaps.Value.ByType;
 
         // IChange polymorphism is owned by PeekThenConcreteChangeConverter — do not set PolymorphismOptions.
-        if (_changeTypeDiscriminators is not null
-            && typeInfo.Kind == JsonTypeInfoKind.Object
-            && _changeTypeDiscriminators.TryGetValue(typeInfo.Type, out var discriminator))
+        if (typeInfo.Kind == JsonTypeInfoKind.Object
+            && changeTypeDiscriminators.TryGetValue(typeInfo.Type, out var discriminator))
         {
             AddSyntheticTypeDiscriminator(typeInfo, discriminator);
         }

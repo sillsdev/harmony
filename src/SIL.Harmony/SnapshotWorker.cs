@@ -74,12 +74,13 @@ internal class SnapshotWorker
 
                 if (prevSnapshot is null)
                 {
-                    if (!commitChange.Change.SupportsNewEntity())
+                    if (commitChange.Change is OpaqueChange)
                     {
-                        // e.g. OpaqueChange / unknown create — keep the change in history, skip apply
+                        // Keep unknown changes in history until this client understands how to apply them.
                         continue;
                     }
 
+                    // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
                     entity = await commitChange.Change.NewEntity(commit, changeContext);
                 }
                 else if (prevSnapshot.EntityIsDeleted && commitChange.Change.SupportsNewEntity())

@@ -28,7 +28,7 @@ public class RemoteServiceMock : IRemoteResourceService<MediaMetadata>
         File.Copy(remoteId, localPath);
         return Task.FromResult(new DownloadResult(localPath));
     }
-    
+
     private readonly Queue<string> _throwOnUpload = new();
 
     public async Task<UploadResult<MediaMetadata>> UploadResource(Guid resourceId, string localPath, MediaMetadata? metadata = null)

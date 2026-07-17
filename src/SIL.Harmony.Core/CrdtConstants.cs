@@ -1,4 +1,4 @@
-﻿namespace SIL.Harmony.Core;
+namespace SIL.Harmony.Core;
 
 public static class CrdtConstants
 {

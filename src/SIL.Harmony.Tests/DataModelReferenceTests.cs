@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
@@ -342,10 +342,10 @@ public class DataModelReferenceTests : DataModelTestBase
             deleteWordCommit
         ]);
         var snapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == initialWordCommit.Id, TestContext.Current.CancellationToken);
-        var initialWord = (Word) snapshot.Entity;
+        var initialWord = (Word)snapshot.Entity;
         initialWord.AntonymId.Should().Be(_word1Id);
         snapshot = await DbContext.Snapshots.SingleAsync(s => s.CommitId == deleteWordCommit.Id && s.EntityId == wordId, TestContext.Current.CancellationToken);
-        var wordWithoutRef = (Word) snapshot.Entity;
+        var wordWithoutRef = (Word)snapshot.Entity;
         wordWithoutRef.AntonymId.Should().BeNull();
     }
 

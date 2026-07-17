@@ -127,7 +127,10 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         return new ChangeEntity<IChange>()
         {
-            Change = change, CommitId = commitId, EntityId = change.EntityId, Index = index
+            Change = change,
+            CommitId = commitId,
+            EntityId = change.EntityId,
+            Index = index
         };
     }
 

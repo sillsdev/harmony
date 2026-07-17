@@ -20,9 +20,9 @@ public static class LinqHelpers
         keys.UnionWith(blookup.Select(p => p.Key));
 
         var join = from key in keys
-            from xa in alookup[key].DefaultIfEmpty(defaultA)
-            from xb in blookup[key].DefaultIfEmpty(defaultB)
-            select projection(xa, xb, key);
+                   from xa in alookup[key].DefaultIfEmpty(defaultA)
+                   from xb in blookup[key].DefaultIfEmpty(defaultB)
+                   select projection(xa, xb, key);
 
         return join;
     }

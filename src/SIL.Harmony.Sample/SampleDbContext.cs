@@ -1,11 +1,11 @@
-using SIL.Harmony.Changes;
-using SIL.Harmony.Db;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using SIL.Harmony.Changes;
+using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Sample;
 
-public class SampleDbContext(DbContextOptions<SampleDbContext>options, IOptions<CrdtConfig> crdtConfig): DbContext(options), ICrdtDbContext
+public class SampleDbContext(DbContextOptions<SampleDbContext> options, IOptions<CrdtConfig> crdtConfig) : DbContext(options), ICrdtDbContext
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

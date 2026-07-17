@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
@@ -164,7 +164,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
-        if (resource is not {Local: true, Remote: false}) throw new ArgumentException("Resource is not pending upload");
+        if (resource is not { Local: true, Remote: false }) throw new ArgumentException("Resource is not pending upload");
         var uploadResult = await remoteResourceService.UploadResource(resource.Id, resource.LocalPath, resource.Metadata);
         await _dataModel.AddChange(clientId,
             new RemoteResourceUploadedChange<TMetadata>(resource.Id, uploadResult.RemoteId, uploadResult.Metadata),
@@ -240,7 +240,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var remoteResource = await repo.GetCurrent<RemoteResource<TMetadata>>(resourceId);
         var localResource = await repo.GetLocalResource(resourceId);
-        if (remoteResource is {DeletedAt: not null}) remoteResource = null;
+        if (remoteResource is { DeletedAt: not null }) remoteResource = null;
         if (localResource is null && remoteResource is null) return null;
         return new HarmonyResource<TMetadata>(localResource, remoteResource);
     }

@@ -271,13 +271,13 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                          .Select(s => s.Entity)
                          .SingleOrDefaultAsync()
                      ?? throw new ArgumentException($"unable to find snapshot with id {snapshotId}");
-        return (T) entity;
+        return (T)entity;
     }
 
-    public async Task<T?> GetCurrent<T>(Guid objectId) where T: class
+    public async Task<T?> GetCurrent<T>(Guid objectId) where T : class
     {
         var snapshot = await GetCurrentSnapshotByObjectId(objectId);
-        return (T?) snapshot?.Entity.DbObject;
+        return (T?)snapshot?.Entity.DbObject;
     }
 
     public IQueryable<T> GetCurrentObjects<T>() where T : class

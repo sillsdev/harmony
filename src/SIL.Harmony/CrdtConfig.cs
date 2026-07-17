@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Adapters;
@@ -37,7 +37,7 @@ public class CrdtConfig
             TypeInfoResolver = MakeJsonTypeResolver()
         });
     }
- 
+
     public Action<JsonTypeInfo> MakeJsonTypeModifier()
     {
         return JsonTypeModifier;
@@ -173,7 +173,7 @@ public class ObjectTypeListBuilder
     public DefaultAdapterProvider DefaultAdapter()
     {
         CheckFrozen();
-        if (AdapterProviders.OfType<DefaultAdapterProvider>().SingleOrDefault() is {} adapter) return adapter;
+        if (AdapterProviders.OfType<DefaultAdapterProvider>().SingleOrDefault() is { } adapter) return adapter;
         adapter = new DefaultAdapterProvider(this);
         AdapterProviders.Add(adapter);
         return adapter;
@@ -198,7 +198,7 @@ public class ObjectTypeListBuilder
         where TCommonInterface : class where TAdapter : class, ICustomAdapter<TAdapter, TCommonInterface>, IPolyType
     {
         CheckFrozen();
-        if (AdapterProviders.OfType<CustomAdapterProvider<TCommonInterface, TAdapter>>().SingleOrDefault() is {} adapter) return adapter;
+        if (AdapterProviders.OfType<CustomAdapterProvider<TCommonInterface, TAdapter>>().SingleOrDefault() is { } adapter) return adapter;
         adapter = new CustomAdapterProvider<TCommonInterface, TAdapter>(this);
         AdapterProviders.Add(adapter);
         return adapter;

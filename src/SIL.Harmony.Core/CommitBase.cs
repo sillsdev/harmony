@@ -1,4 +1,4 @@
-﻿using System.IO.Hashing;
+using System.IO.Hashing;
 using System.Text.Json.Serialization;
 
 namespace SIL.Harmony.Core;

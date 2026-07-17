@@ -8,7 +8,7 @@ public interface IChangeContext
     {
         var snapshot = await GetSnapshot(entityId);
         if (snapshot is null) return null;
-        return (T) snapshot.Entity.DbObject;
+        return (T)snapshot.Entity.DbObject;
     }
 
     public async ValueTask<bool> IsObjectDeleted(Guid entityId) => (await GetSnapshot(entityId))?.EntityIsDeleted ?? true;

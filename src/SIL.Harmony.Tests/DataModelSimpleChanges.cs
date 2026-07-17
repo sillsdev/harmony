@@ -1,8 +1,8 @@
+using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Tests;
 

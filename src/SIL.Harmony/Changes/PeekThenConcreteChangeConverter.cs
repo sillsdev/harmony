@@ -74,7 +74,7 @@ internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
         return new OpaqueChange
         {
             TypeName = typeName,
-            EntityId = element.TryGetProperty("EntityId", out var id) && id.ValueKind == JsonValueKind.String
+            EntityId = element.TryGetProperty(nameof(IChange.EntityId), out var id) && id.ValueKind == JsonValueKind.String
                 ? id.GetGuid()
                 : default,
             RawJson = element

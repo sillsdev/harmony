@@ -324,16 +324,52 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<T> GetAtCommit<T>(Guid commitId, Guid entityId)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        return await GetAtCommit<T>(await repo.CurrentCommits().SingleAsync(c => c.Id == commitId),
-            entityId);
+        var commit = await repo.CurrentCommits().SingleAsync(c => c.Id == commitId);
+        return await GetAtCommit<T>(commit, entityId, repo);
     }
 
     public async Task<T> GetAtCommit<T>(Commit commit, Guid entityId)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await GetAtCommit<T>(commit, entityId, repo);
+    }
+
+    private async Task<T> GetAtCommit<T>(Commit commit, Guid entityId, CrdtRepository repo)
+    {
+        var snapshot = await GetSnapshotAtCommit(commit, entityId, repo);
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return (T)snapshot.Entity.DbObject;
+    }
+
+    public async Task<T?> GetBeforeCommit<T>(Guid commitId, Guid entityId)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        var commit = await repo.CurrentCommits().SingleAsync(c => c.Id == commitId);
+        return await GetBeforeCommit<T>(commit, entityId, repo);
+    }
+
+    public async Task<T?> GetBeforeCommit<T>(Commit commit, Guid entityId)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await GetBeforeCommit<T>(commit, entityId, repo);
+    }
+
+    private async Task<T?> GetBeforeCommit<T>(Commit commit, Guid entityId, CrdtRepository repo)
+    {
+        var previousCommit = await repo.FindPreviousCommit(commit);
+        //there's no state before the first commit
+        if (previousCommit is null) return default;
+        var snapshot = await GetSnapshotAtCommit(previousCommit, entityId, repo);
+        //the entity did not exist before the given commit
+        if (snapshot is null) return default;
+        return (T)snapshot.Entity.DbObject;
+    }
+
+    private async Task<ObjectSnapshot?> GetSnapshotAtCommit(Commit commit, Guid entityId, CrdtRepository repo)
+    {
         var repository = repo.GetScopedRepository(commit);
         var snapshot = await repository.GetCurrentSnapshotByObjectId(entityId, false);
-        ArgumentNullException.ThrowIfNull(snapshot);
+        if (snapshot is null) return null;
         var newCommits = await repository.CurrentCommits()
             .Include(c => c.ChangeEntities)
             .WhereAfter(snapshot.Commit)
@@ -350,7 +386,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             snapshot = snapshots[snapshot.EntityId];
         }
 
-        return (T)snapshot.Entity.DbObject;
+        return snapshot;
     }
 
     public async Task<SyncState> GetSyncState()

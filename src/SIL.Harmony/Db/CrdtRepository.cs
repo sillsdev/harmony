@@ -3,6 +3,7 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -301,8 +302,12 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
+        var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();
+        // pre-load the projected rows that already exist so ProjectSnapshot's FindAsync calls are served from the
+        // change tracker instead of issuing one query per snapshot
+        var existingEntityIds = await LoadExistingEntityIds(snapshotList);
         var latestProjectByEntityId = new Dictionary<Guid, (DateTimeOffset, long, Guid)>();
-        foreach (var grouping in snapshots.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
+        foreach (var grouping in snapshotList.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
         {
             foreach (var snapshot in grouping.DefaultOrderDescending())
             {
@@ -318,7 +323,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                 }
                 latestProjectByEntityId[snapshot.EntityId] = snapshot.Commit.CompareKey;
 
-                await ProjectSnapshot(snapshot);
+                await ProjectSnapshot(snapshot, existingEntityIds);
             }
 
             try
@@ -335,12 +340,55 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         }
     }
 
-    private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot)
+    /// <summary>
+    /// Loads the projected rows that already exist for the given snapshots so they're tracked by the context.
+    /// This lets ProjectSnapshot resolve existing entities from the change tracker (and skip lookups for new
+    /// entities entirely) rather than running one FindAsync query per snapshot.
+    /// </summary>
+    /// <returns>the set of entity ids that already have a projected row</returns>
+    private async Task<HashSet<Guid>> LoadExistingEntityIds(IReadOnlyCollection<ObjectSnapshot> snapshots)
+    {
+        var existingEntityIds = new HashSet<Guid>();
+        if (!_crdtConfig.Value.EnableProjectedTables) return existingEntityIds;
+        foreach (var typeGroup in snapshots.GroupBy(s => s.Entity.DbObject.GetType()))
+        {
+            var entityIds = typeGroup.Select(s => s.EntityId).Distinct().ToArray();
+            var task = (Task<List<Guid>>)loadExistingEntitiesMethod
+                .MakeGenericMethod(typeGroup.Key)
+                .Invoke(null, [_dbContext, entityIds])!;
+            existingEntityIds.UnionWith(await task);
+        }
+        return existingEntityIds;
+    }
+
+    private static readonly MethodInfo loadExistingEntitiesMethod =
+        new Func<ICrdtDbContext, IReadOnlyCollection<Guid>, Task<List<Guid>>>(LoadExistingEntities<object>)
+            .Method.GetGenericMethodDefinition();
+
+    private static async Task<List<Guid>> LoadExistingEntities<T>(ICrdtDbContext dbContext, IReadOnlyCollection<Guid> entityIds)
+        where T : class
+    {
+        var keyName = dbContext.Model.FindEntityType(typeof(T))?.FindPrimaryKey()?.Properties.Single().Name
+            ?? throw new InvalidOperationException($"No primary key found for projected type {typeof(T).Name}");
+        //load (and thereby track) the matching rows so ProjectSnapshot's FindAsync calls hit the change tracker.
+        //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
+        var entities = await dbContext.Set<T>()
+            .Where(e => EF.Parameter(entityIds).Contains(EF.Property<Guid>(e, keyName)))
+            .ToListAsync();
+        return entities
+            .Select(e => (Guid)dbContext.Entry(e).Property(keyName).CurrentValue!)
+            .ToList();
+    }
+
+    private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot, HashSet<Guid> existingEntityIds)
     {
         if (!_crdtConfig.Value.EnableProjectedTables) return;
 
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
-        var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
+        //entities not in existingEntityIds have no projected row yet, so skip the lookup and treat them as new
+        var existingEntry = existingEntityIds.Contains(objectSnapshot.EntityId)
+            ? await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId)
+            : null;
         if (existingEntry is null && objectSnapshot.EntityIsDeleted) return;
 
         if (existingEntry is null) // add
@@ -505,6 +553,7 @@ internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) 
         throw new NotSupportedException("can not support Set<T> when using scoped db context");
     }
 
+    public IModel Model => inner.Model;
     public DatabaseFacade Database => inner.Database;
     public ChangeTracker ChangeTracker => inner.ChangeTracker;
 

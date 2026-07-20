@@ -3,7 +3,12 @@ using System.Text.Json.Serialization;
 
 namespace SIL.Harmony.Changes;
 
-[JsonPolymorphic(TypeDiscriminatorPropertyName = CrdtConstants.ChangeDiscriminatorProperty)]
+/// <summary>
+/// Polymorphic JSON for <see cref="IChange"/> is owned by
+/// <c>PeekThenConcreteChangeConverter</c> (via <see cref="CrdtConfig"/>), not
+/// <see cref="JsonPolymorphicAttribute"/>. Unknown <c>$type</c> values become
+/// <see cref="OpaqueChange"/>.
+/// </summary>
 public interface IChange
 {
     [JsonIgnore]

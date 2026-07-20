@@ -58,7 +58,10 @@ public static class CrdtKernel
             provider.GetRequiredService<JsonSerializerOptions>(),
             provider.GetRequiredService<IHybridDateTimeProvider>(),
             provider.GetRequiredService<IOptions<CrdtConfig>>(),
-            provider.GetRequiredService<ILogger<DataModel>>()
+            provider.GetRequiredService<ILogger<DataModel>>(),
+            provider.GetService<ICommitMaterializationFilter>(),
+            provider.GetServices<ICommitInterceptor>(),
+            () => provider.GetServices<ICommitAppliedListener>()
         ));
         return services;
     }

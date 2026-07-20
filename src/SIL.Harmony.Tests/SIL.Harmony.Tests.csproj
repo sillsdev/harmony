@@ -34,6 +34,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\SIL.Harmony.Sample\SIL.Harmony.Sample.csproj" />
+      <ProjectReference Include="..\SIL.Harmony.Refs\SIL.Harmony.Refs.csproj" />
       <ProjectReference Include="..\SIL.Harmony\SIL.Harmony.csproj" />
     </ItemGroup>
 

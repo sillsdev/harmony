@@ -23,20 +23,35 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly IHybridDateTimeProvider _timeProvider;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
+    private readonly ICommitMaterializationFilter? _materializationFilter;
+    private readonly IReadOnlyList<ICommitInterceptor> _commitInterceptors;
+    private readonly Func<IEnumerable<ICommitAppliedListener>>? _commitAppliedListenersFactory;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
         JsonSerializerOptions serializerOptions,
         IHybridDateTimeProvider timeProvider,
         IOptions<CrdtConfig> crdtConfig,
-        ILogger<DataModel> logger)
+        ILogger<DataModel> logger,
+        ICommitMaterializationFilter? materializationFilter = null,
+        IEnumerable<ICommitInterceptor>? commitInterceptors = null,
+        Func<IEnumerable<ICommitAppliedListener>>? commitAppliedListenersFactory = null)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _serializerOptions = serializerOptions;
         _timeProvider = timeProvider;
         _crdtConfig = crdtConfig;
         _logger = logger;
+        _materializationFilter = materializationFilter;
+        _commitInterceptors = commitInterceptors?.ToArray() ?? [];
+        // Listeners are resolved lazily (at apply time) rather than in the constructor: a listener's
+        // roll-forward depends transitively on this DataModel, so eager resolution would form a
+        // constructor cycle. The interceptor above has no such dependency and is resolved eagerly.
+        _commitAppliedListenersFactory = commitAppliedListenersFactory;
     }
+
+    private ICommitMaterializationFilter MaterializationFilter =>
+        _materializationFilter ?? _crdtConfig.Value.CommitMaterializationFilter;
 
 
     /// <summary>
@@ -62,20 +77,27 @@ public class DataModel : ISyncable, IAsyncDisposable
         Func<CommitMetadata?> commitMetadata,
         int changesPerCommitMax = 100)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        var commits = changes
-            .Chunk(changesPerCommitMax)
-            .Select(chunk => NewCommit(clientId, commitMetadata(), chunk))
-            .ToArray();
-        if (commits is []) return;
-        using var locked = await repo.Lock();
-        repo.ClearChangeTracker();
+        Commit[] commits;
+        await using (var repo = await _crdtRepositoryFactory.CreateRepository())
+        {
+            commits = changes
+                .Chunk(changesPerCommitMax)
+                .Select(chunk => NewCommit(clientId, commitMetadata(), chunk))
+                .ToArray();
+            if (commits is []) return;
+            using var locked = await repo.Lock();
+            repo.ClearChangeTracker();
 
-        await using var transaction = await repo.BeginTransactionAsync();
-        var updatedCommits = await repo.AddCommits(commits);
-        await UpdateSnapshots(repo, updatedCommits);
-        await ValidateCommits(repo);
-        await transaction.CommitAsync();
+            await using var transaction = await repo.BeginTransactionAsync();
+            var updatedCommits = await repo.AddCommits(commits);
+            await UpdateSnapshots(repo, updatedCommits);
+            await ValidateCommits(repo);
+            await transaction.CommitAsync();
+        }
+        // Notify after the repo (and its lock) is released: a listener's roll-forward opens its own
+        // repository, and the apply lock is not reentrant, so notifying while holding it would deadlock
+        // on a persistent database.
+        await NotifyCommitsApplied(commits);
     }
 
     /// <inheritdoc cref="AddChange"/>
@@ -98,24 +120,49 @@ public class DataModel : ISyncable, IAsyncDisposable
             Metadata = commitMetadata ?? new()
         };
         commit.ChangeEntities.AddRange(changes.Select((c, i) => ToChangeEntity(c, i, commit.Id)));
+        // Single author choke point: let any registered interceptors (e.g. refs branch assignment)
+        // stamp metadata or reject authoring before the commit is persisted. Metadata is not part
+        // of the commit hash, so this is safe to do here. Sync-applied commits never pass through
+        // NewCommit, so their assignment is left untouched.
+        foreach (var interceptor in _commitInterceptors)
+            interceptor.OnCommitAuthored(commit);
         return commit;
     }
 
     private async Task Add(Commit commit)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        using var locked = await repo.Lock();
-        if (await repo.HasCommit(commit.Id)) return;
-        repo.ClearChangeTracker();
+        await using (var repo = await _crdtRepositoryFactory.CreateRepository())
+        {
+            using var locked = await repo.Lock();
+            if (await repo.HasCommit(commit.Id)) return;
+            repo.ClearChangeTracker();
 
-        await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
-        var updatedCommits = await repo.AddCommit(commit);
-        await UpdateSnapshots(repo, updatedCommits);
+            await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
+            var updatedCommits = await repo.AddCommit(commit);
+            await UpdateSnapshots(repo, updatedCommits);
 
-        if (AlwaysValidate) await ValidateCommits(repo);
+            if (AlwaysValidate) await ValidateCommits(repo);
 
+            // Nested apply: the caller owns the transaction and the post-apply notification, so a
+            // listener never observes uncommitted state. Bail before notifying.
+            if (transaction is null) return;
+            await transaction.CommitAsync();
+        }
+        // See NotifyCommitsApplied / AddManyChanges: fire only after the lock is released.
+        await NotifyCommitsApplied([commit]);
+    }
 
-        if (transaction is not null) await transaction.CommitAsync();
+    /// <summary>
+    /// Fires registered <see cref="ICommitAppliedListener"/>s after an apply transaction commits and
+    /// the repository lock is released. Only invoked from the genuine apply entrypoints (author +
+    /// sync) — never from <see cref="RegenerateSnapshots"/> — so a listener that rematerializes
+    /// cannot re-enter.
+    /// </summary>
+    private async Task NotifyCommitsApplied(IReadOnlyCollection<Commit> commits)
+    {
+        if (_commitAppliedListenersFactory is null || commits.Count == 0) return;
+        foreach (var listener in _commitAppliedListenersFactory())
+            await listener.OnCommitsAppliedAsync(commits);
     }
 
     public ValueTask DisposeAsync()
@@ -139,19 +186,25 @@ public class DataModel : ISyncable, IAsyncDisposable
         commits = commits.ToArray();
         try
         {
-            await using var repo = await _crdtRepositoryFactory.CreateRepository();
-            using var locked = await repo.Lock();
-            repo.ClearChangeTracker();
-            _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
-            var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
-            //no changes added
-            if (oldestChange is null || newCommits is []) return;
+            Commit[] newCommits;
+            await using (var repo = await _crdtRepositoryFactory.CreateRepository())
+            {
+                using var locked = await repo.Lock();
+                repo.ClearChangeTracker();
+                _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
+                Commit? oldestChange;
+                (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
+                //no changes added
+                if (oldestChange is null || newCommits is []) return;
 
-            await using var transaction = await repo.BeginTransactionAsync();
-            var updatedCommits = await repo.AddCommits(newCommits);
-            await UpdateSnapshots(repo, updatedCommits);
-            await ValidateCommits(repo);
-            await transaction.CommitAsync();
+                await using var transaction = await repo.BeginTransactionAsync();
+                var updatedCommits = await repo.AddCommits(newCommits);
+                await UpdateSnapshots(repo, updatedCommits);
+                await ValidateCommits(repo);
+                await transaction.CommitAsync();
+            }
+            // Fire after the lock is released so a listener's roll-forward can take it (see NotifyCommitsApplied).
+            await NotifyCommitsApplied(newCommits);
         }
         catch (DbUpdateException e)
         {
@@ -189,13 +242,25 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply)
     {
         if (commitsToApply.Count == 0) return;
-        var oldestAddedCommit = commitsToApply.First();
-        await repo.DeleteStaleSnapshots(oldestAddedCommit);
+        var filter = MaterializationFilter;
+        if (filter is IMaterializationApplyWindow applyWindow)
+            commitsToApply = await applyWindow.PrepareApplyWindowAsync(repo, commitsToApply);
+
+        var commitsToMaterialize = commitsToApply
+            .Where(filter.Include)
+            .ToSortedSet();
+        if (commitsToMaterialize.Count == 0) return;
+
+        // Stale boundary is the unfiltered apply-window head. If that head is excluded,
+        // DeleteStaleSnapshots(filtered.First()) would not clear already-materialized later
+        // commits (WhereAfter is strict), and re-applying them would duplicate snapshots.
+        var oldestInApplyWindow = commitsToApply.First();
+        await repo.DeleteStaleSnapshots(oldestInApplyWindow);
         Dictionary<Guid, Guid?> snapshotLookup = [];
-        if (commitsToApply.Count > 10)
+        if (commitsToMaterialize.Count > 10)
         {
             // Bulk-load relevant snapshots to minimize DB queries
-            var entityIds = commitsToApply
+            var entityIds = commitsToMaterialize
                 .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
                 .Distinct();
 
@@ -207,7 +272,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
 
         var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
-        await snapshotWorker.UpdateSnapshots(commitsToApply);
+        await snapshotWorker.UpdateSnapshots(commitsToMaterialize);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -228,6 +293,12 @@ public class DataModel : ISyncable, IAsyncDisposable
             throw new CommitValidationException(
                 $"Commit {commit} does not match expected hash, parent hash [{commit.ParentHash}] !== [{parentHash}], expected parent {parentCommit?.ToString() ?? "null"} and actual parent {actualParentCommit?.ToString() ?? "null"}, with snapshots: {string.Join(", ", commitWithSnapshots.Snapshots.Select(s => s.Entity.DbObject))}");
         }
+    }
+
+    public async Task<Commit> GetCommit(Guid commitId)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        return await repo.CurrentCommits().AsNoTracking().SingleAsync(c => c.Id == commitId);
     }
 
     public async Task RegenerateSnapshots()

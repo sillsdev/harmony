@@ -245,6 +245,48 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task GetEntityIdsForChangeType_ReturnsAllMatchingChangesWhenUnscoped()
+    {
+        var commit1 = Commit(Guid.NewGuid(), Time(1, 0));
+        var commit2 = Commit(Guid.NewGuid(), Time(2, 0));
+        var commit3 = Commit(Guid.NewGuid(), Time(3, 0));
+        await _repository.AddCommits([commit1, commit2, commit3]);
+
+        var ids = await _repository.GetEntityIdsForChangeType<SetWordTextChange>();
+
+        ids.Should().BeEquivalentTo(new[]
+        {
+            commit1.ChangeEntities[0].EntityId,
+            commit2.ChangeEntities[0].EntityId,
+            commit3.ChangeEntities[0].EntityId,
+        });
+    }
+
+    [Fact]
+    public async Task GetEntityIdsForChangeType_ScopedRepoIgnoresChangesAfterTip()
+    {
+        var commit1 = Commit(Guid.NewGuid(), Time(1, 0));
+        var commit2 = Commit(Guid.NewGuid(), Time(2, 0));
+        var commit3 = Commit(Guid.NewGuid(), Time(3, 0));
+        await _repository.AddCommits([commit1, commit2, commit3]);
+
+        var scopedIds = await _repository.GetScopedRepository(commit2)
+            .GetEntityIdsForChangeType<SetWordTextChange>();
+
+        // commit2 is the tip: at-or-before is included (inclusive), the later commit3 change is not.
+        scopedIds.Should().BeEquivalentTo(new[]
+        {
+            commit1.ChangeEntities[0].EntityId,
+            commit2.ChangeEntities[0].EntityId,
+        });
+        scopedIds.Should().NotContain(commit3.ChangeEntities[0].EntityId);
+
+        // the unscoped repo still sees the post-tip change.
+        var allIds = await _repository.GetEntityIdsForChangeType<SetWordTextChange>();
+        allIds.Should().Contain(commit3.ChangeEntities[0].EntityId);
+    }
+
+    [Fact]
     public async Task DeleteStaleSnapshots_Works()
     {
         await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(1, 0)));

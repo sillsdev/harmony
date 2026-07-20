@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Entities;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
@@ -51,12 +52,14 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     private readonly ICrdtDbContext _dbContext;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<CrdtRepository> _logger;
+    private readonly Commit? _ignoreChangesAfter;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
         Commit? ignoreChangesAfter = null)
     {
         _crdtConfig = crdtConfig;
+        _ignoreChangesAfter = ignoreChangesAfter;
         _dbContext = ignoreChangesAfter is not null ? new ScopedDbContext(dbContext, ignoreChangesAfter) : dbContext;
         _logger = logger;
         //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
@@ -245,6 +248,64 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .WhereAfter(commit)
             .DefaultOrder()
             .ToArrayAsync();
+    }
+
+    /// <summary>
+    /// Distinct entity ids from ChangeEntities whose JSON change has the given polymorphic type name.
+    /// </summary>
+    public async Task<Guid[]> GetEntityIdsForChangeType(string changeTypeName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(changeTypeName);
+        // Discriminator key is "$type"; SQLite requires a quoted JSON path for the leading $.
+        var typePath = $"$.\"{CrdtConstants.ChangeDiscriminatorProperty}\"";
+        // When scoped (as-of / tag tip), only count changes on commits at or before the tip, matching the
+        // before/at-tip ordering ScopedDbContext applies to Commits/Snapshots (WhereBefore inclusive).
+        // A null tip disables the bound, so this one query serves both scoped and unscoped repos.
+        var ignoreAfterDate = _ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
+        var ignoreAfterCounter = _ignoreChangesAfter?.HybridDateTime.Counter;
+        var ignoreAfterCommitId = _ignoreChangesAfter?.Id;
+        return await _dbContext.Database
+            .SqlQuery<Guid>(
+                $"""
+                 SELECT DISTINCT "ce"."EntityId" AS "Value"
+                 FROM "ChangeEntities" AS "ce"
+                          INNER JOIN "Commits" AS "c" ON "ce"."CommitId" = "c"."Id"
+                 WHERE "ce"."Change" ->> {typePath} = {changeTypeName}
+                   AND ({ignoreAfterDate} IS NULL
+                        OR "c"."DateTime" < {ignoreAfterDate}
+                        OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter})
+                        OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId})
+                        OR "c"."Id" = {ignoreAfterCommitId})
+                 """)
+            .ToArrayAsync();
+    }
+
+    /// <summary>
+    /// Distinct entity ids from ChangeEntities for the given change type's <see cref="IPolyType.TypeName"/>.
+    /// </summary>
+    public Task<Guid[]> GetEntityIdsForChangeType<TChange>() where TChange : IPolyType =>
+        GetEntityIdsForChangeType(TChange.TypeName);
+
+    /// <summary>
+    /// Distinct entity ids from ChangeEntities for a change type that implements <see cref="IPolyType"/>.
+    /// </summary>
+    public Task<Guid[]> GetEntityIdsForChangeType(Type changeType)
+    {
+        ArgumentNullException.ThrowIfNull(changeType);
+        if (!typeof(IPolyType).IsAssignableFrom(changeType))
+        {
+            throw new ArgumentException($"Change type {changeType} must implement {nameof(IPolyType)}.", nameof(changeType));
+        }
+
+        var typeName = changeType
+            .GetProperty(nameof(IPolyType.TypeName), BindingFlags.Public | BindingFlags.Static | BindingFlags.FlattenHierarchy)
+            ?.GetValue(null) as string;
+        if (string.IsNullOrWhiteSpace(typeName))
+        {
+            throw new ArgumentException($"Change type {changeType} does not expose a static {nameof(IPolyType.TypeName)}.", nameof(changeType));
+        }
+
+        return GetEntityIdsForChangeType(typeName);
     }
 
     public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)

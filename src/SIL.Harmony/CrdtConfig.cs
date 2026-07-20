@@ -23,6 +23,17 @@ public class CrdtConfig
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
+    /// <summary>
+    /// Selects which stored commits are applied when materializing snapshots.
+    /// Default includes every commit (unchanged behaviour). Commits are still persisted and synced regardless.
+    /// </summary>
+    public ICommitMaterializationFilter CommitMaterializationFilter { get; set; } =
+        IncludeAllCommitsFilter.Instance;
+    /// <summary>
+    /// When true, authoring while checked out on a tag writes to main instead of being rejected.
+    /// Only relevant when using SIL.Harmony.Refs (RefsDataModel). Default false.
+    /// </summary>
+    public bool AllowAuthoringOnTagToMain { get; set; }
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public IEnumerable<Type> ChangeTypes => ChangeTypeListBuilder.Types.Select(t => t.DerivedType);
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();

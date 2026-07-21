@@ -10,7 +10,7 @@ namespace SIL.Harmony;
 /// </summary>
 internal class SnapshotWorker
 {
-    private readonly Dictionary<Guid, Guid?> _snapshotLookup;
+    private readonly Dictionary<Guid, ObjectSnapshot?> _snapshotCache;
     private readonly CrdtRepository _crdtRepository;
     private readonly CrdtConfig _crdtConfig;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots = [];
@@ -18,13 +18,13 @@ internal class SnapshotWorker
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
-        Dictionary<Guid, Guid?> snapshotLookup,
+        Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
         CrdtConfig crdtConfig)
     {
         _pendingSnapshots = snapshots;
         _crdtRepository = crdtRepository;
-        _snapshotLookup = snapshotLookup;
+        _snapshotCache = snapshotCache;
         _crdtConfig = crdtConfig;
     }
 
@@ -40,12 +40,12 @@ internal class SnapshotWorker
         return snapshots;
     }
 
-    /// <param name="snapshotLookup">a dictionary of entity id to latest snapshot id</param>
+    /// <param name="snapshotCache">a dictionary of entity id to latest snapshot id</param>
     /// <param name="crdtRepository"></param>
     /// <param name="crdtConfig"></param>
-    internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup,
+    internal SnapshotWorker(Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
-        CrdtConfig crdtConfig) : this([], snapshotLookup, crdtRepository, crdtConfig)
+        CrdtConfig crdtConfig) : this([], snapshotCache, crdtRepository, crdtConfig)
     {
     }
 
@@ -158,14 +158,13 @@ internal class SnapshotWorker
             return rootSnapshot;
         }
 
-        if (_snapshotLookup.TryGetValue(entityId, out var snapshotId))
+        if (_snapshotCache.TryGetValue(entityId, out snapshot))
         {
-            if (snapshotId is null) return null;
-            return await _crdtRepository.FindSnapshot(snapshotId.Value, true);
+            return snapshot;
         }
 
         snapshot = await _crdtRepository.GetCurrentSnapshotByObjectId(entityId, true);
-        _snapshotLookup[entityId] = snapshot?.Id;
+        _snapshotCache[entityId] = snapshot;
 
         return snapshot;
     }

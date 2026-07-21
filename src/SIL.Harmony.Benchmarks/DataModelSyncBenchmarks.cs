@@ -34,6 +34,7 @@ public enum SyncWorkload
 }
 
 // [SimpleJob(RunStrategy.Monitoring)]
+[MemoryDiagnoser]
 [SuppressMessage("Usage", "VSTHRD002:Avoid problematic synchronous waits")]
 public class DataModelSyncBenchmarks
 {

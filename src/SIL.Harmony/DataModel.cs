@@ -123,7 +123,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.CompletedTask;
     }
 
-    private static ChangeEntity<IChange> ToChangeEntity(IChange change, int index, Guid commitId)
+    internal static ChangeEntity<IChange> ToChangeEntity(IChange change, int index, Guid commitId)
     {
         return new ChangeEntity<IChange>()
         {

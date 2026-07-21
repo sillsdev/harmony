@@ -59,6 +59,17 @@ internal class SnapshotWorker
         ]);
     }
 
+    /// <summary>
+    /// Applies the commits to snapshots the same way <see cref="UpdateSnapshots"/> does, but returns the full list
+    /// of snapshots that would be persisted instead of writing them. Used by benchmarks to isolate the
+    /// <see cref="CrdtRepository.AddSnapshots"/> step from commit application.
+    /// </summary>
+    internal async Task<IReadOnlyList<ObjectSnapshot>> ComputeSnapshotsToPersist(SortedSet<Commit> commits)
+    {
+        await ApplyCommitChanges(commits);
+        return [.._rootSnapshots.Values, .._newIntermediateSnapshots, .._pendingSnapshots.Values];
+    }
+
     private async ValueTask ApplyCommitChanges(SortedSet<Commit> commits)
     {
         var intermediateSnapshots = new Dictionary<Guid, ObjectSnapshot>();

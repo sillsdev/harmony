@@ -304,7 +304,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 #if FAST
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
 {
-        Console.WriteLine("FAST enabled ===========================================");
         _dbContext.AddRange(snapshots);
         await _dbContext.SaveChangesAsync();
 }
@@ -315,8 +314,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         // pre-load the projected rows that already exist so ProjectSnapshot's FindAsync calls are served from the
         // change tracker instead of issuing one query per snapshot
 
-        Console.WriteLine("SLOW enabled ===========================================");
-      
         var latestProjectByEntityId = new Dictionary<Guid, (DateTimeOffset, long, Guid)>();
         foreach (var grouping in snapshotList.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
         {

@@ -9,4 +9,6 @@ var config = DefaultConfig.Instance
     .AddJob(Job.MediumRun.WithStrategy(RunStrategy.Monitoring).WithId("DEFAULT").AsBaseline())
     .AddJob(Job.MediumRun.WithMsBuildArguments("/p:DefineConstants=FAST").WithStrategy(RunStrategy.Monitoring)
         .WithId("FAST"));
-BenchmarkRunner.Run<DataModelSyncBenchmarks>(config, args);
+BenchmarkSwitcher
+    .FromTypes([typeof(DataModelSyncBenchmarks), typeof(AddSnapshotsBenchmarks)])
+    .Run(args, config);

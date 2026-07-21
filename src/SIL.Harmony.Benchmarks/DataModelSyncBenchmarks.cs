@@ -58,17 +58,35 @@ public class DataModelSyncBenchmarks
         _syncCommitIds = null;
         remote = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
         var clientId = Guid.NewGuid();
-        var commits = Workload switch
+        List<Commit> commits;
+        switch (Workload)
         {
-            SyncWorkload.CreateWords => BuildCreateWords(clientId),
-            SyncWorkload.WordsWithDefinitions => BuildWordsWithDefinitions(clientId),
-            SyncWorkload.WordsWithTags => BuildWordsWithTags(clientId),
-            SyncWorkload.ModifySameWord => BuildModifySameWord(clientId),
-            SyncWorkload.CreateThenDelete => BuildCreateThenDelete(clientId),
-            SyncWorkload.CreateDeleteModify => BuildCreateDeleteModify(clientId),
-            SyncWorkload.OutOfOrderInsert => BuildOutOfOrderInsert(clientId),
-            _ => throw new ArgumentOutOfRangeException()
-        };
+            case SyncWorkload.CreateWords:
+                commits = BenchmarkWorkloadBuilders.BuildCreateWords(remote, clientId, ChangeCount);
+                break;
+            case SyncWorkload.WordsWithDefinitions:
+                commits = BenchmarkWorkloadBuilders.BuildWordsWithDefinitions(remote, clientId, ChangeCount);
+                break;
+            case SyncWorkload.WordsWithTags:
+                commits = BenchmarkWorkloadBuilders.BuildWordsWithTags(remote, clientId, ChangeCount);
+                break;
+            case SyncWorkload.ModifySameWord:
+                commits = BenchmarkWorkloadBuilders.BuildModifySameWord(remote, clientId, ChangeCount);
+                break;
+            case SyncWorkload.CreateThenDelete:
+                commits = BenchmarkWorkloadBuilders.BuildCreateThenDelete(remote, clientId, ChangeCount);
+                break;
+            case SyncWorkload.CreateDeleteModify:
+                commits = BenchmarkWorkloadBuilders.BuildCreateDeleteModify(remote, clientId, ChangeCount);
+                break;
+            case SyncWorkload.OutOfOrderInsert:
+                var (seed, toSync) = BenchmarkWorkloadBuilders.BuildOutOfOrderInsert(remote, clientId, ChangeCount);
+                _syncCommitIds = toSync.Select(c => c.Id).ToHashSet();
+                commits = [.. seed, .. toSync];
+                break;
+            default:
+                throw new ArgumentOutOfRangeException();
+        }
         ((ISyncable)remote.DataModel).AddRangeFromSync(commits).Wait();
     }
 
@@ -112,127 +130,5 @@ public class DataModelSyncBenchmarks
     {
         ((ISyncable)local.DataModel).AddRangeFromSync(_commits)
             .Wait();
-    }
-
-    private List<Commit> BuildCreateWords(Guid clientId)
-    {
-        var commits = new List<Commit>(ChangeCount);
-        for (var i = 0; i < ChangeCount; i++)
-        {
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWord(Guid.NewGuid(), $"entity {i}")));
-        }
-        return commits;
-    }
-
-    private List<Commit> BuildWordsWithDefinitions(Guid clientId)
-    {
-        var commits = new List<Commit>(ChangeCount);
-        for (var i = 0; i < ChangeCount; i++)
-        {
-            var wordId = Guid.NewGuid();
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWord(wordId, $"entity {i}"),
-                remote.NewDefinition(wordId, $"definition {i}", "noun")));
-        }
-        return commits;
-    }
-
-    private List<Commit> BuildWordsWithTags(Guid clientId)
-    {
-        var commits = new List<Commit>(ChangeCount);
-        for (var i = 0; i < ChangeCount; i++)
-        {
-            var wordId = Guid.NewGuid();
-            var tagId = Guid.NewGuid();
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWord(wordId, $"entity {i}"),
-                remote.SetTag(tagId, $"tag {i}"),
-                remote.TagWord(wordId, tagId)));
-        }
-        return commits;
-    }
-
-    private List<Commit> BuildModifySameWord(Guid clientId)
-    {
-        var wordId = Guid.NewGuid();
-        var commits = new List<Commit>(ChangeCount);
-        commits.Add(NewCommit(clientId, remote.NextDate(),
-            remote.SetWord(wordId, "entity 0")));
-        for (var i = 1; i < ChangeCount; i++)
-        {
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWord(wordId, $"entity {i}")));
-        }
-        return commits;
-    }
-
-    private List<Commit> BuildCreateThenDelete(Guid clientId)
-    {
-        var commits = new List<Commit>(ChangeCount * 2);
-        for (var i = 0; i < ChangeCount; i++)
-        {
-            var wordId = Guid.NewGuid();
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWord(wordId, $"entity {i}")));
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.DeleteWord(wordId)));
-        }
-        return commits;
-    }
-
-    private List<Commit> BuildCreateDeleteModify(Guid clientId)
-    {
-        var commits = new List<Commit>(ChangeCount * 3);
-        for (var i = 0; i < ChangeCount; i++)
-        {
-            var wordId = Guid.NewGuid();
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWord(wordId, $"entity {i}")));
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.DeleteWord(wordId)));
-            // SetWordNote supports apply-on-existing (including deleted) without undeleting
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWordNote(wordId, $"note {i}")));
-        }
-        return commits;
-    }
-
-    private List<Commit> BuildOutOfOrderInsert(Guid clientId)
-    {
-        var seed = new List<Commit>(ChangeCount * 2);
-        var toSync = new List<Commit>(ChangeCount);
-        for (var i = 0; i < ChangeCount; i++)
-        {
-            var wordId = Guid.NewGuid();
-            var createTime = remote.NextDate();
-            var midTime = remote.NextDate();
-            var lateTime = remote.NextDate();
-
-            seed.Add(NewCommit(clientId, createTime,
-                remote.SetWord(wordId, $"entity {i}")));
-            // Mid-history change is what gets synced after local already has create + late
-            toSync.Add(NewCommit(clientId, midTime,
-                remote.SetWordNote(wordId, $"note {i}")));
-            seed.Add(NewCommit(clientId, lateTime,
-                remote.SetWord(wordId, $"entity {i} late")));
-        }
-
-        _syncCommitIds = toSync.Select(c => c.Id).ToHashSet();
-        return [..seed, ..toSync];
-    }
-
-    private static Commit NewCommit(Guid clientId, DateTimeOffset dateTime, params IChange[] changes)
-    {
-        var commit = new Commit(Guid.NewGuid())
-        {
-            ClientId = clientId,
-            HybridDateTime = new HybridDateTime(dateTime, 0)
-        };
-        for (var i = 0; i < changes.Length; i++)
-        {
-            commit.ChangeEntities.Add(DataModel.ToChangeEntity(changes[i], i, commit.Id));
-        }
-        return commit;
     }
 }

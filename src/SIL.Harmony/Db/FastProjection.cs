@@ -8,8 +8,8 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace SIL.Harmony.Db;
 
 /// <summary>
-/// Fast projection path used by the FAST benchmark build. Snapshots are still inserted through EF
-/// (unchanged), but the projected tables are populated with hand-written raw SQL
+/// Projects snapshots into the projected tables. Snapshots are still inserted through EF (unchanged),
+/// but the projected tables are populated with hand-written raw SQL
 /// `INSERT ... ON CONFLICT(pk) DO UPDATE` (one upsert command per entity row) instead of going
 /// through EF's change tracker. Everything the SQL needs (table/column names, primary key, the
 /// SnapshotId shadow FK, value converters) is derived from the EF model, so no per-entity code is

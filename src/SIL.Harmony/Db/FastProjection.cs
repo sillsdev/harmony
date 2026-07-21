@@ -1,8 +1,5 @@
 using System.Collections.Concurrent;
-using System.Data;
 using System.Data.Common;
-using System.Globalization;
-using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -11,16 +8,12 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace SIL.Harmony.Db;
 
 /// <summary>
-/// Experimental fast projection path used by the FAST / FAST_JSON benchmark builds.
-/// Snapshots are still inserted through EF (unchanged), but the projected tables are populated
-/// with hand-written raw SQL `INSERT ... ON CONFLICT(pk) DO UPDATE` instead of going through EF's
-/// change tracker. Everything the SQL needs (table/column names, primary key, the SnapshotId shadow
-/// FK, value converters) is derived from the EF model, so no per-entity code is required.
-///
-/// Two variants:
-///  - <c>useJsonBatch == false</c>: one upsert command per entity row (parameters rebound per row).
-///  - <c>useJsonBatch == true</c>: one upsert command per entity type; all rows are passed as a
-///    single JSON array parameter and expanded with SQLite's json_each / json_extract.
+/// Fast projection path used by the FAST benchmark build. Snapshots are still inserted through EF
+/// (unchanged), but the projected tables are populated with hand-written raw SQL
+/// `INSERT ... ON CONFLICT(pk) DO UPDATE` (one upsert command per entity row) instead of going
+/// through EF's change tracker. Everything the SQL needs (table/column names, primary key, the
+/// SnapshotId shadow FK, value converters) is derived from the EF model, so no per-entity code is
+/// required.
 /// </summary>
 internal static class FastProjection
 {
@@ -29,8 +22,7 @@ internal static class FastProjection
     public static async Task AddSnapshotsRawAsync(
         ICrdtDbContext dbContext,
         IReadOnlyCollection<ObjectSnapshot> snapshots,
-        bool enableProjectedTables,
-        bool useJsonBatch)
+        bool enableProjectedTables)
     {
         // AddSnapshots is normally called inside a caller-managed transaction; reuse it so the raw
         // SQL runs on the same connection/transaction as the snapshot insert. When called outside a
@@ -46,7 +38,7 @@ internal static class FastProjection
 
             if (enableProjectedTables)
             {
-                await ProjectAsync(dbContext, snapshots, useJsonBatch);
+                await ProjectAsync(dbContext, snapshots);
             }
 
             if (ownTransaction is not null) await ownTransaction.CommitAsync();
@@ -59,8 +51,7 @@ internal static class FastProjection
 
     private static async Task ProjectAsync(
         ICrdtDbContext dbContext,
-        IReadOnlyCollection<ObjectSnapshot> snapshots,
-        bool useJsonBatch)
+        IReadOnlyCollection<ObjectSnapshot> snapshots)
     {
         // 2. dedup to the latest snapshot per entity (a batch can contain several snapshots for the
         // same entity - intermediate + latest - and possibly a deleted and undeleted one).
@@ -92,10 +83,7 @@ internal static class FastProjection
             var deleted = byType[orderedTypes[i]].Where(s => s.EntityIsDeleted).ToList();
             if (deleted.Count == 0) continue;
             var info = GetTableInfo(dbContext, orderedTypes[i], sqlHelper);
-            if (useJsonBatch)
-                await DeleteJsonBatchAsync(connection, transaction, info, deleted);
-            else
-                await DeletePerQueryAsync(connection, transaction, info, deleted);
+            await DeletePerQueryAsync(connection, transaction, info, deleted);
         }
 
         // upserts: parents first
@@ -104,14 +92,9 @@ internal static class FastProjection
             var live = byType[type].Where(s => !s.EntityIsDeleted).ToList();
             if (live.Count == 0) continue;
             var info = GetTableInfo(dbContext, type, sqlHelper);
-            if (useJsonBatch)
-                await UpsertJsonBatchAsync(connection, transaction, info, live);
-            else
-                await UpsertPerQueryAsync(connection, transaction, info, live);
+            await UpsertPerQueryAsync(connection, transaction, info, live);
         }
     }
-
-    // ---- per-query variant ------------------------------------------------------------------
 
     private static async Task UpsertPerQueryAsync(
         DbConnection connection, DbTransaction transaction, ProjectedTableInfo info, List<ObjectSnapshot> rows)
@@ -158,54 +141,6 @@ internal static class FastProjection
         }
     }
 
-    // ---- json-batch variant -----------------------------------------------------------------
-
-    private static async Task UpsertJsonBatchAsync(
-        DbConnection connection, DbTransaction transaction, ProjectedTableInfo info, List<ObjectSnapshot> rows)
-    {
-        var array = new List<Dictionary<string, object?>>(rows.Count);
-        foreach (var snapshot in rows)
-        {
-            var dbObject = snapshot.Entity.DbObject;
-            var obj = new Dictionary<string, object?>(info.Columns.Count);
-            foreach (var column in info.Columns)
-            {
-                obj[column.RawName] = ToJsonValue(GetProviderValue(column, snapshot, dbObject));
-            }
-            array.Add(obj);
-        }
-        await ExecuteJsonAsync(connection, transaction, info.JsonInsertSql, array);
-    }
-
-    private static async Task DeleteJsonBatchAsync(
-        DbConnection connection, DbTransaction transaction, ProjectedTableInfo info, List<ObjectSnapshot> rows)
-    {
-        var array = new List<Dictionary<string, object?>>(rows.Count);
-        foreach (var snapshot in rows)
-        {
-            array.Add(new Dictionary<string, object?>(1)
-            {
-                [info.PrimaryKey.RawName] = ToJsonValue(GetProviderValue(info.PrimaryKey, snapshot, snapshot.Entity.DbObject))
-            });
-        }
-        await ExecuteJsonAsync(connection, transaction, info.JsonDeleteSql, array);
-    }
-
-    private static async Task ExecuteJsonAsync(
-        DbConnection connection, DbTransaction transaction, string sql, List<Dictionary<string, object?>> array)
-    {
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = sql;
-        var p = command.CreateParameter();
-        p.ParameterName = "@json";
-        p.Value = JsonSerializer.Serialize(array);
-        command.Parameters.Add(p);
-        await command.ExecuteNonQueryAsync();
-    }
-
-    // ---- value extraction -------------------------------------------------------------------
-
     private static object? GetProviderValue(ColumnInfo column, ObjectSnapshot snapshot, object dbObject)
     {
         if (column.IsShadowSnapshotId) return snapshot.Id;
@@ -217,21 +152,6 @@ internal static class FastProjection
     }
 
     private static object ToParameterValue(object? value) => value ?? DBNull.Value;
-
-    /// <summary>
-    /// Converts a provider value into the exact text SQLite/Microsoft.Data.Sqlite stores, so values
-    /// round-tripped through json_extract match what EF writes elsewhere (notably GUID casing for
-    /// FK comparisons, which are case-sensitive on TEXT columns).
-    /// </summary>
-    private static object? ToJsonValue(object? value) => value switch
-    {
-        null => null,
-        Guid g => g.ToString().ToUpperInvariant(),
-        DateTimeOffset dto => dto.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFFzzz", CultureInfo.InvariantCulture),
-        DateTime dt => dt.ToString("yyyy-MM-dd HH:mm:ss.FFFFFFF", CultureInfo.InvariantCulture),
-        bool b => b ? 1 : 0,
-        _ => value
-    };
 
     // ---- model metadata ---------------------------------------------------------------------
 
@@ -259,7 +179,6 @@ internal static class FastProjection
             var columnName = property.GetColumnName(storeObject);
             if (columnName is null) continue; // not mapped to this table
             columns.Add(new ColumnInfo(
-                columnName,
                 sqlHelper.DelimitIdentifier(columnName),
                 property,
                 property.Name == ObjectSnapshot.ShadowRefName,
@@ -274,24 +193,17 @@ internal static class FastProjection
         var delimitedTable = sqlHelper.DelimitIdentifier(tableName, schema);
         var columnList = string.Join(",", columns.Select(c => c.DelimitedName));
         var parameterList = string.Join(",", columns.Select((_, i) => "@p" + i));
-        var conflictTarget = pk.DelimitedName;
         var setClause = string.Join(",", columns.Where(c => !c.IsPrimaryKey)
             .Select(c => $"{c.DelimitedName}=excluded.{c.DelimitedName}"));
         var onConflict = string.IsNullOrEmpty(setClause)
-            ? $"ON CONFLICT ({conflictTarget}) DO NOTHING"
-            : $"ON CONFLICT ({conflictTarget}) DO UPDATE SET {setClause}";
-
-        var jsonSelectList = string.Join(",", columns.Select(c => $"json_extract(value,'$.\"{c.RawName}\"')"));
+            ? $"ON CONFLICT ({pk.DelimitedName}) DO NOTHING"
+            : $"ON CONFLICT ({pk.DelimitedName}) DO UPDATE SET {setClause}";
 
         return new ProjectedTableInfo(
             columns,
             pk,
             InsertSql: $"INSERT INTO {delimitedTable} ({columnList}) VALUES ({parameterList}) {onConflict};",
-            DeleteSql: $"DELETE FROM {delimitedTable} WHERE {pk.DelimitedName}=@p0;",
-            // `WHERE true` disambiguates the trailing ON CONFLICT from a join constraint on the SELECT
-            // (a SQLite upsert-after-SELECT parser requirement)
-            JsonInsertSql: $"INSERT INTO {delimitedTable} ({columnList}) SELECT {jsonSelectList} FROM json_each(@json) WHERE true {onConflict};",
-            JsonDeleteSql: $"DELETE FROM {delimitedTable} WHERE {pk.DelimitedName} IN (SELECT json_extract(value,'$.\"{pk.RawName}\"') FROM json_each(@json));");
+            DeleteSql: $"DELETE FROM {delimitedTable} WHERE {pk.DelimitedName}=@p0;");
     }
 
     /// <summary>
@@ -324,7 +236,6 @@ internal static class FastProjection
     }
 
     private sealed record ColumnInfo(
-        string RawName,
         string DelimitedName,
         IProperty Property,
         bool IsShadowSnapshotId,
@@ -334,7 +245,5 @@ internal static class FastProjection
         IReadOnlyList<ColumnInfo> Columns,
         ColumnInfo PrimaryKey,
         string InsertSql,
-        string DeleteSql,
-        string JsonInsertSql,
-        string JsonDeleteSql);
+        string DeleteSql);
 }

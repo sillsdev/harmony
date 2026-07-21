@@ -301,19 +301,12 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return await _dbContext.Commits.GetChanges<Commit, IChange>(remoteState);
     }
 
-#if FAST_JSON
+#if FAST
     public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
         var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();
         return FastProjection.AddSnapshotsRawAsync(_dbContext, snapshotList,
-            _crdtConfig.Value.EnableProjectedTables, useJsonBatch: true);
-    }
-#elif FAST
-    public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
-    {
-        var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();
-        return FastProjection.AddSnapshotsRawAsync(_dbContext, snapshotList,
-            _crdtConfig.Value.EnableProjectedTables, useJsonBatch: false);
+            _crdtConfig.Value.EnableProjectedTables);
     }
 #else
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)

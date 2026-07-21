@@ -5,7 +5,7 @@ using SIL.Harmony.Tests;
 
 namespace SIL.Harmony.Benchmarks;
 
-[SimpleJob(RunStrategy.Monitoring, warmupCount: 2)]
+[SimpleJob(RunStrategy.Monitoring)]
 [SuppressMessage("Usage", "VSTHRD002:Avoid problematic synchronous waits")]
 public class DataModelSyncBenchmarks
 {
@@ -16,12 +16,10 @@ public class DataModelSyncBenchmarks
     public int ChangeCount { get; set; }
     private Commit[] _commits = null!;
 
-    [IterationSetup]
-    public void IterationSetup()
+    [GlobalSetup]
+    public void GlobalSetup()
     {
         remote = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
-        local = remote.ForkDatabase(false);
-        _ = local.WriteNextChange(local.SetWord(Guid.NewGuid(), "entity1")).Result;
         var clientId = Guid.NewGuid();
         var commits = new List<Commit>();
         Commit? currentCommit = null;
@@ -70,7 +68,22 @@ public class DataModelSyncBenchmarks
             commits.Add(currentCommit);
         }
         ((ISyncable)remote.DataModel).AddRangeFromSync(commits).Wait();
+    }
+
+    [IterationSetup]
+    public void IterationSetup()
+    {
+        local = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
+        _ = local.WriteNextChange(local.SetWord(Guid.NewGuid(), "entity1")).Result;
+        //cant share commits between iterations, because EF modifies them
         _commits = remote.DataModel.GetChanges(new SyncState([])).Result.MissingFromClient;
+    }
+
+    [IterationCleanup]
+    public void IterationCleanup()
+    {
+        local.DisposeAsync().AsTask().Wait();
+        local = null!;
     }
 
     [Benchmark]

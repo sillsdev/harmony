@@ -39,13 +39,14 @@ public class CrdtConfig
 
     private JsonSerializerOptions CreateJsonSerializerOptions()
     {
-        var changeDiscriminators = _lazyChangeDiscriminatorMaps.Value;
-
         var options = new JsonSerializerOptions(JsonSerializerDefaults.General)
         {
             TypeInfoResolver = MakeJsonTypeResolver()
         };
-        options.Converters.Add(new PeekThenConcreteChangeConverter(changeDiscriminators.ByDiscriminator));
+        // A factory, not .Value: building the map freezes ChangeTypeListBuilder, but consumers read these
+        // options mid-configuration (to add their own TypeInfoResolver modifier) and keep registering
+        // change types. The converter pulls the map on first use, once registration is done.
+        options.Converters.Add(new PeekThenConcreteChangeConverter(() => _lazyChangeDiscriminatorMaps.Value.ByDiscriminator));
         return options;
     }
 

@@ -13,13 +13,14 @@ namespace SIL.Harmony.Changes;
 /// </summary>
 internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
 {
-    private readonly KnownType[] _known;
+    private readonly Lazy<KnownType[]> _known;
     private readonly byte[] _discriminatorPropertyUtf8;
 
-    public PeekThenConcreteChangeConverter(IReadOnlyDictionary<string, Type> known)
+    public PeekThenConcreteChangeConverter(Func<IReadOnlyDictionary<string, Type>> knownFactory)
     {
         _discriminatorPropertyUtf8 = Encoding.UTF8.GetBytes(CrdtConstants.ChangeDiscriminatorProperty);
-        _known = known.Select(kv => new KnownType(Encoding.UTF8.GetBytes(kv.Key), kv.Value)).ToArray();
+        _known = new Lazy<KnownType[]>(() =>
+            knownFactory().Select(kv => new KnownType(Encoding.UTF8.GetBytes(kv.Key), kv.Value)).ToArray());
     }
 
     public override IChange Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
@@ -46,7 +47,7 @@ internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
             return ReadOpaque(ref reader, unknownTypeName!);
         }
 
-        ref var known = ref _known[knownIndex];
+        ref var known = ref _known.Value[knownIndex];
         var typeInfo = known.EnsureTypeInfo(options);
 
         // Real change types use parameterized constructors / get-only props — let STJ materialize.
@@ -83,9 +84,10 @@ internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
 
     private bool TryFindKnown(ref Utf8JsonReader reader, out int index, out string? unknownTypeName)
     {
-        for (var i = 0; i < _known.Length; i++)
+        var known = _known.Value;
+        for (var i = 0; i < known.Length; i++)
         {
-            if (reader.ValueTextEquals(_known[i].Utf8Discriminator))
+            if (reader.ValueTextEquals(known[i].Utf8Discriminator))
             {
                 index = i;
                 unknownTypeName = null;

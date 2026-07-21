@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -300,12 +301,22 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return await _dbContext.Commits.GetChanges<Commit, IChange>(remoteState);
     }
 
+#if FAST
+    public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
+{
+        Console.WriteLine("FAST enabled ===========================================");
+        _dbContext.AddRange(snapshots);
+        await _dbContext.SaveChangesAsync();
+}
+#else
     public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
         var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();
         // pre-load the projected rows that already exist so ProjectSnapshot's FindAsync calls are served from the
         // change tracker instead of issuing one query per snapshot
-        var existingEntityIds = await LoadExistingEntityIds(snapshotList);
+
+        Console.WriteLine("SLOW enabled ===========================================");
+      
         var latestProjectByEntityId = new Dictionary<Guid, (DateTimeOffset, long, Guid)>();
         foreach (var grouping in snapshotList.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
         {
@@ -323,7 +334,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                 }
                 latestProjectByEntityId[snapshot.EntityId] = snapshot.Commit.CompareKey;
 
-                await ProjectSnapshot(snapshot, existingEntityIds);
+                await ProjectSnapshot(snapshot, null);
             }
 
             try
@@ -339,7 +350,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             }
         }
     }
-
+#endif
     /// <summary>
     /// Loads the projected rows that already exist for the given snapshots so they're tracked by the context.
     /// This lets ProjectSnapshot resolve existing entities from the change tracker (and skip lookups for new
@@ -380,13 +391,13 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .ToList();
     }
 
-    private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot, HashSet<Guid> existingEntityIds)
+    private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot, ISet<Guid>? existingEntityIds)
     {
         if (!_crdtConfig.Value.EnableProjectedTables) return;
 
         //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
         //entities not in existingEntityIds have no projected row yet, so skip the lookup and treat them as new
-        var existingEntry = existingEntityIds.Contains(objectSnapshot.EntityId)
+        var existingEntry = existingEntityIds is null || existingEntityIds.Contains(objectSnapshot.EntityId)
             ? await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId)
             : null;
         if (existingEntry is null && objectSnapshot.EntityIsDeleted) return;

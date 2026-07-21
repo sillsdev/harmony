@@ -26,9 +26,6 @@ public enum SyncWorkload
     /// <summary>Create, delete, then modify (apply-after-delete) for each word.</summary>
     CreateDeleteModify,
 
-    /// <summary>Create, delete, then recreate (undelete via NewEntity) for each word.</summary>
-    CreateDeleteUndelete,
-
     /// <summary>
     /// Local already has create + late modify; sync inserts a mid-history modify
     /// for each word (forces stale snapshot deletion / rebuild).
@@ -36,14 +33,17 @@ public enum SyncWorkload
     OutOfOrderInsert,
 }
 
-[SimpleJob(RunStrategy.Monitoring)]
+// [SimpleJob(RunStrategy.Monitoring)]
 [SuppressMessage("Usage", "VSTHRD002:Avoid problematic synchronous waits")]
 public class DataModelSyncBenchmarks
 {
     private DataModelTestBase remote = null!;
     private DataModelTestBase local = null!;
 
-    [Params(1000, 10_000)]
+    [Params(
+        1000
+        // ,         10_000
+        )]
     public int ChangeCount { get; set; }
 
     [ParamsAllValues]
@@ -66,7 +66,6 @@ public class DataModelSyncBenchmarks
             SyncWorkload.ModifySameWord => BuildModifySameWord(clientId),
             SyncWorkload.CreateThenDelete => BuildCreateThenDelete(clientId),
             SyncWorkload.CreateDeleteModify => BuildCreateDeleteModify(clientId),
-            SyncWorkload.CreateDeleteUndelete => BuildCreateDeleteUndelete(clientId),
             SyncWorkload.OutOfOrderInsert => BuildOutOfOrderInsert(clientId),
             _ => throw new ArgumentOutOfRangeException()
         };
@@ -195,23 +194,6 @@ public class DataModelSyncBenchmarks
             // SetWordNote supports apply-on-existing (including deleted) without undeleting
             commits.Add(NewCommit(clientId, remote.NextDate(),
                 remote.SetWordNote(wordId, $"note {i}")));
-        }
-        return commits;
-    }
-
-    private List<Commit> BuildCreateDeleteUndelete(Guid clientId)
-    {
-        var commits = new List<Commit>(ChangeCount * 3);
-        for (var i = 0; i < ChangeCount; i++)
-        {
-            var wordId = Guid.NewGuid();
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWord(wordId, $"entity {i}")));
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.DeleteWord(wordId)));
-            // SetWord supports NewEntity and undeletes
-            commits.Add(NewCommit(clientId, remote.NextDate(),
-                remote.SetWord(wordId, $"undeleted {i}")));
         }
         return commits;
     }

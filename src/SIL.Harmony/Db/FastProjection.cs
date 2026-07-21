@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
 using System.Data.Common;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
 
 namespace SIL.Harmony.Db;
 
@@ -15,14 +15,18 @@ namespace SIL.Harmony.Db;
 /// SnapshotId shadow FK, value converters) is derived from the EF model, so no per-entity code is
 /// required.
 /// </summary>
-internal static class FastProjection
+internal class FastProjection
 {
-    private static readonly ConcurrentDictionary<Type, ProjectedTableInfo> TableInfoCache = new();
+    private readonly CrdtConfig _crdtConfig;
 
-    public static async Task AddSnapshotsRawAsync(
+    public FastProjection(IOptions<CrdtConfig> crdtConfig)
+    {
+        _crdtConfig = crdtConfig.Value;
+    }
+
+    public async Task AddSnapshotsRawAsync(
         ICrdtDbContext dbContext,
-        IReadOnlyCollection<ObjectSnapshot> snapshots,
-        bool enableProjectedTables)
+        IReadOnlyCollection<ObjectSnapshot> snapshots)
     {
         // AddSnapshots is normally called inside a caller-managed transaction; reuse it so the raw
         // SQL runs on the same connection/transaction as the snapshot insert. When called outside a
@@ -36,7 +40,7 @@ internal static class FastProjection
             dbContext.AddRange(snapshots);
             await dbContext.SaveChangesAsync();
 
-            if (enableProjectedTables)
+            if (_crdtConfig.EnableProjectedTables)
             {
                 await ProjectAsync(dbContext, snapshots);
             }
@@ -49,7 +53,7 @@ internal static class FastProjection
         }
     }
 
-    private static async Task ProjectAsync(
+    private async Task ProjectAsync(
         ICrdtDbContext dbContext,
         IReadOnlyCollection<ObjectSnapshot> snapshots)
     {
@@ -155,9 +159,9 @@ internal static class FastProjection
 
     // ---- model metadata ---------------------------------------------------------------------
 
-    private static ProjectedTableInfo GetTableInfo(ICrdtDbContext dbContext, Type clrType, ISqlGenerationHelper sqlHelper)
+    private ProjectedTableInfo GetTableInfo(ICrdtDbContext dbContext, Type clrType, ISqlGenerationHelper sqlHelper)
     {
-        return TableInfoCache.GetOrAdd(clrType, t => BuildTableInfo(dbContext, t, sqlHelper));
+        return _crdtConfig.ProjectedTableInfoCache.GetOrAdd(clrType, t => BuildTableInfo(dbContext, t, sqlHelper));
     }
 
     private static ProjectedTableInfo BuildTableInfo(ICrdtDbContext dbContext, Type clrType, ISqlGenerationHelper sqlHelper)
@@ -235,13 +239,13 @@ internal static class FastProjection
         return ordered;
     }
 
-    private sealed record ColumnInfo(
+    internal sealed record ColumnInfo(
         string DelimitedName,
         IProperty Property,
         bool IsShadowSnapshotId,
         bool IsPrimaryKey);
 
-    private sealed record ProjectedTableInfo(
+    internal sealed record ProjectedTableInfo(
         IReadOnlyList<ColumnInfo> Columns,
         ColumnInfo PrimaryKey,
         string InsertSql,

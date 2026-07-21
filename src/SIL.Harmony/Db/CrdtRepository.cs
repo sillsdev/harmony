@@ -53,14 +53,17 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     private readonly ICrdtDbContext _dbContext;
     private readonly IOptions<CrdtConfig> _crdtConfig;
     private readonly ILogger<CrdtRepository> _logger;
+    private readonly FastProjection _fastProjection;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
+        FastProjection fastProjection,
         Commit? ignoreChangesAfter = null)
     {
         _crdtConfig = crdtConfig;
         _dbContext = ignoreChangesAfter is not null ? new ScopedDbContext(dbContext, ignoreChangesAfter) : dbContext;
         _logger = logger;
+        _fastProjection = fastProjection;
         //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
         //but since we're using a custom query, we can use it directly and apply the scoped filters manually
         _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
@@ -304,13 +307,12 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
         var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();
-        return FastProjection.AddSnapshotsRawAsync(_dbContext, snapshotList,
-            _crdtConfig.Value.EnableProjectedTables);
+        return _fastProjection.AddSnapshotsRawAsync(_dbContext, snapshotList);
     }
 
     public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
     {
-        return new CrdtRepository(_dbContext, _crdtConfig, _logger, excludeChangesAfterCommit);
+        return new CrdtRepository(_dbContext, _crdtConfig, _logger, _fastProjection, excludeChangesAfterCommit);
     }
 
     /// <summary>

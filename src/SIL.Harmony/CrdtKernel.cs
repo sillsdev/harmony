@@ -51,6 +51,7 @@ public static class CrdtKernel
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
+        services.AddSingleton<FastProjection>();
         services.AddScoped<CrdtRepositoryFactory>();
         //must use factory method because DataModel constructor is internal
         services.AddScoped<DataModel>(provider => new DataModel(

@@ -67,7 +67,7 @@ internal class SnapshotWorker
     internal async Task<IReadOnlyList<ObjectSnapshot>> ComputeSnapshotsToPersist(SortedSet<Commit> commits)
     {
         await ApplyCommitChanges(commits);
-        return [.._rootSnapshots.Values, .._newIntermediateSnapshots, .._pendingSnapshots.Values];
+        return [.. _rootSnapshots.Values, .. _newIntermediateSnapshots, .. _pendingSnapshots.Values];
     }
 
     private async ValueTask ApplyCommitChanges(SortedSet<Commit> commits)

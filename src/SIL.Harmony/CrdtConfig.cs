@@ -11,6 +11,8 @@ namespace SIL.Harmony;
 
 public delegate ValueTask BeforeSaveObjectDelegate(object obj, ObjectSnapshot snapshot);
 
+public readonly record struct RegisteredChangeType(Type Type, string Discriminator);
+
 public class CrdtConfig
 {
     /// <summary>
@@ -24,10 +26,14 @@ public class CrdtConfig
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
-    public IEnumerable<Type> ChangeTypes => ChangeTypeListBuilder.Types.Select(t => t.DerivedType);
+    public IEnumerable<RegisteredChangeType> ChangeTypes =>
+        ChangeTypeListBuilder.Types.Select(t => new RegisteredChangeType(
+            t.DerivedType,
+            (string)t.TypeDiscriminator!));
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
+    private readonly JsonOptionsBuilder _jsonOptionsBuilder = new();
     private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
     private readonly Lazy<ChangeDiscriminatorMaps> _lazyChangeDiscriminatorMaps;
 
@@ -46,7 +52,18 @@ public class CrdtConfig
             TypeInfoResolver = MakeJsonTypeResolver()
         };
         options.Converters.Add(new PeekThenConcreteChangeConverter(changeDiscriminators.ByDiscriminator));
+        _jsonOptionsBuilder.ApplyTo(options);
         return options;
+    }
+
+    /// <summary>
+    /// Registers a callback to customize <see cref="JsonSerializerOptions"/> before they are frozen.
+    /// Callbacks run after Harmony's type resolver and change converter are configured.
+    /// Replacing <see cref="JsonSerializerOptions.TypeInfoResolver"/> or removing the change converter will break serialization.
+    /// </summary>
+    public void ConfigureJsonOptions(Action<JsonSerializerOptions> configure)
+    {
+        _jsonOptionsBuilder.Configure(configure);
     }
 
     private ChangeDiscriminatorMaps BuildChangeDiscriminatorMaps()
@@ -154,6 +171,32 @@ public class CrdtConfig
             entity.HasKey(lr => lr.Id);
             entity.Property(lr => lr.LocalPath);
         });
+    }
+}
+
+internal class JsonOptionsBuilder
+{
+    private bool _frozen;
+    private readonly List<Action<JsonSerializerOptions>> _configurations = [];
+
+    public void Configure(Action<JsonSerializerOptions> configure)
+    {
+        CheckFrozen();
+        _configurations.Add(configure);
+    }
+
+    internal void ApplyTo(JsonSerializerOptions options)
+    {
+        foreach (var configure in _configurations)
+            configure(options);
+        Freeze();
+    }
+
+    private void Freeze() => _frozen = true;
+
+    private void CheckFrozen()
+    {
+        if (_frozen) throw new InvalidOperationException($"{nameof(JsonOptionsBuilder)} is frozen");
     }
 }
 

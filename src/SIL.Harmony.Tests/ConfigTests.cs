@@ -1,5 +1,6 @@
 using System.Text.Json;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests.Adapter;
@@ -11,7 +12,7 @@ public class ConfigTests
     [Fact]
     public void CanGetEntityTypes()
     {
-        var config = new CrdtConfig();
+        var config = new HarmonyConfig();
         config.ObjectTypeListBuilder.DefaultAdapter()
             .Add<Word>()
             .Add<Definition>();
@@ -25,7 +26,7 @@ public class ConfigTests
     [Fact]
     public void CanGetChangeTypes()
     {
-        var config = new CrdtConfig();
+        var config = new HarmonyConfig();
         config.ChangeTypeListBuilder.Add<NewDefinitionChange>();
         config.ChangeTypeListBuilder.Add<SetWordTextChange>();
         config.ChangeTypeListBuilder.Add<DeleteChange<Word>>();
@@ -40,7 +41,7 @@ public class ConfigTests
     [Fact]
     public void ConfigureJsonOptions_applies_callback()
     {
-        var config = new CrdtConfig();
+        var config = new HarmonyConfig();
         config.ConfigureJsonOptions(o => o.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 
         config.JsonSerializerOptions.PropertyNamingPolicy.Should().Be(JsonNamingPolicy.CamelCase);
@@ -49,7 +50,7 @@ public class ConfigTests
     [Fact]
     public void ConfigureJsonOptions_composes_multiple_callbacks()
     {
-        var config = new CrdtConfig();
+        var config = new HarmonyConfig();
         config.ConfigureJsonOptions(o => o.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
         config.ConfigureJsonOptions(o => o.WriteIndented = true);
 
@@ -60,7 +61,7 @@ public class ConfigTests
     [Fact]
     public void ConfigureJsonOptions_throws_after_freeze()
     {
-        var config = new CrdtConfig();
+        var config = new HarmonyConfig();
         _ = config.JsonSerializerOptions;
 
         var act = () => config.ConfigureJsonOptions(o => o.WriteIndented = true);

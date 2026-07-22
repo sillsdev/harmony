@@ -26,10 +26,7 @@ public class CrdtConfig
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
-    public IEnumerable<RegisteredChangeType> ChangeTypes =>
-        ChangeTypeListBuilder.Types.Select(t => new RegisteredChangeType(
-            t.DerivedType,
-            (string)t.TypeDiscriminator!));
+    public IReadOnlyList<RegisteredChangeType> ChangeTypes => ChangeTypeListBuilder.Types;
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
@@ -72,14 +69,10 @@ public class CrdtConfig
 
         var knownChanges = new Dictionary<string, Type>(ChangeTypeListBuilder.Types.Count);
         var discriminators = new Dictionary<Type, string>(ChangeTypeListBuilder.Types.Count);
-        foreach (var derived in ChangeTypeListBuilder.Types)
+        foreach (var changeType in ChangeTypeListBuilder.Types)
         {
-            if (derived.TypeDiscriminator is not string discriminator)
-                throw new InvalidOperationException(
-                    $"Change type {derived.DerivedType} must use a string $type discriminator");
-
-            knownChanges.Add(discriminator, derived.DerivedType);
-            discriminators.Add(derived.DerivedType, discriminator);
+            knownChanges.Add(changeType.Discriminator, changeType.Type);
+            discriminators.Add(changeType.Type, changeType.Discriminator);
         }
 
         return new ChangeDiscriminatorMaps(knownChanges, discriminators);
@@ -216,13 +209,14 @@ public class ChangeTypeListBuilder
     {
         if (_frozen) throw new InvalidOperationException($"{nameof(ChangeTypeListBuilder)} is frozen");
     }
-    internal List<JsonDerivedType> Types { get; } = [];
+    private readonly List<RegisteredChangeType> _types = [];
+    public IReadOnlyList<RegisteredChangeType> Types => _types.AsReadOnly();
 
     public ChangeTypeListBuilder Add<TDerived>() where TDerived : IChange, IPolyType
     {
         CheckFrozen();
-        if (Types.Any(t => t.DerivedType == typeof(TDerived))) return this;
-        Types.Add(new JsonDerivedType(typeof(TDerived), TDerived.TypeName));
+        if (_types.Any(t => t.Type == typeof(TDerived))) return this;
+        _types.Add(new RegisteredChangeType(typeof(TDerived), TDerived.TypeName));
         return this;
     }
 }

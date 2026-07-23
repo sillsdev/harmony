@@ -13,7 +13,7 @@ public class ObjectTypeListBuilder
     /// <summary>
     /// we call freeze when the builder is used to create a json serializer options, as it is not possible to add new types after that.
     /// </summary>
-    public void Freeze()
+    internal void Freeze()
     {
         if (_frozen) return;
         _frozen = true;

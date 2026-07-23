@@ -1,6 +1,7 @@
 using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 
 namespace SIL.Harmony;
@@ -12,7 +13,7 @@ internal class SnapshotWorker
 {
     private readonly Dictionary<Guid, Guid?> _snapshotLookup;
     private readonly CrdtRepository _crdtRepository;
-    private readonly CrdtConfig _crdtConfig;
+    private readonly HarmonyConfig _crdtConfig;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
@@ -20,7 +21,7 @@ internal class SnapshotWorker
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, Guid?> snapshotLookup,
         CrdtRepository crdtRepository,
-        CrdtConfig crdtConfig)
+        HarmonyConfig crdtConfig)
     {
         _pendingSnapshots = snapshots;
         _crdtRepository = crdtRepository;
@@ -32,7 +33,7 @@ internal class SnapshotWorker
         Dictionary<Guid, ObjectSnapshot> snapshots,
         CrdtRepository crdtRepository,
         SortedSet<Commit> commits,
-        CrdtConfig crdtConfig)
+        HarmonyConfig crdtConfig)
     {
         //we need to pass in the snapshots because we expect it to be modified, this is intended.
         //if the constructor makes a copy in the future this will need to be updated
@@ -45,7 +46,7 @@ internal class SnapshotWorker
     /// <param name="crdtConfig"></param>
     internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup,
         CrdtRepository crdtRepository,
-        CrdtConfig crdtConfig) : this([], snapshotLookup, crdtRepository, crdtConfig)
+        HarmonyConfig crdtConfig) : this([], snapshotLookup, crdtRepository, crdtConfig)
     {
     }
 

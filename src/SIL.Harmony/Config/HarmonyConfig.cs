@@ -1,17 +1,15 @@
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
-using SIL.Harmony.Adapters;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
-using SIL.Harmony.Entities;
 using SIL.Harmony.Resource;
 
-namespace SIL.Harmony;
+namespace SIL.Harmony.Config;
 
 public delegate ValueTask BeforeSaveObjectDelegate(object obj, ObjectSnapshot snapshot);
 
-public class CrdtConfig
+public class HarmonyConfig
 {
     /// <summary>
     /// recommended to increase query performance, as getting objects can just query the table for that object.
@@ -24,14 +22,15 @@ public class CrdtConfig
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
-    public IEnumerable<Type> ChangeTypes => ChangeTypeListBuilder.Types.Select(t => t.DerivedType);
+    public IReadOnlyList<RegisteredChangeType> ChangeTypes => ChangeTypeListBuilder.Types;
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
+    private readonly JsonOptionsBuilder _jsonOptionsBuilder = new();
     private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
     private readonly Lazy<ChangeDiscriminatorMaps> _lazyChangeDiscriminatorMaps;
 
-    public CrdtConfig()
+    public HarmonyConfig()
     {
         _lazyChangeDiscriminatorMaps = new Lazy<ChangeDiscriminatorMaps>(BuildChangeDiscriminatorMaps);
         _lazyJsonSerializerOptions = new Lazy<JsonSerializerOptions>(CreateJsonSerializerOptions);
@@ -46,7 +45,18 @@ public class CrdtConfig
             TypeInfoResolver = MakeJsonTypeResolver()
         };
         options.Converters.Add(new PeekThenConcreteChangeConverter(changeDiscriminators.ByDiscriminator));
+        _jsonOptionsBuilder.ApplyTo(options);
         return options;
+    }
+
+    /// <summary>
+    /// Registers a callback to customize <see cref="JsonSerializerOptions"/> before they are frozen.
+    /// Callbacks run after Harmony's type resolver and change converter are configured.
+    /// Replacing <see cref="JsonSerializerOptions.TypeInfoResolver"/> or removing the change converter will break serialization.
+    /// </summary>
+    public void ConfigureJsonOptions(Action<JsonSerializerOptions> configure)
+    {
+        _jsonOptionsBuilder.Configure(configure);
     }
 
     private ChangeDiscriminatorMaps BuildChangeDiscriminatorMaps()
@@ -55,14 +65,10 @@ public class CrdtConfig
 
         var knownChanges = new Dictionary<string, Type>(ChangeTypeListBuilder.Types.Count);
         var discriminators = new Dictionary<Type, string>(ChangeTypeListBuilder.Types.Count);
-        foreach (var derived in ChangeTypeListBuilder.Types)
+        foreach (var changeType in ChangeTypeListBuilder.Types)
         {
-            if (derived.TypeDiscriminator is not string discriminator)
-                throw new InvalidOperationException(
-                    $"Change type {derived.DerivedType} must use a string $type discriminator");
-
-            knownChanges.Add(discriminator, derived.DerivedType);
-            discriminators.Add(derived.DerivedType, discriminator);
+            knownChanges.Add(changeType.Discriminator, changeType.Type);
+            discriminators.Add(changeType.Type, changeType.Discriminator);
         }
 
         return new ChangeDiscriminatorMaps(knownChanges, discriminators);
@@ -156,117 +162,3 @@ public class CrdtConfig
         });
     }
 }
-
-public class ChangeTypeListBuilder
-{
-    private bool _frozen;
-
-    /// <summary>
-    /// we call freeze when the builder is used to create a json serializer options, as it is not possible to add new types after that.
-    /// </summary>
-    public void Freeze()
-    {
-        _frozen = true;
-    }
-
-    private void CheckFrozen()
-    {
-        if (_frozen) throw new InvalidOperationException($"{nameof(ChangeTypeListBuilder)} is frozen");
-    }
-    internal List<JsonDerivedType> Types { get; } = [];
-
-    public ChangeTypeListBuilder Add<TDerived>() where TDerived : IChange, IPolyType
-    {
-        CheckFrozen();
-        if (Types.Any(t => t.DerivedType == typeof(TDerived))) return this;
-        Types.Add(new JsonDerivedType(typeof(TDerived), TDerived.TypeName));
-        return this;
-    }
-}
-
-public class ObjectTypeListBuilder
-{
-    private bool _frozen;
-
-    /// <summary>
-    /// we call freeze when the builder is used to create a json serializer options, as it is not possible to add new types after that.
-    /// </summary>
-    public void Freeze()
-    {
-        if (_frozen) return;
-        _frozen = true;
-        foreach (var registration in AdapterProviders.SelectMany(a => a.GetRegistrations()))
-        {
-            ModelConfigurations.Add((builder, config) =>
-            {
-                if (!config.EnableProjectedTables) return;
-                var entity = registration.EntityBuilder(builder);
-                entity.HasOne(typeof(ObjectSnapshot))
-                    .WithOne()
-                    .HasForeignKey(registration.ObjectDbType, ObjectSnapshot.ShadowRefName)
-                    .OnDelete(DeleteBehavior.SetNull);
-            });
-        }
-    }
-
-    internal void CheckFrozen()
-    {
-        if (_frozen) throw new InvalidOperationException($"{nameof(ObjectTypeListBuilder)} is frozen");
-    }
-
-    internal Dictionary<Type, List<JsonDerivedType>> JsonTypes { get; } = [];
-    internal List<Action<ModelBuilder, CrdtConfig>> ModelConfigurations { get; } = [];
-    internal List<IObjectAdapterProvider> AdapterProviders { get; } = [];
-
-    public DefaultAdapterProvider DefaultAdapter()
-    {
-        CheckFrozen();
-        if (AdapterProviders.OfType<DefaultAdapterProvider>().SingleOrDefault() is { } adapter) return adapter;
-        adapter = new DefaultAdapterProvider(this);
-        AdapterProviders.Add(adapter);
-        return adapter;
-    }
-
-    /// <summary>
-    /// add a custom adapter for a common interface
-    /// this is required as CRDT objects must express their references and have an Id property
-    /// using a custom adapter allows your model to not take a dependency on Harmony
-    /// </summary>
-    /// <typeparam name="TCommonInterface">
-    /// A common interface that all objects in your application implement
-    /// which System.Text.Json will deserialize your objects to, they must support polymorphic deserialization
-    /// </typeparam>
-    /// <typeparam name="TAdapter">
-    /// This adapter will be serialized and stored in the database,
-    /// it should include the object it is adapting otherwise Harmony will not work
-    /// </typeparam>
-    /// <returns></returns>
-    /// <exception cref="InvalidOperationException">when another adapter has already been added or the config has been frozen</exception>
-    public CustomAdapterProvider<TCommonInterface, TAdapter> CustomAdapter<TCommonInterface, TAdapter>()
-        where TCommonInterface : class where TAdapter : class, ICustomAdapter<TAdapter, TCommonInterface>, IPolyType
-    {
-        CheckFrozen();
-        if (AdapterProviders.OfType<CustomAdapterProvider<TCommonInterface, TAdapter>>().SingleOrDefault() is { } adapter) return adapter;
-        adapter = new CustomAdapterProvider<TCommonInterface, TAdapter>(this);
-        AdapterProviders.Add(adapter);
-        return adapter;
-    }
-
-    internal IObjectBase Adapt(object obj)
-    {
-        if (AdapterProviders is [{ } defaultAdapter])
-        {
-            return defaultAdapter.Adapt(obj);
-        }
-
-        foreach (var objectAdapterProvider in AdapterProviders)
-        {
-            if (objectAdapterProvider.CanAdapt(obj))
-            {
-                return objectAdapterProvider.Adapt(obj);
-            }
-        }
-        throw new ArgumentException($"Unable to adapt object of type {obj.GetType()}");
-    }
-}
-

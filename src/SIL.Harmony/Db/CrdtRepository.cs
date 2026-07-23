@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
@@ -49,10 +50,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     private readonly AsyncLock _lock;
     private readonly ICrdtDbContext _dbContext;
-    private readonly IOptions<CrdtConfig> _crdtConfig;
+    private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly ILogger<CrdtRepository> _logger;
 
-    public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
+    public CrdtRepository(ICrdtDbContext dbContext, IOptions<HarmonyConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
         Commit? ignoreChangesAfter = null)
     {

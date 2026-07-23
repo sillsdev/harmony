@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 
 namespace SIL.Harmony;
@@ -10,7 +11,7 @@ namespace SIL.Harmony;
 public static class CrdtKernel
 {
     public static IServiceCollection AddCrdtDataDbFactory<TContext>(this IServiceCollection services,
-        Action<CrdtConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
+        Action<HarmonyConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
     {
         services.AddCrdtDataCore(configureCrdt);
         services.AddScoped<ICrdtDbContextFactory, CrdtDbContextFactory<TContext>>();
@@ -18,7 +19,7 @@ public static class CrdtKernel
     }
 
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
-        Action<CrdtConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
+        Action<HarmonyConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
     {
         services.AddCrdtDataCore(configureCrdt);
         services.AddScoped<ICrdtDbContextFactory, CrdtDbContextNoDisposeFactory<TContext>>();
@@ -26,29 +27,29 @@ public static class CrdtKernel
     }
 
     public static IServiceCollection AddCrdtRemoteResources<TMetadata>(this IServiceCollection services,
-        Action<CrdtConfig>? configureCrdt = null, string? cachePath = null)
+        Action<HarmonyConfig>? configureCrdt = null, string? cachePath = null)
         where TMetadata : class
     {
-        services.Configure<CrdtConfig>(config =>
+        services.Configure<HarmonyConfig>(config =>
         {
             config.AddRemoteResourceEntity<TMetadata>(cachePath);
             configureCrdt?.Invoke(config);
         });
         services.AddScoped<ResourceService<TMetadata>>(provider => new ResourceService<TMetadata>(
             provider.GetRequiredService<CrdtRepositoryFactory>(),
-            provider.GetRequiredService<IOptions<CrdtConfig>>(),
+            provider.GetRequiredService<IOptions<HarmonyConfig>>(),
             provider.GetRequiredService<DataModel>(),
             provider.GetRequiredService<ILogger<ResourceService<TMetadata>>>()
         ));
         return services;
     }
 
-    public static IServiceCollection AddCrdtDataCore(this IServiceCollection services, Action<CrdtConfig> configureCrdt)
+    public static IServiceCollection AddCrdtDataCore(this IServiceCollection services, Action<HarmonyConfig> configureCrdt)
     {
         services.AddLogging();
-        services.AddOptions<CrdtConfig>().Configure(configureCrdt)
+        services.AddOptions<HarmonyConfig>().Configure(configureCrdt)
             .PostConfigure(crdtConfig => crdtConfig.ObjectTypeListBuilder.Freeze());
-        services.AddSingleton(sp => sp.GetRequiredService<IOptions<CrdtConfig>>().Value.JsonSerializerOptions);
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<HarmonyConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
         services.AddScoped<CrdtRepositoryFactory>();
@@ -57,7 +58,7 @@ public static class CrdtKernel
             provider.GetRequiredService<CrdtRepositoryFactory>(),
             provider.GetRequiredService<JsonSerializerOptions>(),
             provider.GetRequiredService<IHybridDateTimeProvider>(),
-            provider.GetRequiredService<IOptions<CrdtConfig>>(),
+            provider.GetRequiredService<IOptions<HarmonyConfig>>(),
             provider.GetRequiredService<ILogger<DataModel>>()
         ));
         return services;

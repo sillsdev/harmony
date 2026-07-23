@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace SIL.Harmony.Db;
 
@@ -65,6 +66,7 @@ public class CrdtDbContextNoDisposeFactory<TContext>(TContext dbContext) : ICrdt
             return context.Set<TEntity>();
         }
 
+        public IModel Model => context.Model;
         public DatabaseFacade Database => context.Database;
 
         public ChangeTracker ChangeTracker => context.ChangeTracker;

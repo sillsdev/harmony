@@ -41,4 +41,8 @@
         <Using Include="SIL.Harmony.Core"/>
     </ItemGroup>
 
+    <ItemGroup>
+        <InternalsVisibleTo Include="SIL.Harmony.Benchmarks" />
+    </ItemGroup>
+
 </Project>

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
@@ -29,6 +30,13 @@ public class HarmonyConfig
     private readonly JsonOptionsBuilder _jsonOptionsBuilder = new();
     private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
     private readonly Lazy<ChangeDiscriminatorMaps> _lazyChangeDiscriminatorMaps;
+
+    /// <summary>
+    /// Cache of derived projected-table SQL metadata (keyed by projected CLR type), used by
+    /// <see cref="FastProjection"/>. Stored on the config so it's shared across repositories and
+    /// db contexts and only built once per type.
+    /// </summary>
+    internal ConcurrentDictionary<Type, FastProjection.ProjectedTableInfo> ProjectedTableInfoCache { get; } = new();
 
     public HarmonyConfig()
     {

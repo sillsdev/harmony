@@ -11,7 +11,7 @@ namespace SIL.Harmony;
 /// </summary>
 internal class SnapshotWorker
 {
-    private readonly Dictionary<Guid, Guid?> _snapshotLookup;
+    private readonly Dictionary<Guid, ObjectSnapshot?> _snapshotCache;
     private readonly CrdtRepository _crdtRepository;
     private readonly HarmonyConfig _crdtConfig;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots = [];
@@ -19,13 +19,13 @@ internal class SnapshotWorker
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
-        Dictionary<Guid, Guid?> snapshotLookup,
+        Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
         HarmonyConfig crdtConfig)
     {
         _pendingSnapshots = snapshots;
         _crdtRepository = crdtRepository;
-        _snapshotLookup = snapshotLookup;
+        _snapshotCache = snapshotCache;
         _crdtConfig = crdtConfig;
     }
 
@@ -41,12 +41,12 @@ internal class SnapshotWorker
         return snapshots;
     }
 
-    /// <param name="snapshotLookup">a dictionary of entity id to latest snapshot id</param>
+    /// <param name="snapshotCache">a dictionary of entity id to latest snapshot id</param>
     /// <param name="crdtRepository"></param>
     /// <param name="crdtConfig"></param>
-    internal SnapshotWorker(Dictionary<Guid, Guid?> snapshotLookup,
+    internal SnapshotWorker(Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
-        HarmonyConfig crdtConfig) : this([], snapshotLookup, crdtRepository, crdtConfig)
+        HarmonyConfig crdtConfig) : this([], snapshotCache, crdtRepository, crdtConfig)
     {
     }
 
@@ -58,6 +58,17 @@ internal class SnapshotWorker
             .._newIntermediateSnapshots,
             .._pendingSnapshots.Values
         ]);
+    }
+
+    /// <summary>
+    /// Applies the commits to snapshots the same way <see cref="UpdateSnapshots"/> does, but returns the full list
+    /// of snapshots that would be persisted instead of writing them. Used by benchmarks to isolate the
+    /// <see cref="CrdtRepository.AddSnapshots"/> step from commit application.
+    /// </summary>
+    internal async Task<IReadOnlyList<ObjectSnapshot>> ComputeSnapshotsToPersist(SortedSet<Commit> commits)
+    {
+        await ApplyCommitChanges(commits);
+        return [.. _rootSnapshots.Values, .. _newIntermediateSnapshots, .. _pendingSnapshots.Values];
     }
 
     private async ValueTask ApplyCommitChanges(SortedSet<Commit> commits)
@@ -159,14 +170,13 @@ internal class SnapshotWorker
             return rootSnapshot;
         }
 
-        if (_snapshotLookup.TryGetValue(entityId, out var snapshotId))
+        if (_snapshotCache.TryGetValue(entityId, out snapshot))
         {
-            if (snapshotId is null) return null;
-            return await _crdtRepository.FindSnapshot(snapshotId.Value, true);
+            return snapshot;
         }
 
         snapshot = await _crdtRepository.GetCurrentSnapshotByObjectId(entityId, true);
-        _snapshotLookup[entityId] = snapshot?.Id;
+        _snapshotCache[entityId] = snapshot;
 
         return snapshot;
     }

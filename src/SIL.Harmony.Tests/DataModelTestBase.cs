@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
@@ -39,7 +40,7 @@ public class DataModelTestBase : IAsyncLifetime
             {
                 builder.UseSqlite(connection, true);
             }, performanceTest)
-            .Configure<CrdtConfig>(config => config.AlwaysValidateCommits = alwaysValidate)
+            .Configure<HarmonyConfig>(config => config.AlwaysValidateCommits = alwaysValidate)
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider));
         configure?.Invoke(serviceCollection);
         _services = serviceCollection.BuildServiceProvider();
@@ -72,7 +73,7 @@ public class DataModelTestBase : IAsyncLifetime
     internal CrdtRepository CreateRepository() =>
         _services.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
 
-    internal CrdtConfig CrdtConfig => _services.GetRequiredService<IOptions<CrdtConfig>>().Value;
+    internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
 
     private static int _instanceCount = 0;
     private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0).AddHours(_instanceCount++));

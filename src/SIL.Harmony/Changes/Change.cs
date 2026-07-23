@@ -5,7 +5,7 @@ namespace SIL.Harmony.Changes;
 
 /// <summary>
 /// Polymorphic JSON for <see cref="IChange"/> is owned by
-/// <c>PeekThenConcreteChangeConverter</c> (via <see cref="CrdtConfig"/>), not
+/// <c>PeekThenConcreteChangeConverter</c> (via <see cref="Config.HarmonyConfig"/>), not
 /// <see cref="JsonPolymorphicAttribute"/>. Unknown <c>$type</c> values become
 /// <see cref="OpaqueChange"/>.
 /// </summary>

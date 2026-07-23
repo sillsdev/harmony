@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 using SIL.Harmony.Helpers;
 using SIL.Harmony.Resource;
@@ -11,11 +12,11 @@ namespace SIL.Harmony;
 public class ResourceService<TMetadata> where TMetadata : class
 {
     private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
-    private readonly IOptions<CrdtConfig> _crdtConfig;
+    private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly DataModel _dataModel;
     private readonly ILogger<ResourceService<TMetadata>> _logger;
 
-    internal ResourceService(CrdtRepositoryFactory crdtRepositoryFactory, IOptions<CrdtConfig> crdtConfig,
+    internal ResourceService(CrdtRepositoryFactory crdtRepositoryFactory, IOptions<HarmonyConfig> crdtConfig,
         DataModel dataModel, ILogger<ResourceService<TMetadata>> logger)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;

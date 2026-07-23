@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Options;
+using SIL.Harmony.Config;
 
 namespace SIL.Harmony.Db;
 
@@ -17,9 +18,9 @@ namespace SIL.Harmony.Db;
 /// </summary>
 internal class FastProjection
 {
-    private readonly CrdtConfig _crdtConfig;
+    private readonly HarmonyConfig _crdtConfig;
 
-    public FastProjection(IOptions<CrdtConfig> crdtConfig)
+    public FastProjection(IOptions<HarmonyConfig> crdtConfig)
     {
         _crdtConfig = crdtConfig.Value;
     }

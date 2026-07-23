@@ -7,7 +7,7 @@ namespace SIL.Harmony.Changes;
 
 /// <summary>
 /// Owns <see cref="IChange"/> discrimination. Requires <c>$type</c> as the first JSON property
-/// (matching synthetic write order from <see cref="CrdtConfig"/>).
+/// (matching synthetic write order from <see cref="Config.HarmonyConfig"/>).
 /// Known discriminators deserialize via cached concrete <see cref="JsonTypeInfo"/>;
 /// unknown → <see cref="OpaqueChange"/> preserving the raw payload.
 /// </summary>

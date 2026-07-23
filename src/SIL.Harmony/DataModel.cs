@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 
 namespace SIL.Harmony;
@@ -21,14 +22,14 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly IHybridDateTimeProvider _timeProvider;
-    private readonly IOptions<CrdtConfig> _crdtConfig;
+    private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
         JsonSerializerOptions serializerOptions,
         IHybridDateTimeProvider timeProvider,
-        IOptions<CrdtConfig> crdtConfig,
+        IOptions<HarmonyConfig> crdtConfig,
         ILogger<DataModel> logger)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;

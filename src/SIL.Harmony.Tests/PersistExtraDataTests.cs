@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Tests;
@@ -53,7 +54,7 @@ public class PersistExtraDataTests
     {
         _dataModelTestBase = new DataModelTestBase(configure: services =>
         {
-            services.Configure<CrdtConfig>(config =>
+            services.Configure<HarmonyConfig>(config =>
             {
                 config.ObjectTypeListBuilder.DefaultAdapter().Add<ExtraDataModel>();
                 config.ChangeTypeListBuilder.Add<CreateExtraDataModelChange>();

@@ -4,7 +4,6 @@
     <File Path="src/Directory.Build.props" />
     <File Path="src/Directory.Build.targets" />
   </Folder>
-  <Project Path="src/SIL.Harmony.Benchmarks/SIL.Harmony.Benchmarks.csproj" />
   <Project Path="src/SIL.Harmony.Core/SIL.Harmony.Core.csproj" />
   <Project Path="src/SIL.Harmony.Linq2db/SIL.Harmony.Linq2db.csproj" />
   <Project Path="src/SIL.Harmony.Sample/SIL.Harmony.Sample.csproj" />

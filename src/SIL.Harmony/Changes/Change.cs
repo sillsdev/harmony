@@ -15,7 +15,7 @@ public interface IChange
     Guid EntityId { get; set; }
 
     [JsonIgnore]
-    Type EntityType { get; }
+    Type? EntityType { get; }
 
     ValueTask ApplyChange(IObjectBase entity, IChangeContext context);
     ValueTask<IObjectBase> NewEntity(Commit commit, IChangeContext context);

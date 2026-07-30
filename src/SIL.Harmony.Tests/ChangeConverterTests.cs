@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 
@@ -8,9 +9,10 @@ namespace SIL.Harmony.Tests;
 
 public class ChangeConverterTests
 {
-    private static JsonSerializerOptions SampleOptions() =>
+    private static JsonSerializerOptions SampleOptions(UnknownChangeHandling handling = UnknownChangeHandling.Fallback) =>
         new ServiceCollection()
             .AddCrdtDataSample(":memory:")
+            .Configure<HarmonyConfig>(c => c.UnknownChangeHandling = handling)
             .BuildServiceProvider()
             .GetRequiredService<JsonSerializerOptions>();
 
@@ -45,6 +47,20 @@ public class ChangeConverterTests
         opaque.RawJson.GetProperty("Priority").GetInt32().Should().Be(7);
         opaque.SupportsNewEntity().Should().BeFalse();
         opaque.SupportsApplyChange().Should().BeFalse();
+        opaque.EntityType.Should().BeNull();
+    }
+
+    [Fact]
+    public void Unknown_type_throws_when_fallback_disabled()
+    {
+        var options = SampleOptions(UnknownChangeHandling.Throw);
+        var json = """
+            {"$type":"SetWordPriorityChange","EntityId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","Priority":7}
+            """;
+
+        var act = () => JsonSerializer.Deserialize<IChange>(json, options);
+
+        act.Should().Throw<JsonException>().WithMessage("*SetWordPriorityChange*");
     }
 
     [Fact]

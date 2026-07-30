@@ -13,8 +13,7 @@ public sealed class OpaqueChange : IChange
 
     public Guid EntityId { get; set; }
 
-    public Type EntityType =>
-        throw new NotSupportedException($"Opaque change '{TypeName}' has no known entity type.");
+    public Type? EntityType => null;
 
     public ValueTask ApplyChange(IObjectBase entity, IChangeContext context) => default;
 

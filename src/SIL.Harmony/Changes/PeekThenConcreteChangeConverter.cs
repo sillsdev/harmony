@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
+using SIL.Harmony.Config;
 
 namespace SIL.Harmony.Changes;
 
@@ -9,17 +10,20 @@ namespace SIL.Harmony.Changes;
 /// Owns <see cref="IChange"/> discrimination. Requires <c>$type</c> as the first JSON property
 /// (matching synthetic write order from <see cref="Config.HarmonyConfig"/>).
 /// Known discriminators deserialize via cached concrete <see cref="JsonTypeInfo"/>;
-/// unknown → <see cref="OpaqueChange"/> preserving the raw payload.
+/// an unknown discriminator either throws or falls back to <see cref="OpaqueChange"/>
+/// (preserving the raw payload), depending on <see cref="UnknownChangeHandling"/>.
 /// </summary>
 internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
 {
     private readonly KnownType[] _known;
     private readonly byte[] _discriminatorPropertyUtf8;
+    private readonly UnknownChangeHandling _unknownChangeHandling;
 
-    public PeekThenConcreteChangeConverter(IReadOnlyDictionary<string, Type> known)
+    public PeekThenConcreteChangeConverter(IReadOnlyDictionary<string, Type> known, UnknownChangeHandling unknownChangeHandling)
     {
         _discriminatorPropertyUtf8 = Encoding.UTF8.GetBytes(CrdtConstants.ChangeDiscriminatorProperty);
         _known = known.Select(kv => new KnownType(Encoding.UTF8.GetBytes(kv.Key), kv.Value)).ToArray();
+        _unknownChangeHandling = unknownChangeHandling;
     }
 
     public override IChange Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
@@ -42,6 +46,10 @@ internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
 
         if (!TryFindKnown(ref reader, out var knownIndex, out var unknownTypeName))
         {
+            if (_unknownChangeHandling != UnknownChangeHandling.Fallback)
+                throw new JsonException(
+                    $"Unknown IChange \"{CrdtConstants.ChangeDiscriminatorProperty}\" discriminator '{unknownTypeName}'");
+
             reader = checkpoint;
             return ReadOpaque(ref reader, unknownTypeName!);
         }

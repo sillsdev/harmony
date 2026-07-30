@@ -43,11 +43,16 @@ public class SyncableTests
 
     private static Commit CreateCommit(Guid clientId, DateTimeOffset dateTime, params IChange[] changes)
     {
+        return CreateCommit(clientId, new HybridDateTime(dateTime, 0), changes);
+    }
+
+    private static Commit CreateCommit(Guid clientId, HybridDateTime time, params IChange[] changes)
+    {
         var commitId = Guid.NewGuid();
         return new Commit(commitId)
         {
             ClientId = clientId,
-            HybridDateTime = new HybridDateTime(dateTime, 0),
+            HybridDateTime = time,
             ChangeEntities = changes.Select((change, index) => new ChangeEntity<IChange>
             {
                 Index = index,
@@ -131,6 +136,30 @@ public class SyncableTests
 
         var syncResults = await local.Syncable.SyncWith(remote.Syncable);
         syncResults.MissingFromRemote.Should().ContainSingle(c => c.Id == commit.Id);
+    }
+
+    [Theory]
+    [MemberData(nameof(SyncableTestHelpers.BackendPairData), MemberType = typeof(SyncableTestHelpers))]
+    public async Task SyncWith_DeliversCommitSharingAnAlreadySyncedMillisecond(ISyncableTestBackend localBackend, ISyncableTestBackend remoteBackend)
+    {
+        await using var local = await localBackend.CreateAsync();
+        await using var remote = await remoteBackend.CreateAsync();
+        var day1 = DateTimeOffset.UnixEpoch.AddDays(1);
+        // c0 and c1 share one millisecond (an HLC clamp), differing only by counter; c2 is a day later.
+        var c0 = CreateCommit(local.ClientId, new HybridDateTime(day1, 0), SetWord("c0"));
+        var c1 = CreateCommit(local.ClientId, new HybridDateTime(day1, 1), SetWord("c1"));
+        var c2 = CreateCommit(local.ClientId, new HybridDateTime(day1.AddDays(1), 0), SetWord("c2"));
+
+        // First sync delivers only c0, so the remote's head lands on the shared millisecond.
+        await local.Syncable.AddRangeFromSync([c0]);
+        await local.Syncable.SyncWith(remote.Syncable);
+
+        // c1 shares c0's millisecond; c2 later advances the head. The bug strands c1 permanently.
+        await local.Syncable.AddRangeFromSync([c1, c2]);
+        await local.Syncable.SyncWith(remote.Syncable);
+
+        var (remoteHasEverything, _) = await remote.Syncable.GetChanges(new SyncState([]));
+        remoteHasEverything.Select(c => c.Id).Should().Contain([c0.Id, c1.Id, c2.Id]);
     }
 
     [Theory]

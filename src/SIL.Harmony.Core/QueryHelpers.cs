@@ -40,15 +40,19 @@ public static class QueryHelpers
                 await foreach (var commit in clientCommits.DefaultOrder().AsAsyncEnumerable())
                     yield return commit;
             }
-            else if (localTimestamp > remoteTimestamp)
+            // Inclusive on the millisecond: the head only carries milliseconds, but commits carry a
+            // full-precision HybridDateTime, so several can share the head's millisecond. Re-offer that
+            // whole millisecond rather than strand the siblings the remote hasn't got. Re-applying a
+            // commit the remote already holds is idempotent (see AddRangeFromSync).
+            else if (localTimestamp >= remoteTimestamp)
             {
                 var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(remoteTimestamp.Value);
                 await foreach (var commit in clientCommits
-                                   .Where(c => c.HybridDateTime.DateTime > otherDt)
+                                   .Where(c => c.HybridDateTime.DateTime >= otherDt)
                                    .DefaultOrder()
                                    .AsAsyncEnumerable())
                 {
-                    if (commit.DateTime.ToUnixTimeMilliseconds() > remoteTimestamp)
+                    if (commit.DateTime.ToUnixTimeMilliseconds() >= remoteTimestamp)
                         yield return commit;
                 }
             }
@@ -98,14 +102,16 @@ public static class QueryHelpers
             foreach (var commit in clientCommits.DefaultOrder())
                 yield return commit;
         }
-        else if (localTimestamp > remoteTimestamp)
+        // Inclusive on the millisecond: see the IQueryable overload above for why the head's whole
+        // millisecond is re-offered instead of stranding counter-siblings sharing it.
+        else if (localTimestamp >= remoteTimestamp)
         {
             var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(remoteTimestamp.Value);
             foreach (var commit in clientCommits
-                         .Where(c => c.HybridDateTime.DateTime > otherDt)
+                         .Where(c => c.HybridDateTime.DateTime >= otherDt)
                          .DefaultOrder())
             {
-                if (commit.DateTime.ToUnixTimeMilliseconds() > remoteTimestamp)
+                if (commit.DateTime.ToUnixTimeMilliseconds() >= remoteTimestamp)
                     yield return commit;
             }
         }

@@ -293,22 +293,47 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task GetChanges_HandlesExactDateFilters()
+    public async Task GetChanges_ReSendsCommitsSharingTheHeadMillisecond()
     {
         var tmpTime = Time(2, 0);
-        //by adding a tick we cause an error and commit 2 will be returned by the query
+        // A sub-millisecond tick puts commit2 past the truncated head, yet it shares the head's millisecond.
         var commit2Time = tmpTime with { DateTime = tmpTime.DateTime.AddTicks(1) };
+        var commit2Id = Guid.NewGuid();
+        var commit3Id = Guid.NewGuid();
         await _repository.AddCommits([
             Commit(Guid.NewGuid(), Time(1, 0)),
-            Commit(Guid.NewGuid(), commit2Time),
-            Commit(Guid.NewGuid(), Time(3, 0)),
+            Commit(commit2Id, commit2Time),
+            Commit(commit3Id, Time(3, 0)),
         ]);
 
         var changes = await _repository.GetChanges(new SyncState(new()
         {
             { Guid.Empty, commit2Time.DateTime.ToUnixTimeMilliseconds() }
         }));
-        changes.MissingFromClient.Select(c => c.DateTime.ToUnixTimeMilliseconds()).Should().ContainSingle("because {0} is only before the last commit", commit2Time.DateTime.ToUnixTimeMilliseconds());
+        // The head is millisecond-only, so commit2 (which shares it) must be re-offered alongside commit3;
+        // dropping it is the stranding bug. Re-sending an already-held commit is idempotent.
+        changes.MissingFromClient.Select(c => c.Id).Should().Contain([commit2Id, commit3Id]);
+    }
+
+    [Fact]
+    public async Task GetChanges_ReSendsCounterSiblingOnTheHeadMillisecond()
+    {
+        // Two commits with an identical DateTime differing only by counter (an HLC clamp), on a whole-second
+        // boundary so the head truncates to exactly their millisecond. The remote holds only the first.
+        var sharedTime = Time(2, 0);
+        var siblingTime = Time(2, 1);
+        var siblingId = Guid.NewGuid();
+        await _repository.AddCommits([
+            Commit(Guid.NewGuid(), Time(1, 0)),
+            Commit(Guid.NewGuid(), sharedTime),
+            Commit(siblingId, siblingTime),
+        ]);
+
+        var changes = await _repository.GetChanges(new SyncState(new()
+        {
+            { Guid.Empty, sharedTime.DateTime.ToUnixTimeMilliseconds() }
+        }));
+        changes.MissingFromClient.Select(c => c.Id).Should().Contain(siblingId);
     }
 
     [Fact]

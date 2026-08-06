@@ -13,7 +13,8 @@ public class DerivedTypeHelperTests
         var types = new Dictionary<Type, List<JsonDerivedType>>();
         types.AddDerivedType(typeof(IObjectBase), typeof(Word), "Word");
 
-        var act = () => types.AddDerivedType(typeof(IObjectBase), typeof(Word), "Word");
+        //different discriminator, same DerivedType: proves the guard rejects the duplicate type, not the discriminator
+        var act = () => types.AddDerivedType(typeof(IObjectBase), typeof(Word), "WordAgain");
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*already added*");
     }
@@ -25,7 +26,10 @@ public class DerivedTypeHelperTests
         types.AddDerivedType(typeof(IObjectBase), typeof(Word), "Word");
         types.AddDerivedType(typeof(IObjectBase), typeof(Definition), "Definition");
 
-        types[typeof(IObjectBase)].Should().HaveCount(2);
+        types[typeof(IObjectBase)].Should().BeEquivalentTo([
+            new JsonDerivedType(typeof(Word), "Word"),
+            new JsonDerivedType(typeof(Definition), "Definition"),
+        ]);
     }
 
     [Fact]

@@ -20,7 +20,17 @@ jobs:
         uses: actions/setup-dotnet@v4
 
       - name: Build & test
-        run: dotnet test --configuration Release --logger GitHubActions
+        run: >-
+          dotnet test --configuration Release --logger GitHubActions
+          --collect:"XPlat Code Coverage"
+          --results-directory ${{ github.workspace }}/coverage
+      - name: Upload coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: ${{ github.workspace }}/coverage/**/coverage.cobertura.xml
+          if-no-files-found: error
       - name: Download previous benchmark data
         uses: actions/cache@v4
         with:

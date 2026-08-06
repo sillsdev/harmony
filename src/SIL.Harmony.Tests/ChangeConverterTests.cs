@@ -184,7 +184,8 @@ public class ChangeConverterTests
     [Fact]
     public void OpaqueChange_EntityType_Throws()
     {
-        var act = () => NewOpaque().EntityType;
+        var opaque = NewOpaque();
+        Action act = () => _ = opaque.EntityType;
         act.Should().Throw<NotSupportedException>();
     }
 

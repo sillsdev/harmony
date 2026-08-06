@@ -6,9 +6,14 @@ namespace SIL.Harmony.Tests;
 public class ModelSnapshotTests : DataModelTestBase
 {
     [Fact]
-    public void CanGetEmptyModelSnapshot()
+    public async Task CanGetEmptyModelSnapshot()
     {
-        DataModel.GetProjectSnapshot().Should().NotBeNull();
+        var snapshot = await DataModel.GetProjectSnapshot();
+        snapshot.Should().NotBeNull();
+        snapshot.Snapshots.Should().BeEmpty();
+        snapshot.LastChange.Should().BeNull();
+        snapshot.LastCommitId.Should().BeNull();
+        snapshot.LastCommitHash.Should().BeNull();
     }
 
     [Fact]

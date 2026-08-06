@@ -245,9 +245,17 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_Works()
+    public async Task DeleteStaleSnapshots_KeepsSnapshotsOlderThanTheCommit()
     {
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(1, 0)));
+        await _repository.AddSnapshots([
+            Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
+            Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(2, 0)),
+        ]);
+
+        //the new commit is newer than every existing snapshot, so none are stale
+        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(3, 0)));
+
+        _crdtDbContext.Snapshots.Should().HaveCount(2);
     }
 
     [Fact]

@@ -177,7 +177,11 @@ public class DataModelSimpleChanges : DataModelTestBase
     public async Task CanCreate2EntriesOutOfOrder()
     {
         var commit1 = await WriteNextChange(SetWord(_entity1Id, "entity1"));
-        await WriteChangeBefore(commit1, SetWord(_entity2Id, "entity2"));
+        var commit2 = await WriteChangeBefore(commit1, SetWord(_entity2Id, "entity2"));
+
+        commit2.DateTime.Should().BeBefore(commit1.DateTime);
+        (await DataModel.GetLatest<Word>(_entity1Id))!.Text.Should().Be("entity1");
+        (await DataModel.GetLatest<Word>(_entity2Id))!.Text.Should().Be("entity2");
     }
 
     [Fact]

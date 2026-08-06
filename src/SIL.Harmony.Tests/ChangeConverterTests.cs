@@ -185,9 +185,20 @@ public class ChangeConverterTests
     public void OpaqueChange_EntityType_Throws()
     {
         var opaque = NewOpaque();
-        //Assert.Throws' Func overload returns and consumes the property value, so the throwing
-        //getter is reliably invoked (a discarded read can be optimized away under Release).
-        Assert.Throws<NotSupportedException>(() => opaque.EntityType);
+        //Access the throw-bodied getter directly in the method body (no lambda) and consume the
+        //result via GC.KeepAlive, so the call cannot be elided and the exception is observed.
+        NotSupportedException? thrown = null;
+        try
+        {
+            var entityType = opaque.EntityType;
+            GC.KeepAlive(entityType);
+        }
+        catch (NotSupportedException e)
+        {
+            thrown = e;
+        }
+
+        thrown.Should().NotBeNull();
     }
 
     [Fact]

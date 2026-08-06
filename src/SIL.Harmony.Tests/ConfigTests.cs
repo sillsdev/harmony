@@ -69,4 +69,84 @@ public class ConfigTests
         act.Should().Throw<InvalidOperationException>()
             .WithMessage("*JsonOptionsBuilder* frozen*");
     }
+
+    [Fact]
+    public void ChangeTypeListBuilder_DuplicateAdd_IsIdempotent()
+    {
+        var config = new HarmonyConfig();
+        config.ChangeTypeListBuilder.Add<SetWordTextChange>();
+        config.ChangeTypeListBuilder.Add<SetWordTextChange>();
+
+        config.ChangeTypes.Should().ContainSingle(t => t.Type == typeof(SetWordTextChange));
+    }
+
+    [Fact]
+    public void ChangeTypeListBuilder_AddAfterFreeze_Throws()
+    {
+        var config = new HarmonyConfig();
+        //building the serializer options freezes the change type builder
+        _ = config.JsonSerializerOptions;
+
+        var act = () => config.ChangeTypeListBuilder.Add<SetWordTextChange>();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ChangeTypeListBuilder*frozen*");
+    }
+
+    [Fact]
+    public void ObjectTypeListBuilder_AddAfterFreeze_Throws()
+    {
+        var config = new HarmonyConfig();
+        config.ObjectTypeListBuilder.DefaultAdapter().Add<Word>();
+        config.ObjectTypeListBuilder.Freeze(); //happens during EF model build in a real setup
+
+        var act = () => config.ObjectTypeListBuilder.DefaultAdapter();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ObjectTypeListBuilder*frozen*");
+    }
+
+    [Fact]
+    public void DefaultAdapter_CalledTwice_ReturnsSameInstance()
+    {
+        var config = new HarmonyConfig();
+        var first = config.ObjectTypeListBuilder.DefaultAdapter();
+        var second = config.ObjectTypeListBuilder.DefaultAdapter();
+
+        second.Should().BeSameAs(first);
+    }
+
+    [Fact]
+    public void Adapt_ObjectImplementingIObjectBase_ReturnsIt()
+    {
+        var config = new HarmonyConfig();
+        config.ObjectTypeListBuilder.DefaultAdapter().Add<Word>();
+        var word = new Word { Id = Guid.NewGuid(), Text = "hello" };
+
+        config.ObjectTypeListBuilder.Adapt(word).Should().BeSameAs(word);
+    }
+
+    [Fact]
+    public void Adapt_NonObjectBase_Throws()
+    {
+        var config = new HarmonyConfig();
+        config.ObjectTypeListBuilder.DefaultAdapter().Add<Word>();
+
+        var act = () => config.ObjectTypeListBuilder.Adapt("not an entity");
+
+        act.Should().Throw<ArgumentException>().WithMessage("*does not implement*IObjectBase*");
+    }
+
+    [Fact]
+    public void Adapt_NoProviderMatches_Throws()
+    {
+        var config = new HarmonyConfig();
+        //two providers, so Adapt takes the multi-provider dispatch path rather than the single-adapter fast path
+        config.ObjectTypeListBuilder.DefaultAdapter().Add<Word>();
+        config.ObjectTypeListBuilder
+            .CustomAdapter<CustomObjectAdapterTests.IMyCustomInterface, CustomObjectAdapterTests.MyClassAdapter>()
+            .Add<CustomObjectAdapterTests.MyClass>();
+
+        var act = () => config.ObjectTypeListBuilder.Adapt(new object());
+
+        act.Should().Throw<ArgumentException>().WithMessage("*Unable to adapt*");
+    }
 }

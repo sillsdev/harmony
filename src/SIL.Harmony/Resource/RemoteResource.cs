@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Resource;

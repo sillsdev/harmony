@@ -1,4 +1,4 @@
-﻿using SIL.Harmony.Changes;
+using SIL.Harmony.Changes;
 using SIL.Harmony.Entities;
 
 namespace SIL.Harmony.Sample.Models;

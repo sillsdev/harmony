@@ -1,3 +1,4 @@
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 
 namespace SIL.Harmony.Changes;
@@ -5,9 +6,9 @@ namespace SIL.Harmony.Changes;
 internal class ChangeContext : IChangeContext
 {
     private readonly SnapshotWorker _worker;
-    private readonly CrdtConfig _crdtConfig;
+    private readonly HarmonyConfig _crdtConfig;
 
-    internal ChangeContext(Commit commit, int commitIndex, IDictionary<Guid, ObjectSnapshot> intermediateSnapshots, SnapshotWorker worker, CrdtConfig crdtConfig)
+    internal ChangeContext(Commit commit, int commitIndex, IDictionary<Guid, ObjectSnapshot> intermediateSnapshots, SnapshotWorker worker, HarmonyConfig crdtConfig)
     {
         _worker = worker;
         _crdtConfig = crdtConfig;

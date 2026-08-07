@@ -1,4 +1,4 @@
-﻿using SIL.Harmony.Changes;
+using SIL.Harmony.Changes;
 using SIL.Harmony.Entities;
 using SIL.Harmony.Sample.Models;
 
@@ -15,7 +15,7 @@ public class SetTagChange(Guid entityId, string text) : Change<Tag>(entityId), I
         {
             Id = EntityId,
             Text = Text,
-            DeletedAt = tagExists ?  commit.DateTime : null
+            DeletedAt = tagExists ? commit.DateTime : null
         };
     }
 

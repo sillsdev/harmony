@@ -1,9 +1,9 @@
-﻿using SIL.Harmony.Sample.Models;
 using Microsoft.EntityFrameworkCore;
+using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
 
-public class DataQueryTests: DataModelTestBase
+public class DataQueryTests : DataModelTestBase
 {
     private readonly Guid _entity1Id = Guid.NewGuid();
     public override async ValueTask InitializeAsync()

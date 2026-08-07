@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SIL.Harmony.Config;
 using SIL.Harmony.Entities;
 using SIL.Harmony.Helpers;
 
@@ -18,7 +19,7 @@ public class CustomAdapterProvider<TCommonInterface, TCustomAdapter> : IObjectAd
         _objectTypeListBuilder = objectTypeListBuilder;
         JsonTypes.AddDerivedType(typeof(IObjectBase), typeof(TCustomAdapter), TCustomAdapter.TypeName);
     }
-    
+
     public CustomAdapterProvider<TCommonInterface, TCustomAdapter> AddWithCustomPolymorphicMapping<T>(string typeName,
         Action<EntityTypeBuilder<T>>? configureEntry = null
     ) where T : class, TCommonInterface

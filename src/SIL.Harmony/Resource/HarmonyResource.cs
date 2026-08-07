@@ -1,4 +1,4 @@
-﻿using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.CodeAnalysis;
 
 namespace SIL.Harmony.Resource;
 
@@ -7,7 +7,7 @@ public class HarmonyResource<TMetadata> where TMetadata : class
 
     public HarmonyResource()
     {
-        
+
     }
 
     [SetsRequiredMembers]

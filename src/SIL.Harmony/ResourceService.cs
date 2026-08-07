@@ -1,7 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 using SIL.Harmony.Helpers;
 using SIL.Harmony.Resource;
@@ -11,11 +12,11 @@ namespace SIL.Harmony;
 public class ResourceService<TMetadata> where TMetadata : class
 {
     private readonly CrdtRepositoryFactory _crdtRepositoryFactory;
-    private readonly IOptions<CrdtConfig> _crdtConfig;
+    private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly DataModel _dataModel;
     private readonly ILogger<ResourceService<TMetadata>> _logger;
 
-    internal ResourceService(CrdtRepositoryFactory crdtRepositoryFactory, IOptions<CrdtConfig> crdtConfig,
+    internal ResourceService(CrdtRepositoryFactory crdtRepositoryFactory, IOptions<HarmonyConfig> crdtConfig,
         DataModel dataModel, ILogger<ResourceService<TMetadata>> logger)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;
@@ -164,7 +165,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
-        if (resource is not {Local: true, Remote: false}) throw new ArgumentException("Resource is not pending upload");
+        if (resource is not { Local: true, Remote: false }) throw new ArgumentException("Resource is not pending upload");
         var uploadResult = await remoteResourceService.UploadResource(resource.Id, resource.LocalPath, resource.Metadata);
         await _dataModel.AddChange(clientId,
             new RemoteResourceUploadedChange<TMetadata>(resource.Id, uploadResult.RemoteId, uploadResult.Metadata),
@@ -240,7 +241,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var remoteResource = await repo.GetCurrent<RemoteResource<TMetadata>>(resourceId);
         var localResource = await repo.GetLocalResource(resourceId);
-        if (remoteResource is {DeletedAt: not null}) remoteResource = null;
+        if (remoteResource is { DeletedAt: not null }) remoteResource = null;
         if (localResource is null && remoteResource is null) return null;
         return new HarmonyResource<TMetadata>(localResource, remoteResource);
     }

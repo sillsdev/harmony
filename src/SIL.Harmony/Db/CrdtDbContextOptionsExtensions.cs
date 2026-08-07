@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db.EntityConfig;
 
 namespace SIL.Harmony.Db;
@@ -6,7 +7,7 @@ namespace SIL.Harmony.Db;
 public static class CrdtDbContextModelExtensions
 {
     public static ModelBuilder UseCrdt(this ModelBuilder modelBuilder,
-        CrdtConfig crdtConfig)
+        HarmonyConfig crdtConfig)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(CommitEntityConfig).Assembly)
             .ApplyConfiguration(new SnapshotEntityConfig(crdtConfig.JsonSerializerOptions))

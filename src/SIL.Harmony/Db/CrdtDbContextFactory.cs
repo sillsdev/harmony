@@ -37,7 +37,7 @@ public class CrdtDbContextNoDisposeFactory<TContext>(TContext dbContext) : ICrdt
         return new NoDisposeWrapper(dbContext);
     }
 
-    private class NoDisposeWrapper(ICrdtDbContext context): ICrdtDbContext
+    private class NoDisposeWrapper(ICrdtDbContext context) : ICrdtDbContext
     {
         public void Dispose()
         {

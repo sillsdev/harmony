@@ -1,8 +1,8 @@
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Argon;
-using SIL.Harmony.Sample;
 using Microsoft.Extensions.DependencyInjection;
+using SIL.Harmony.Sample;
 
 namespace SIL.Harmony.Tests;
 

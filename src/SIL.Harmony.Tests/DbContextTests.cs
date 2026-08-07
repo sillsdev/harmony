@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace SIL.Harmony.Tests;
 
-public class DbContextTests: DataModelTestBase
+public class DbContextTests : DataModelTestBase
 {
     [Fact]
     public async Task VerifyModel()

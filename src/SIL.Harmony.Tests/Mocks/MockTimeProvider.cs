@@ -1,6 +1,6 @@
 namespace SIL.Harmony.Tests.Mocks;
 
-public class MockTimeProvider: IHybridDateTimeProvider
+public class MockTimeProvider : IHybridDateTimeProvider
 {
     public static HybridDateTime Time(int hour, int counter = 0) => new(new DateTime(2022, 1, 1, 0, 0, 0).AddHours(hour), counter);
     private HybridDateTime? _nextDateTime;

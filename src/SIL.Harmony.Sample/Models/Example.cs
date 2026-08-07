@@ -1,10 +1,10 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 using SIL.Harmony.Entities;
 using Ycs;
 
 namespace SIL.Harmony.Sample.Models;
 
-public class Example: IObjectBase<Example>
+public class Example : IObjectBase<Example>
 {
     public Guid Id { get; init; }
     public DateTimeOffset? DeletedAt { get; set; }

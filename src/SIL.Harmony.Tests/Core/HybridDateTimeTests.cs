@@ -10,7 +10,7 @@ public class HybridDateTimeTests
 
         (dateTime == otherDateTime).Should().BeTrue();
     }
-    
+
     [Fact]
     public void Equals_FalseWhenDifferentDateTime()
     {
@@ -19,7 +19,7 @@ public class HybridDateTimeTests
 
         (dateTime != otherDateTime).Should().BeTrue();
     }
-    
+
     [Fact]
     public void Equals_FalseWhenDifferentCounter()
     {

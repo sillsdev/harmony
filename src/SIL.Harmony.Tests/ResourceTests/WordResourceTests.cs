@@ -1,10 +1,11 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 namespace SIL.Harmony.Tests.ResourceTests;
-public class WordResourceTests: DataModelTestBase
+
+public class WordResourceTests : DataModelTestBase
 {
     private RemoteServiceMock _remoteServiceMock = new();
     private ResourceService<MediaMetadata> _resourceService => _services.GetRequiredService<ResourceService<MediaMetadata>>();

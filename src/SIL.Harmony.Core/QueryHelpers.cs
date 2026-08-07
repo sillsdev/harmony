@@ -111,7 +111,7 @@ public static class QueryHelpers
         }
     }
 
-    public static IQueryable<T> DefaultOrder<T>(this IQueryable<T> queryable) where T: CommitBase
+    public static IQueryable<T> DefaultOrder<T>(this IQueryable<T> queryable) where T : CommitBase
     {
         return queryable
             .OrderBy(c => c.HybridDateTime.DateTime)
@@ -119,7 +119,7 @@ public static class QueryHelpers
             .ThenBy(c => c.Id);
     }
 
-    public static IEnumerable<T> DefaultOrder<T>(this IEnumerable<T> queryable) where T: CommitBase
+    public static IEnumerable<T> DefaultOrder<T>(this IEnumerable<T> queryable) where T : CommitBase
     {
         return queryable
             .OrderBy(c => c.HybridDateTime.DateTime)
@@ -127,7 +127,7 @@ public static class QueryHelpers
             .ThenBy(c => c.Id);
     }
 
-    public static IQueryable<T> DefaultOrderDescending<T>(this IQueryable<T> queryable) where T: CommitBase
+    public static IQueryable<T> DefaultOrderDescending<T>(this IQueryable<T> queryable) where T : CommitBase
     {
         return queryable
             .OrderByDescending(c => c.HybridDateTime.DateTime)

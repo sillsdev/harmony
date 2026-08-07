@@ -1,4 +1,4 @@
-﻿using SIL.Harmony.Changes;
+using SIL.Harmony.Changes;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 
@@ -10,7 +10,7 @@ public class ExampleSentenceTests : DataModelTestBase
     {
         return NewExampleChange.FromString(wordId, text, exampleId);
     }
-    
+
     [Fact]
     public async Task CanAddAnExampleSentenceToAWord()
     {

@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Adapters;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
 
@@ -11,7 +12,7 @@ namespace SIL.Harmony.Tests.Adapter;
 
 public class CustomObjectAdapterTests
 {
-    public class MyDbContext(DbContextOptions<MyDbContext> options, IOptions<CrdtConfig> crdtConfig)
+    public class MyDbContext(DbContextOptions<MyDbContext> options, IOptions<HarmonyConfig> crdtConfig)
         : DbContext(options), ICrdtDbContext
     {
         public DbSet<MyClass> MyClasses { get; set; } = null!;

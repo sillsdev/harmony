@@ -1,10 +1,10 @@
-﻿using SIL.Harmony.Core;
 using LinqToDB.EntityFrameworkCore;
 using LinqToDB.Extensions.Logging;
 using LinqToDB.Mapping;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SIL.Harmony.Core;
 
 namespace SIL.Harmony.Linq2db;
 

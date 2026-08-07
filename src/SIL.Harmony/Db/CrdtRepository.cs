@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
@@ -49,10 +50,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     private readonly AsyncLock _lock;
     private readonly ICrdtDbContext _dbContext;
-    private readonly IOptions<CrdtConfig> _crdtConfig;
+    private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly ILogger<CrdtRepository> _logger;
 
-    public CrdtRepository(ICrdtDbContext dbContext, IOptions<CrdtConfig> crdtConfig,
+    public CrdtRepository(ICrdtDbContext dbContext, IOptions<HarmonyConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
         Commit? ignoreChangesAfter = null)
     {
@@ -271,13 +272,13 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                          .Select(s => s.Entity)
                          .SingleOrDefaultAsync()
                      ?? throw new ArgumentException($"unable to find snapshot with id {snapshotId}");
-        return (T) entity;
+        return (T)entity;
     }
 
-    public async Task<T?> GetCurrent<T>(Guid objectId) where T: class
+    public async Task<T?> GetCurrent<T>(Guid objectId) where T : class
     {
         var snapshot = await GetCurrentSnapshotByObjectId(objectId);
-        return (T?) snapshot?.Entity.DbObject;
+        return (T?)snapshot?.Entity.DbObject;
     }
 
     public IQueryable<T> GetCurrentObjects<T>() where T : class

@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Entities;
 using SIL.Harmony.Sample.Models;
@@ -41,7 +41,7 @@ public class NewExampleChange : CreateChange<Example>, ISelfNamedType<NewExample
             Id = EntityId,
             DefinitionId = DefinitionId,
             YTextBlob = UpdateBlob,
-            DeletedAt = await context.IsObjectDeleted(DefinitionId)? commit.DateTime : null
+            DeletedAt = await context.IsObjectDeleted(DefinitionId) ? commit.DateTime : null
         };
     }
 }

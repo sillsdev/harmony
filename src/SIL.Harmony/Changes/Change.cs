@@ -3,14 +3,19 @@ using System.Text.Json.Serialization;
 
 namespace SIL.Harmony.Changes;
 
-[JsonPolymorphic(TypeDiscriminatorPropertyName = CrdtConstants.ChangeDiscriminatorProperty)]
+/// <summary>
+/// Polymorphic JSON for <see cref="IChange"/> is owned by
+/// <c>PeekThenConcreteChangeConverter</c> (via <see cref="Config.HarmonyConfig"/>), not
+/// <see cref="JsonPolymorphicAttribute"/>. Unknown <c>$type</c> values become
+/// <see cref="OpaqueChange"/>.
+/// </summary>
 public interface IChange
 {
     [JsonIgnore]
     Guid EntityId { get; set; }
 
     [JsonIgnore]
-    Type EntityType { get; }
+    Type? EntityType { get; }
 
     ValueTask ApplyChange(IObjectBase entity, IChangeContext context);
     ValueTask<IObjectBase> NewEntity(Commit commit, IChangeContext context);

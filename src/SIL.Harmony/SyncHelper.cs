@@ -1,5 +1,6 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 namespace SIL.Harmony;
+
 internal static class SyncHelper
 {
     public static async Task<SyncResults> SyncWithResourceUpload<TMetadata>(this DataModel localModel,
@@ -73,7 +74,7 @@ internal static class SyncHelper
     {
         ArgumentNullException.ThrowIfNull(source);
         var json = JsonSerializer.Serialize(source, options);
-        var clone = JsonSerializer.Deserialize<T>(json,options);
+        var clone = JsonSerializer.Deserialize<T>(json, options);
         return clone ?? throw new NullReferenceException("unable to clone object type " + typeof(T));
     }
 }

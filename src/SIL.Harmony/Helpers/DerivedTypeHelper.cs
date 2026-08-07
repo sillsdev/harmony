@@ -1,4 +1,4 @@
-﻿using System.Runtime.CompilerServices;
+using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization.Metadata;
 using SIL.Harmony.Entities;
 
@@ -29,7 +29,7 @@ internal static class DerivedTypeHelper
         return LookupDerivedTypes<T>().SingleOrDefault(dt => dt.TypeDiscriminator as string == discriminator).DerivedType;
     }
 
-    public static string GetEntityDiscriminator<T>() where T: IPolyType
+    public static string GetEntityDiscriminator<T>() where T : IPolyType
     {
         return T.TypeName;
     }

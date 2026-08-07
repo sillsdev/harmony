@@ -1,12 +1,12 @@
-using SIL.Harmony.Db;
-using SIL.Harmony.Sample;
-using SIL.Harmony.Sample.Models;
-using SIL.Harmony.Tests.Mocks;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Db;
+using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
+using SIL.Harmony.Sample.Models;
+using SIL.Harmony.Tests.Mocks;
 
 namespace SIL.Harmony.Tests;
 
@@ -44,7 +44,9 @@ public class RepositoryTests : IAsyncLifetime
         var entityId = Guid.NewGuid();
         return new Commit(id)
         {
-            ClientId = Guid.Empty, HybridDateTime = hybridDateTime, ChangeEntities =
+            ClientId = Guid.Empty,
+            HybridDateTime = hybridDateTime,
+            ChangeEntities =
             [
                 new ChangeEntity<IChange>()
                 {

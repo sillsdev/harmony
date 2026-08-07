@@ -1,0 +1,12 @@
+# Codecov configuration
+# Coverage is published as status checks only; no PR comment.
+comment: false
+coverage:
+  status:
+    project:
+      default:
+        # report coverage as a check without blocking merges
+        informational: true
+    patch:
+      default:
+        informational: true

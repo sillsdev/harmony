@@ -12,6 +12,7 @@
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
     <!-- Transitively referenced by xunit.v3.mtp-v2; pinned so the MTP v2 runner resolves consistently. -->
     <PackageVersion Include="Microsoft.Testing.Platform" Version="2.0.2" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.3.1" />
     <PackageVersion Include="Nito.AsyncEx.Coordination" Version="5.1.2" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.7" />
     <PackageVersion Include="System.Linq.Async" Version="7.0.1" />

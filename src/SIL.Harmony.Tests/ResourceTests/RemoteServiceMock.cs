@@ -30,10 +30,21 @@ public class RemoteServiceMock : IRemoteResourceService<MediaMetadata>
     }
 
     private readonly Queue<string> _throwOnUpload = new();
+    private int _uploadCallCount;
+    private int? _throwOnUploadCall;
+
+    /// <summary>
+    /// Throw on the Nth call to <see cref="UploadResource"/> (1-based), regardless of which file it is.
+    /// Lets a multi-resource upload fail deterministically at a known point without depending on iteration order.
+    /// </summary>
+    public void ThrowOnUploadCall(int callNumber) => _throwOnUploadCall = callNumber;
 
     public async Task<UploadResult<MediaMetadata>> UploadResource(Guid resourceId, string localPath, MediaMetadata? metadata = null)
     {
         await Task.Yield();//yield back to the scheduler to emulate how exceptions are thrown
+        _uploadCallCount++;
+        if (_throwOnUploadCall == _uploadCallCount)
+            throw new Exception($"Simulated upload failure on call {_uploadCallCount}");
         if (_throwOnUpload.TryPeek(out var throwOnUpload))
         {
             if (throwOnUpload == localPath)

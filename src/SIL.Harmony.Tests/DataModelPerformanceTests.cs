@@ -17,12 +17,13 @@ namespace SIL.Harmony.Tests;
 [Trait("Category", "Performance")]
 public class DataModelPerformanceTests(ITestOutputHelper output)
 {
-    [Fact]
+    [Fact(
+#if DEBUG
+        Skip = "This test is disabled in debug builds, not reliable"
+#endif
+        )]
     public void AddingChangePerformance()
     {
-#if DEBUG
-        Assert.Fail("This test is disabled in debug builds, not reliable");
-#endif
         var summary =
             BenchmarkRunner.Run<DataModelPerformanceBenchmarks>(
                 ManualConfig.CreateEmpty()

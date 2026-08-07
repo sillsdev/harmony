@@ -21,6 +21,12 @@ public class HarmonyConfig
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
+    /// <summary>
+    /// Controls how an unknown <see cref="IChange"/> <c>$type</c> is handled during deserialization.
+    /// Defaults to <see cref="UnknownChangeHandling.Throw"/>; set to <see cref="UnknownChangeHandling.Fallback"/>
+    /// to preserve unknown changes as <see cref="OpaqueChange"/>.
+    /// </summary>
+    public UnknownChangeHandling UnknownChangeHandling { get; set; } = UnknownChangeHandling.Throw;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public IReadOnlyList<RegisteredChangeType> ChangeTypes => ChangeTypeListBuilder.Types;
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
@@ -38,15 +44,23 @@ public class HarmonyConfig
 
     private JsonSerializerOptions CreateJsonSerializerOptions()
     {
-        var changeDiscriminators = _lazyChangeDiscriminatorMaps.Value;
 
-        var options = new JsonSerializerOptions(JsonSerializerDefaults.General)
-        {
-            TypeInfoResolver = MakeJsonTypeResolver()
-        };
-        options.Converters.Add(new PeekThenConcreteChangeConverter(changeDiscriminators.ByDiscriminator));
-        _jsonOptionsBuilder.ApplyTo(options);
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.General);
+        ConfigureExternalJsonOptions(options);
         return options;
+    }
+
+    /// <summary>
+    /// Configures <see cref="JsonSerializerOptions"/> for Harmony's serialization of <see cref="IChange"/> and <see cref="IObject"/> types.
+    /// Also applies any callbacks registered via <see cref="ConfigureJsonOptions(Action{JsonSerializerOptions})"/>.
+    /// </summary>
+    public void ConfigureExternalJsonOptions(JsonSerializerOptions options)
+    {
+        var changeDiscriminators = _lazyChangeDiscriminatorMaps.Value;
+        options.TypeInfoResolver = options.TypeInfoResolver?.WithAddedModifier(MakeJsonTypeModifier())
+            ?? MakeJsonTypeResolver();
+        options.Converters.Add(new PeekThenConcreteChangeConverter(changeDiscriminators.ByDiscriminator, UnknownChangeHandling));
+        _jsonOptionsBuilder.ApplyTo(options);
     }
 
     /// <summary>

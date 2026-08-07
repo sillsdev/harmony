@@ -49,8 +49,17 @@ public class MultiThreadingTests(ITestOutputHelper output)
                 finally
                 {
                     //dispose this thread's fixture (and its DI ServiceProvider); the test-level fixture
-                    //keeps the shared in-memory database alive until assertions complete
-                    fixture.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    //keeps the shared in-memory database alive until assertions complete.
+                    //guard the cleanup so a disposal failure can't surface as an unhandled exception on
+                    //this raw thread (which would crash the test host rather than fail the test).
+                    try
+                    {
+                        fixture.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    }
+                    catch (Exception disposeException)
+                    {
+                        output.WriteLine($"error disposing fixture: {disposeException}");
+                    }
                 }
             });
             t.Start();

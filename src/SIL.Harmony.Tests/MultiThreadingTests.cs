@@ -21,27 +21,36 @@ public class MultiThreadingTests(ITestOutputHelper output)
             {
                 var random = new Random();
                 var fixture = new DataModelTestBase(new SqliteConnection(_connectionString));
-                fixture.InitializeAsync().GetAwaiter().GetResult();
-                for (var i = 0; i < _changesPerThread; i++)
+                try
                 {
-                    var value = "test" + i;
-                    try
+                    fixture.InitializeAsync().GetAwaiter().GetResult();
+                    for (var i = 0; i < _changesPerThread; i++)
                     {
-                        Thread.Sleep(random.Next(1, 10));
+                        var value = "test" + i;
+                        try
+                        {
+                            Thread.Sleep(random.Next(1, 10));
 
-                        _ = fixture.WriteNextChange(fixture.SetWord(id, value)).Result;
-                        lastValue = value;
+                            _ = fixture.WriteNextChange(fixture.SetWord(id, value)).Result;
+                            lastValue = value;
 
-                        if (debug) output.WriteLine($"id: {id}, value:{value}");
-                        if (cancellationTokenSource.IsCancellationRequested) return;
+                            if (debug) output.WriteLine($"id: {id}, value:{value}");
+                            if (cancellationTokenSource.IsCancellationRequested) return;
+                        }
+                        catch (Exception e)
+                        {
+                            output.WriteLine($"id: {id}, value:{value}, error: {e}");
+                            cancellationTokenSource.Cancel();
+                            exception = e;
+                            return;
+                        }
                     }
-                    catch (Exception e)
-                    {
-                        output.WriteLine($"id: {id}, value:{value}, error: {e}");
-                        cancellationTokenSource.Cancel();
-                        exception = e;
-                        return;
-                    }
+                }
+                finally
+                {
+                    //dispose this thread's fixture (and its DI ServiceProvider); the test-level fixture
+                    //keeps the shared in-memory database alive until assertions complete
+                    fixture.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
             });
             t.Start();
@@ -53,8 +62,9 @@ public class MultiThreadingTests(ITestOutputHelper output)
     [Fact]
     public async Task CanApplyChangesWithoutError()
     {
-        //ensure the database is created before running the tests
-        var fixture = new DataModelTestBase(new SqliteConnection(_connectionString));
+        //ensure the database is created before running the tests, and keep this fixture alive (and its
+        //connection open) so the shared in-memory database survives while the worker fixtures dispose
+        await using var fixture = new DataModelTestBase(new SqliteConnection(_connectionString));
         bool debug = false;
         var cancellationTokenSource = new CancellationTokenSource();
         var results = await Task.WhenAll(

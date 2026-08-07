@@ -82,8 +82,12 @@ internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
         return new OpaqueChange
         {
             TypeName = typeName,
-            EntityId = element.TryGetProperty(nameof(IChange.EntityId), out var id) && id.ValueKind == JsonValueKind.String
-                ? id.GetGuid()
+            //use TryGetGuid so a malformed (non-GUID) EntityId from a newer client defaults to empty
+            //instead of throwing FormatException, which would defeat the opaque fallback
+            EntityId = element.TryGetProperty(nameof(IChange.EntityId), out var id)
+                       && id.ValueKind == JsonValueKind.String
+                       && id.TryGetGuid(out var entityId)
+                ? entityId
                 : default,
             RawJson = element
         };

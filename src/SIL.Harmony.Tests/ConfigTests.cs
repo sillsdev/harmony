@@ -96,8 +96,22 @@ public class ConfigTests
     public void ObjectTypeListBuilder_AddAfterFreeze_Throws()
     {
         var config = new HarmonyConfig();
-        config.ObjectTypeListBuilder.DefaultAdapter().Add<Word>();
+        //capture the adapter before freezing so we can exercise Add (not DefaultAdapter) after freeze
+        var adapter = config.ObjectTypeListBuilder.DefaultAdapter();
+        adapter.Add<Word>();
         config.ObjectTypeListBuilder.Freeze(); //happens during EF model build in a real setup
+
+        var act = () => adapter.Add<Definition>();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ObjectTypeListBuilder*frozen*");
+    }
+
+    [Fact]
+    public void ObjectTypeListBuilder_DefaultAdapterAfterFreeze_Throws()
+    {
+        var config = new HarmonyConfig();
+        config.ObjectTypeListBuilder.DefaultAdapter().Add<Word>();
+        config.ObjectTypeListBuilder.Freeze();
 
         var act = () => config.ObjectTypeListBuilder.DefaultAdapter();
 

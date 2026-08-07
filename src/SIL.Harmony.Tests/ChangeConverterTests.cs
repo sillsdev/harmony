@@ -9,12 +9,16 @@ namespace SIL.Harmony.Tests;
 
 public class ChangeConverterTests
 {
-    private static JsonSerializerOptions SampleOptions(UnknownChangeHandling handling = UnknownChangeHandling.Fallback) =>
-        new ServiceCollection()
+    private static JsonSerializerOptions SampleOptions(UnknownChangeHandling handling = UnknownChangeHandling.Fallback)
+    {
+        //dispose the provider once the options are built; JsonSerializerOptions is self-contained
+        //(the change converter holds its own type maps) so it stays valid after disposal
+        using var services = new ServiceCollection()
             .AddCrdtDataSample(":memory:")
             .Configure<HarmonyConfig>(c => c.UnknownChangeHandling = handling)
-            .BuildServiceProvider()
-            .GetRequiredService<JsonSerializerOptions>();
+            .BuildServiceProvider();
+        return services.GetRequiredService<JsonSerializerOptions>();
+    }
 
     [Fact]
     public void Happy_path_deserializes_to_concrete_change()
@@ -168,6 +172,18 @@ public class ChangeConverterTests
     {
         var options = SampleOptions();
         var json = """{"$type":"SetWordPriorityChange","Priority":7}""";
+
+        var change = JsonSerializer.Deserialize<IChange>(json, options);
+
+        change.Should().BeOfType<OpaqueChange>().Which.EntityId.Should().Be(Guid.Empty);
+    }
+
+    [Fact]
+    public void OpaqueChange_MalformedEntityId_DefaultsToEmpty()
+    {
+        var options = SampleOptions();
+        //a newer client could send a non-GUID EntityId; the opaque fallback must not throw
+        var json = """{"$type":"SetWordPriorityChange","EntityId":"not-a-guid","Priority":7}""";
 
         var change = JsonSerializer.Deserialize<IChange>(json, options);
 

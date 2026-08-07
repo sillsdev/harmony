@@ -88,18 +88,27 @@ public class SnapshotTests : DataModelTestBase
             await WriteNextChange(SetWord(Guid.NewGuid(), "test 1"), add: false),
             await WriteNextChange(SetWord(entityId, "test 2"), add: false),
         ]);
+
+        (await DataModel.GetLatest<Word>(entityId))!.Text.Should().Be("test 2");
+        DbContext.Set<Word>().Should().HaveCount(2);
     }
 
     [Fact]
     public async Task CanRecreateUniqueConstraintConflictingValueInOneCommit()
     {
         var entityId = Guid.NewGuid();
+        var recreatedTagId = Guid.NewGuid();
         await WriteNextChange(SetTag(entityId, "tag-1"));
         await WriteNextChange(
             [
                 DeleteTag(entityId),
-                SetTag(Guid.NewGuid(), "tag-1"),
+                SetTag(recreatedTagId, "tag-1"),
             ]);
+
+        (await DataModel.GetLatest<Tag>(entityId))!.DeletedAt.Should().NotBeNull("the original tag was deleted");
+        var recreatedTag = await DataModel.GetLatest<Tag>(recreatedTagId);
+        recreatedTag!.Text.Should().Be("tag-1");
+        recreatedTag.DeletedAt.Should().BeNull();
     }
 
     [Fact]

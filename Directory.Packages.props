@@ -10,22 +10,20 @@
     <!-- Transitive pin: EF Core 10.0.7 pulls SQLitePCLRaw 2.1.11, which has a known high severity
          vulnerability (GHSA-2m69-gcr7-jv3q / NU1903). 2.1.12 is the patched release. -->
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
-    <PackageVersion Include="Microsoft.Testing.Platform" Version="2.0.0" />
+    <!-- Transitively referenced by xunit.v3.mtp-v2; pinned so the MTP v2 runner resolves consistently. -->
+    <PackageVersion Include="Microsoft.Testing.Platform" Version="2.0.2" />
     <PackageVersion Include="Nito.AsyncEx.Coordination" Version="5.1.2" />
     <PackageVersion Include="System.IO.Hashing" Version="10.0.7" />
     <PackageVersion Include="System.Linq.Async" Version="7.0.1" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
     <PackageVersion Include="FluentAssertions" Version="8.9.0" />
-    <PackageVersion Include="GitHubActionsTestLogger" Version="3.0.4" />
+    <PackageVersion Include="GitHubActionsTestLogger" Version="3.0.5" />
     <PackageVersion Include="JetBrains.Profiler.SelfApi" Version="2.5.18" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
     <PackageVersion Include="System.Text.Json" Version="10.0.7" />
     <PackageVersion Include="Verify.DiffPlex" Version="3.1.2" />
     <PackageVersion Include="Verify.EntityFramework" Version="15.1.0" />
     <PackageVersion Include="Verify.XunitV3" Version="31.16.2" />
-    <PackageVersion Include="xunit.v3" Version="3.2.2" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="coverlet.collector" Version="10.0.0" />
+    <PackageVersion Include="xunit.v3.mtp-v2" Version="3.2.2" />
     <PackageVersion Include="Microsoft.VisualStudio.Threading.Analyzers" Version="17.14.15" />
     <PackageVersion Include="linq2db" Version="6.2.1" />
     <PackageVersion Include="linq2db.EntityFrameworkCore" Version="10.3.0" />

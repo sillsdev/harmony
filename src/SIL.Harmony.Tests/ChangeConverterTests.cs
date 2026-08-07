@@ -198,23 +198,10 @@ public class ChangeConverterTests
     };
 
     [Fact]
-    public void OpaqueChange_EntityType_Throws()
+    public void OpaqueChange_EntityType_IsNull()
     {
-        var opaque = NewOpaque();
-        //Access the throw-bodied getter directly in the method body (no lambda) and consume the
-        //result via GC.KeepAlive, so the call cannot be elided and the exception is observed.
-        NotSupportedException? thrown = null;
-        try
-        {
-            var entityType = opaque.EntityType;
-            GC.KeepAlive(entityType);
-        }
-        catch (NotSupportedException e)
-        {
-            thrown = e;
-        }
-
-        thrown.Should().NotBeNull();
+        //an unknown change has no known entity type on this client
+        NewOpaque().EntityType.Should().BeNull();
     }
 
     [Fact]

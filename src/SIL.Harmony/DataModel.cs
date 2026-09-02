@@ -191,7 +191,14 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         if (commitsToApply.Count == 0) return;
         var oldestAddedCommit = commitsToApply.First();
-        await repo.DeleteStaleSnapshots(oldestAddedCommit);
+        if (await repo.HasSnapshotsAfter(oldestAddedCommit))
+        {
+            // rolling back to the new commit itself is not enough: an entity's newest surviving snapshot may predate edits whose snapshots were pruned
+            var checkpoint = await repo.FindSnapshotCheckpointBefore(oldestAddedCommit);
+            await repo.DeleteSnapshotsAfter(checkpoint);
+            commitsToApply = (await repo.GetCommitsAfter(checkpoint)).ToSortedSet();
+        }
+        await repo.SetSnapshotCheckpoint(commitsToApply);
         Dictionary<Guid, Guid?> snapshotLookup = [];
         if (commitsToApply.Count > 10)
         {
@@ -234,12 +241,15 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task RegenerateSnapshots()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        await repo.DeleteSnapshotsAndProjectedTables();
+        using var locked = await repo.Lock();
         repo.ClearChangeTracker();
+        await using var transaction = await repo.BeginTransactionAsync();
+        await repo.DeleteSnapshotsAndProjectedTables();
         var allCommits = await repo.CurrentCommits()
             .Include(c => c.ChangeEntities)
             .ToSortedSetAsync();
         await UpdateSnapshots(repo, allCommits);
+        await transaction.CommitAsync();
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)

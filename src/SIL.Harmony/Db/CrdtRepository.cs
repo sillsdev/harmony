@@ -127,15 +127,38 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return (oldestChange, newCommits);
     }
 
-    public async Task DeleteStaleSnapshots(Commit oldestChange)
+    public async Task<bool> HasSnapshotsAfter(Commit commit)
     {
-        //use the oldest commit added to clear any snapshots that are based on a now incomplete history
-        //this is a performance optimization to avoid deleting snapshots where there are none to delete
-        var mostRecentCommit = await Snapshots.MaxAsync(s => (DateTimeOffset?)s.Commit.HybridDateTime.DateTime);
-        if (mostRecentCommit < oldestChange.HybridDateTime.DateTime) return;
-        await Snapshots
-            .WhereAfter(oldestChange)
-            .ExecuteDeleteAsync();
+        return await Snapshots.WhereAfter(commit).AnyAsync();
+    }
+
+    /// <param name="commit">null deletes every snapshot</param>
+    public async Task DeleteSnapshotsAfter(Commit? commit)
+    {
+        var snapshots = commit is null ? Snapshots : Snapshots.WhereAfter(commit);
+        await snapshots.ExecuteDeleteAsync();
+    }
+
+    public async Task<Commit?> FindSnapshotCheckpointBefore(Commit commit)
+    {
+        return await Commits
+            .Where(c => c.IsSnapshotCheckpoint)
+            .WhereBefore(commit)
+            .DefaultOrderDescending()
+            .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// the last replayed commit becomes the checkpoint; the batch may have pruned snapshots inside it, so the others stop being one
+    /// </summary>
+    public async Task SetSnapshotCheckpoint(SortedSet<Commit> replayedCommits)
+    {
+        foreach (var commit in replayedCommits)
+        {
+            commit.IsSnapshotCheckpoint = false;
+        }
+        replayedCommits.Max!.IsSnapshotCheckpoint = true;
+        await _dbContext.SaveChangesAsync();
     }
 
     public async Task DeleteSnapshotsAndProjectedTables()

@@ -40,4 +40,12 @@ public class Commit : CommitBase<IChange>
 
     [JsonIgnore]
     public string ParentHash { get; private set; }
+
+    /// <summary>
+    /// Snapshots are complete as of this commit: every entity's newest snapshot at or before it is that entity's state after it.
+    /// A commit that arrives out of order rolls snapshots back to the newest checkpoint before it and replays from there.
+    /// Local bookkeeping, never synced.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsSnapshotCheckpoint { get; internal set; }
 }

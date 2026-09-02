@@ -245,16 +245,37 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_WithNoSnapshots_DoesNothing()
+    public async Task DeleteSnapshotsAfter_WithNoSnapshots_DoesNothing()
     {
-        //the empty-repository branch: nothing to delete, must not throw
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(1, 0)));
+        await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 0)));
 
         _crdtDbContext.Snapshots.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_KeepsSnapshotsOlderThanTheCommit()
+    public async Task DeleteSnapshotsAfter_Null_DeletesEverySnapshot()
+    {
+        await _repository.AddSnapshots([
+            Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
+            Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(2, 0)),
+        ]);
+
+        await _repository.DeleteSnapshotsAfter(null);
+
+        _crdtDbContext.Snapshots.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task HasSnapshotsAfter_ComparesTheFullCommitOrder()
+    {
+        await _repository.AddSnapshots([Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 1))]);
+
+        (await _repository.HasSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 0)))).Should().BeTrue();
+        (await _repository.HasSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 2)))).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task DeleteSnapshotsAfter_KeepsSnapshotsOlderThanTheCommit()
     {
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
@@ -262,39 +283,39 @@ public class RepositoryTests : IAsyncLifetime
         ]);
 
         //the new commit is newer than every existing snapshot, so none are stale
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(3, 0)));
+        await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(3, 0)));
 
         _crdtDbContext.Snapshots.Should().HaveCount(2);
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_DeletesSnapshotsAfterCommitByTime()
+    public async Task DeleteSnapshotsAfter_DeletesSnapshotsAfterCommitByTime()
     {
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(3, 0)),
         ]);
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(2, 0)));
+        await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(2, 0)));
 
         _crdtDbContext.Snapshots.Include(s => s.Commit).Should().ContainSingle()
             .Which.Commit.HybridDateTime.DateTime.Hour.Should().Be(1);
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_DeletesSnapshotsAfterCommitByCount()
+    public async Task DeleteSnapshotsAfter_DeletesSnapshotsAfterCommitByCount()
     {
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 2)),
         ]);
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(1, 1)));
+        await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 1)));
 
         _crdtDbContext.Snapshots.Include(s => s.Commit).Should().ContainSingle()
             .Which.Commit.HybridDateTime.Counter.Should().Be(0);
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_DeletesSnapshotsAfterCommitByCommitId()
+    public async Task DeleteSnapshotsAfter_DeletesSnapshotsAfterCommitByCommitId()
     {
         var time = Time(1, 1);
         var entityId = Guid.NewGuid();
@@ -303,7 +324,7 @@ public class RepositoryTests : IAsyncLifetime
             Snapshot(entityId, ids[0], time),
             Snapshot(entityId, ids[2], time),
         ]);
-        await _repository.DeleteStaleSnapshots(Commit(ids[1], time));
+        await _repository.DeleteSnapshotsAfter(Commit(ids[1], time));
 
         _crdtDbContext.Snapshots.Should().ContainSingle()
             .Which.CommitId.Should().Be(ids[0]);

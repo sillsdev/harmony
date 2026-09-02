@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
@@ -8,6 +9,7 @@ using SIL.Harmony.Resource;
 namespace SIL.Harmony.Config;
 
 public delegate ValueTask BeforeSaveObjectDelegate(object obj, ObjectSnapshot snapshot);
+public delegate ValueTask ProjectedEntitiesChangedDelegate(ProjectedEntityBatch batch);
 
 public class HarmonyConfig
 {
@@ -17,6 +19,12 @@ public class HarmonyConfig
     /// </summary>
     public bool EnableProjectedTables { get; set; } = true;
     public BeforeSaveObjectDelegate BeforeSaveObject { get; set; } = (o, snapshot) => ValueTask.CompletedTask;
+    internal static readonly ProjectedEntitiesChangedDelegate DefaultOnProjectedEntitiesChanged =
+        static _ => ValueTask.CompletedTask;
+
+    public ProjectedEntitiesChangedDelegate OnProjectedEntitiesChanged { get; set; } =
+        DefaultOnProjectedEntitiesChanged;
+
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
@@ -35,6 +43,13 @@ public class HarmonyConfig
     private readonly JsonOptionsBuilder _jsonOptionsBuilder = new();
     private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
     private readonly Lazy<ChangeDiscriminatorMaps> _lazyChangeDiscriminatorMaps;
+
+    /// <summary>
+    /// Cache of derived projected-table SQL metadata (keyed by projected CLR type), used by
+    /// <see cref="FastProjection"/>. Stored on the config so it's shared across repositories and
+    /// db contexts and only built once per type.
+    /// </summary>
+    internal ConcurrentDictionary<Type, FastProjection.ProjectedTableInfo> ProjectedTableInfoCache { get; } = new();
 
     public HarmonyConfig()
     {

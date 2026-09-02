@@ -9,6 +9,7 @@ using SIL.Harmony.Resource;
 namespace SIL.Harmony.Config;
 
 public delegate ValueTask BeforeSaveObjectDelegate(object obj, ObjectSnapshot snapshot);
+public delegate ValueTask ProjectedEntitiesChangedDelegate(ProjectedEntityBatch batch);
 
 public class HarmonyConfig
 {
@@ -18,6 +19,12 @@ public class HarmonyConfig
     /// </summary>
     public bool EnableProjectedTables { get; set; } = true;
     public BeforeSaveObjectDelegate BeforeSaveObject { get; set; } = (o, snapshot) => ValueTask.CompletedTask;
+    internal static readonly ProjectedEntitiesChangedDelegate DefaultOnProjectedEntitiesChanged =
+        static _ => ValueTask.CompletedTask;
+
+    public ProjectedEntitiesChangedDelegate OnProjectedEntitiesChanged { get; set; } =
+        DefaultOnProjectedEntitiesChanged;
+
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>

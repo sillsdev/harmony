@@ -55,16 +55,19 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly ILogger<CrdtRepository> _logger;
     private readonly FastProjection _fastProjection;
+    private readonly IProjectedEntityInterceptor[] _interceptors;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<HarmonyConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
         FastProjection fastProjection,
+        IEnumerable<IProjectedEntityInterceptor> interceptors,
         Commit? ignoreChangesAfter = null)
     {
         _crdtConfig = crdtConfig;
         _dbContext = ignoreChangesAfter is not null ? new ScopedDbContext(dbContext, ignoreChangesAfter) : dbContext;
         _logger = logger;
         _fastProjection = fastProjection;
+        _interceptors = interceptors as IProjectedEntityInterceptor[] ?? interceptors.ToArray();
         //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
         //but since we're using a custom query, we can use it directly and apply the scoped filters manually
         _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
@@ -308,12 +311,47 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
         var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();
-        return _fastProjection.AddSnapshotsRawAsync(_dbContext, snapshotList);
+        var notify = ShouldNotifyProjectedChanges();
+        return _fastProjection.AddSnapshotsRawAsync(
+            _dbContext,
+            snapshotList,
+            notify ? NotifyProjectedChanges : null);
+    }
+
+    private bool ShouldNotifyProjectedChanges()
+    {
+        if (!_crdtConfig.Value.EnableProjectedTables) return false;
+        if (_interceptors.Length > 0) return true;
+        return !ReferenceEquals(
+            _crdtConfig.Value.OnProjectedEntitiesChanged,
+            HarmonyConfig.DefaultOnProjectedEntitiesChanged);
+    }
+
+    private async ValueTask NotifyProjectedChanges(IReadOnlyCollection<ObjectSnapshot> latest)
+    {
+        var changes = new List<ProjectedEntityChange>(latest.Count);
+        foreach (var snapshot in latest)
+        {
+            var entity = snapshot.Entity.DbObject;
+            changes.Add(new ProjectedEntityChange
+            {
+                Entity = entity,
+                EntityId = snapshot.EntityId,
+                ClrType = entity.GetType(),
+                Kind = snapshot.EntityIsDeleted ? ProjectedChangeKind.Delete : ProjectedChangeKind.Upsert,
+                Snapshot = snapshot
+            });
+        }
+
+        var batch = new ProjectedEntityBatch { DbContext = _dbContext, Changes = changes };
+        foreach (var interceptor in _interceptors)
+            await interceptor.OnProjectedEntitiesChanged(batch);
+        await _crdtConfig.Value.OnProjectedEntitiesChanged(batch);
     }
 
     public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
     {
-        return new CrdtRepository(_dbContext, _crdtConfig, _logger, _fastProjection, excludeChangesAfterCommit);
+        return new CrdtRepository(_dbContext, _crdtConfig, _logger, _fastProjection, _interceptors, excludeChangesAfterCommit);
     }
 
     /// <summary>

@@ -27,7 +27,8 @@ internal class FastProjection
 
     public async Task AddSnapshotsRawAsync(
         ICrdtDbContext dbContext,
-        IReadOnlyCollection<ObjectSnapshot> snapshots)
+        IReadOnlyCollection<ObjectSnapshot> snapshots,
+        Func<IReadOnlyCollection<ObjectSnapshot>, ValueTask>? afterProjectedWrite = null)
     {
         // AddSnapshots is normally called inside a caller-managed transaction; reuse it so the raw
         // SQL runs on the same connection/transaction as the snapshot insert. When called outside a
@@ -43,7 +44,12 @@ internal class FastProjection
 
             if (_crdtConfig.EnableProjectedTables)
             {
-                await ProjectAsync(dbContext, snapshots);
+                var latest = LatestPerEntity(snapshots);
+                await ProjectAsync(dbContext, latest);
+                if (latest.Count > 0 && afterProjectedWrite is not null)
+                {
+                    await afterProjectedWrite(latest.Values);
+                }
             }
 
             if (ownTransaction is not null) await ownTransaction.CommitAsync();
@@ -54,12 +60,9 @@ internal class FastProjection
         }
     }
 
-    private async Task ProjectAsync(
-        ICrdtDbContext dbContext,
+    private static Dictionary<Guid, ObjectSnapshot> LatestPerEntity(
         IReadOnlyCollection<ObjectSnapshot> snapshots)
     {
-        // 2. dedup to the latest snapshot per entity (a batch can contain several snapshots for the
-        // same entity - intermediate + latest - and possibly a deleted and undeleted one).
         var latest = new Dictionary<Guid, ObjectSnapshot>();
         foreach (var snapshot in snapshots)
         {
@@ -70,7 +73,13 @@ internal class FastProjection
             }
             latest[snapshot.EntityId] = snapshot;
         }
+        return latest;
+    }
 
+    private async Task ProjectAsync(
+        ICrdtDbContext dbContext,
+        Dictionary<Guid, ObjectSnapshot> latest)
+    {
         var connection = dbContext.Database.GetDbConnection();
         var transaction = dbContext.Database.CurrentTransaction!.GetDbTransaction();
         var sqlHelper = dbContext.Database.GetService<ISqlGenerationHelper>();

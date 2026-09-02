@@ -56,11 +56,11 @@ public class DataModelTestBase : IAsyncLifetime
         if (DbContext.Database.GetDbConnection() is not SqliteConnection existingConnection) throw new InvalidOperationException("Database is not SQLite");
         existingConnection.BackupDatabase(connection);
         var newTestBase = new DataModelTestBase(connection, alwaysValidate, performanceTest: _performanceTest);
-        newTestBase.SetCurrentDate(currentDate.DateTime);
+        newTestBase.SetCurrentDate(currentDate);
         return newTestBase;
     }
 
-    public void SetCurrentDate(DateTime dateTime)
+    public void SetCurrentDate(DateTimeOffset dateTime)
     {
         currentDate = dateTime;
     }

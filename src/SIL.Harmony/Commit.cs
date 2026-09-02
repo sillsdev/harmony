@@ -42,7 +42,8 @@ public class Commit : CommitBase<IChange>
     public string ParentHash { get; private set; }
 
     /// <summary>
-    /// Snapshots are complete as of this commit: every entity's newest snapshot at or before it is that entity's state after it.
+    /// Snapshots are complete as of this commit: every entity's newest snapshot at or before it is that entity's state after it,
+    /// except for changes this client could not apply (see <see cref="Config.UnknownChangeHandling"/>), which only <see cref="DataModel.RegenerateSnapshots"/> folds in.
     /// A commit that arrives out of order rolls snapshots back to the newest checkpoint before it and replays from there.
     /// Local bookkeeping, never synced.
     /// </summary>

@@ -149,4 +149,77 @@ public class SyncTests : IAsyncLifetime
 
         _client1.DbContext.Set<Word>().Should().HaveCount(totalEntityCount);
     }
+
+    [Fact]
+    public async Task ConcurrentEditsToSameEntity_ConvergeToSameValueOnBothReplicas()
+    {
+        var entityId = Guid.NewGuid();
+        //both clients edit the same entity at the same instant (same DateTime, counter 0): a genuine tie
+        //that must be broken deterministically so both replicas pick the same winner.
+        var sharedDate = new DateTime(2005, 1, 1);
+        _client1.SetCurrentDate(sharedDate);
+        _client2.SetCurrentDate(sharedDate);
+        await _client1.WriteNextChange(_client1.SetWord(entityId, "from client1"));
+        await _client2.WriteNextChange(_client2.SetWord(entityId, "from client2"));
+
+        await _client1.DataModel.SyncWith(_client2.DataModel);
+
+        var client1Value = (await _client1.DataModel.GetLatest<Word>(entityId))!.Text;
+        var client2Value = (await _client2.DataModel.GetLatest<Word>(entityId))!.Text;
+        client1Value.Should().Be(client2Value, "concurrent edits must converge to a single deterministic winner");
+        client1Value.Should().BeOneOf("from client1", "from client2");
+
+        var client1Snapshot = await _client1.DataModel.GetProjectSnapshot();
+        var client2Snapshot = await _client2.DataModel.GetProjectSnapshot();
+        client1Snapshot.LastCommitHash.Should().Be(client2Snapshot.LastCommitHash);
+    }
+
+    [Fact]
+    public async Task ConcurrentEditsToSameEntity_LaterTimestampWins()
+    {
+        var entityId = Guid.NewGuid();
+        _client1.SetCurrentDate(new DateTime(2005, 1, 1));
+        _client2.SetCurrentDate(new DateTime(2005, 6, 1)); //strictly later
+        await _client1.WriteNextChange(_client1.SetWord(entityId, "early"));
+        await _client2.WriteNextChange(_client2.SetWord(entityId, "late"));
+
+        await _client1.DataModel.SyncWith(_client2.DataModel);
+
+        (await _client1.DataModel.GetLatest<Word>(entityId))!.Text.Should().Be("late");
+        (await _client2.DataModel.GetLatest<Word>(entityId))!.Text.Should().Be("late");
+    }
+
+    [Fact]
+    public async Task SyncWith_CalledTwice_SecondSyncTransfersNothing()
+    {
+        await _client1.WriteNextChange(_client1.SetWord(Guid.NewGuid(), "entity1"));
+        await _client2.WriteNextChange(_client2.SetWord(Guid.NewGuid(), "entity2"));
+
+        var firstSync = await _client1.DataModel.SyncWith(_client2.DataModel);
+        firstSync.IsSynced.Should().BeTrue();
+        (firstSync.MissingFromLocal.Length + firstSync.MissingFromRemote.Length).Should().BeGreaterThan(0);
+
+        var secondSync = await _client1.DataModel.SyncWith(_client2.DataModel);
+        secondSync.IsSynced.Should().BeTrue();
+        secondSync.MissingFromLocal.Should().BeEmpty("both replicas are already converged");
+        secondSync.MissingFromRemote.Should().BeEmpty("both replicas are already converged");
+
+        var client1Snapshot = await _client1.DataModel.GetProjectSnapshot();
+        var client2Snapshot = await _client2.DataModel.GetProjectSnapshot();
+        client1Snapshot.LastCommitHash.Should().Be(client2Snapshot.LastCommitHash);
+    }
+
+    [Fact]
+    public async Task SyncWith_WhenRemoteShouldNotSync_ReturnsNotSyncedAndTransfersNothing()
+    {
+        await _client1.WriteNextChange(_client1.SetWord(Guid.NewGuid(), "entity1"));
+        var beforeSyncCount = _client1.DbContext.Commits.Count();
+
+        var results = await _client1.DataModel.SyncWith(NullSyncable.Instance);
+
+        results.IsSynced.Should().BeFalse();
+        results.MissingFromLocal.Should().BeEmpty();
+        results.MissingFromRemote.Should().BeEmpty();
+        _client1.DbContext.Commits.Count().Should().Be(beforeSyncCount, "a declined sync must not change local state");
+    }
 }

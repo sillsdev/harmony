@@ -1,6 +1,10 @@
 using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using SIL.Harmony.Config;
+using SIL.Harmony.Db;
 using SIL.Harmony.Resource;
 using SIL.Harmony.Sample;
 
@@ -238,6 +242,131 @@ public class RemoteResourcesTests : DataModelTestBase
             LocalPath = localAndRemoteResource.LocalPath,
             RemoteId = null
         });
+    }
+
+    /// <summary>
+    /// A ResourceService whose config has resources disabled, built directly so the guard in
+    /// ValidateResourcesSetup can be exercised (the sample kernel always enables resources).
+    /// </summary>
+    private ResourceService<MediaMetadata> DisabledResourceService()
+    {
+        var factory = _services.GetRequiredService<CrdtRepositoryFactory>();
+        var logger = _services.GetRequiredService<ILogger<ResourceService<MediaMetadata>>>();
+        return new ResourceService<MediaMetadata>(factory, Options.Create(new HarmonyConfig()), DataModel, logger);
+    }
+
+    [Fact]
+    public async Task GuardedMethods_ThrowWhenResourcesNotEnabled()
+    {
+        var service = DisabledResourceService();
+        var file = CreateFile("disabled");
+        var id = Guid.NewGuid();
+        var metadata = new MediaMetadata("disabled.txt", "text/plain", 8);
+
+        await FluentActions.Awaiting(() => service.AddExistingRemoteResource(file, _localClientId, id, "remote-1"))
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+        await FluentActions.Awaiting(() => service.AddLocalResource(file, _localClientId))
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+        await FluentActions.Awaiting(() => service.SetResourceMetadata(id, _localClientId, metadata))
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+        await FluentActions.Awaiting(() => service.ListResourcesPendingUpload())
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+        await FluentActions.Awaiting(() => service.ListResourcesPendingDownload())
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+        await FluentActions.Awaiting(() => service.UploadPendingResources(_localClientId, _remoteServiceMock))
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+        await FluentActions.Awaiting(() => service.UploadPendingResource(id, _localClientId, _remoteServiceMock))
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+        await FluentActions.Awaiting(() => service.DownloadResource(id, _remoteServiceMock))
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+    }
+
+    [Fact]
+    public async Task DownloadResource_ThrowsEntityNotFound_WhenResourceIdUnknown()
+    {
+        await FluentActions.Awaiting(() => _resourceService.DownloadResource(Guid.NewGuid(), _remoteServiceMock))
+            .Should().ThrowAsync<EntityNotFoundException>();
+    }
+
+    [Fact]
+    public async Task UploadPendingResourceById_ThrowsArgument_WhenResourceMissing()
+    {
+        await FluentActions.Awaiting(() => _resourceService.UploadPendingResource(Guid.NewGuid(), _localClientId, _remoteServiceMock))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*unable to find local resource*");
+    }
+
+    [Fact]
+    public async Task UploadPendingResource_ThrowsWhenResourceAlreadyUploaded()
+    {
+        //AddLocalResource with a remote service both adds and uploads, so the resource is Local + Remote
+        var uploaded = await _resourceService.AddLocalResource(CreateFile("already-uploaded"), _localClientId,
+            resourceService: _remoteServiceMock);
+        uploaded.Local.Should().BeTrue();
+        uploaded.Remote.Should().BeTrue();
+
+        await FluentActions.Awaiting(() => _resourceService.UploadPendingResource(uploaded, _localClientId, _remoteServiceMock))
+            .Should().ThrowAsync<ArgumentException>().WithMessage("*not pending upload*");
+    }
+
+    [Fact]
+    public async Task AddLocalResource_ThrowsFileNotFound_WhenPathMissing()
+    {
+        await FluentActions.Awaiting(() => _resourceService.AddLocalResource(Path.GetFullPath("does-not-exist.txt"), _localClientId))
+            .Should().ThrowAsync<FileNotFoundException>();
+    }
+
+    [Fact]
+    public async Task AddExistingRemoteResource_ThrowsFileNotFound_WhenPathMissing()
+    {
+        await FluentActions.Awaiting(() => _resourceService.AddExistingRemoteResource(Path.GetFullPath("missing-remote.txt"),
+                _localClientId, Guid.NewGuid(), "remote-1"))
+            .Should().ThrowAsync<FileNotFoundException>();
+    }
+
+    [Fact]
+    public async Task UploadPendingResources_IsNoOp_WhenNothingPending()
+    {
+        var commitsBefore = DbContext.Commits.Count();
+
+        await _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock);
+
+        DbContext.Commits.Count().Should().Be(commitsBefore, "no commit should be written when there is nothing to upload");
+    }
+
+    [Fact]
+    public async Task UploadPendingResources_PersistsSuccessfulUploads_WhenALaterUploadThrows()
+    {
+        await SetupLocalFile("durability1", "durability1");
+        await SetupLocalFile("durability2", "durability2");
+        (await _resourceService.ListResourcesPendingUpload()).Should().HaveCount(2);
+        //fail the second upload; the first must still be persisted by the finally block
+        _remoteServiceMock.ThrowOnUploadCall(2);
+
+        await FluentActions.Awaiting(() => _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock))
+            .Should().ThrowAsync<Exception>();
+
+        (await _resourceService.ListResourcesPendingUpload())
+            .Should().ContainSingle("the resource uploaded before the failure must not remain pending");
+    }
+
+    [Fact]
+    public async Task DeleteResource_SetsDeletedAtToCommitTime()
+    {
+        var (resourceId, _) = await SetupRemoteResource("to-delete");
+
+        await _resourceService.DeleteResource(_localClientId, resourceId);
+
+        var resource = await DataModel.GetLatest<RemoteResource<MediaMetadata>>(resourceId);
+        resource.Should().NotBeNull();
+        var lastCommit = await DbContext.Commits.DefaultOrder().LastAsync(TestContext.Current.CancellationToken);
+        resource!.DeletedAt.Should().Be(lastCommit.DateTime);
+    }
+
+    [Fact]
+    public void HarmonyResource_ThrowsWhenBothResourcesNull()
+    {
+        var action = () => new HarmonyResource<MediaMetadata>(null, null);
+        action.Should().Throw<ArgumentNullException>();
     }
 
     [Fact]

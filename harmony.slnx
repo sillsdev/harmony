@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="src/.editorconfig" />
+    <File Path="src/Directory.Build.props" />
+    <File Path="src/Directory.Build.targets" />
+  </Folder>
+  <Project Path="src/SIL.Harmony.Core/SIL.Harmony.Core.csproj" />
+  <Project Path="src/SIL.Harmony.Linq2db/SIL.Harmony.Linq2db.csproj" />
+  <Project Path="src/SIL.Harmony.Sample/SIL.Harmony.Sample.csproj" />
+  <Project Path="src/SIL.Harmony.Benchmarks/SIL.Harmony.Benchmarks.csproj" />
+  <Project Path="src/SIL.Harmony.Tests/SIL.Harmony.Tests.csproj" />
+  <Project Path="src/SIL.Harmony/SIL.Harmony.csproj" />
+  <Project Path="src/Ycs/Ycs.csproj" />
+</Solution>

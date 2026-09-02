@@ -177,7 +177,15 @@ public class DataModelSimpleChanges : DataModelTestBase
     public async Task CanCreate2EntriesOutOfOrder()
     {
         var commit1 = await WriteNextChange(SetWord(_entity1Id, "entity1"));
-        await WriteChangeBefore(commit1, SetWord(_entity2Id, "entity2"));
+        var commit2 = await WriteChangeBefore(commit1, SetWord(_entity2Id, "entity2"));
+
+        commit2.DateTime.Should().BeBefore(commit1.DateTime);
+        (await DataModel.GetLatest<Word>(_entity1Id))!.Text.Should().Be("entity1");
+        (await DataModel.GetLatest<Word>(_entity2Id))!.Text.Should().Be("entity2");
+        //commit1 has the later timestamp, so it must be the model's most recent change even though
+        //commit2 was written after it — proving commits are ordered by timestamp, not insertion order
+        var snapshot = await DataModel.GetProjectSnapshot();
+        snapshot.LastChange.Should().Be(commit1.DateTime);
     }
 
     [Fact]

@@ -3,10 +3,10 @@ on:
   push:
     branches:
       - main
-  pull_request: 
+  pull_request:
     branches:
       - main
-permissions: 
+permissions:
   pull-requests: write #allow benchmark-action to comment on PRs
 jobs:
   build:
@@ -20,7 +20,18 @@ jobs:
         uses: actions/setup-dotnet@v4
 
       - name: Build & test
-        run: dotnet test --configuration Release --logger GitHubActions
+        run: >-
+          dotnet test --configuration Release --report-github --
+          --coverage --coverage-output-format cobertura
+          --coverage-output coverage.cobertura.xml
+          --results-directory ${{ github.workspace }}/coverage-results
+      - name: Upload coverage to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ github.workspace }}/coverage-results/coverage.cobertura.xml
+          fail_ci_if_error: false
       - name: Download previous benchmark data
         uses: actions/cache@v4
         with:
@@ -28,11 +39,10 @@ jobs:
           key: ${{ runner.os }}-benchmark
       - name: Continuous Benchmark
         uses: benchmark-action/github-action-benchmark@v1.20.4
-        with: 
+        with:
           tool: benchmarkdotnet
           output-file-path: src/artifacts/bin/SIL.Harmony.Tests/release/BenchmarkDotNet.Artifacts/results/SIL.Harmony.Tests.DataModelPerformanceBenchmarks-report-full-compressed.json
           external-data-json-path: ./cache/benchmark-data.json
           fail-on-alert: true
           comment-on-alert: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          

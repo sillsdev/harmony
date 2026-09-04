@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 
@@ -171,5 +174,25 @@ public class SnapshotTests : DataModelTestBase
 
         //we probably won't have the same number of snapshots, which is ok. but none of the ids should be the same
         afterSnapshotsIds.Should().NotIntersectWith(beforeSnapshotIds);
+    }
+
+    [Fact]
+    public async Task RegenerateSnapshots_LeavesTheProjectIntactWhenTheRebuildFails()
+    {
+        var entityId = Guid.NewGuid();
+        await WriteNextChange(SetWord(entityId, "test root"));
+        await WriteNextChange(SetWord(entityId, "test1"));
+        var beforeSnapshotIds = await DbContext.Snapshots.Select(s => s.Id).ToArrayAsync(TestContext.Current.CancellationToken);
+        var beforeRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync(TestContext.Current.CancellationToken);
+
+        _services.GetRequiredService<IOptions<HarmonyConfig>>().Value.BeforeSaveObject =
+            (_, _) => throw new InvalidOperationException("rebuild failed");
+        Func<Task> act = () => DataModel.RegenerateSnapshots();
+        await act.Should().ThrowAsync<InvalidOperationException>();
+
+        var afterSnapshotIds = await DbContext.Snapshots.Select(s => s.Id).ToArrayAsync(TestContext.Current.CancellationToken);
+        afterSnapshotIds.Should().BeEquivalentTo(beforeSnapshotIds);
+        var afterRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync(TestContext.Current.CancellationToken);
+        afterRegenerate.Should().BeEquivalentTo(beforeRegenerate);
     }
 }

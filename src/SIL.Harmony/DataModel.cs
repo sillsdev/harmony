@@ -234,12 +234,15 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task RegenerateSnapshots()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        await repo.DeleteSnapshotsAndProjectedTables();
+        using var locked = await repo.Lock();
         repo.ClearChangeTracker();
+        await using var transaction = await repo.BeginTransactionAsync();
+        await repo.DeleteSnapshotsAndProjectedTables();
         var allCommits = await repo.CurrentCommits()
             .Include(c => c.ChangeEntities)
             .ToSortedSetAsync();
         await UpdateSnapshots(repo, allCommits);
+        await transaction.CommitAsync();
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)

@@ -17,6 +17,9 @@ internal class SnapshotWorker
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
+    /// <summary>position in the batch of each snapshot this run generated, which is what decides whether it may be dropped</summary>
+    private readonly Dictionary<Guid, int> _newSnapshotCommitIndex = [];
+    private readonly SnapshotCheckpointPolicy _checkpointPolicy = SnapshotCheckpointPolicy.Default;
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, Guid?> snapshotLookup,
@@ -37,7 +40,14 @@ internal class SnapshotWorker
     {
         //we need to pass in the snapshots because we expect it to be modified, this is intended.
         //if the constructor makes a copy in the future this will need to be updated
-        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig).ApplyCommitChanges(commits);
+        var worker = new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig);
+        await worker.ApplyCommitChanges(commits);
+        foreach (var (entityId, rootSnapshot) in worker._rootSnapshots)
+        {
+            //entities created during the replay only exist as roots, and a caller asking for state at a commit wants them too
+            snapshots.TryAdd(entityId, rootSnapshot);
+        }
+
         return snapshots;
     }
 
@@ -52,6 +62,8 @@ internal class SnapshotWorker
 
     public async Task UpdateSnapshots(SortedSet<Commit> commits)
     {
+        //deciding the checkpoints before the replay is what makes them a decision rather than a record of what happened to be safe
+        await _crdtRepository.SetCheckpoints(commits, _checkpointPolicy);
         await ApplyCommitChanges(commits);
         await _crdtRepository.AddSnapshots([
             .._rootSnapshots.Values,
@@ -223,18 +235,22 @@ internal class SnapshotWorker
         {
             //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
         }
-        else if (context.CommitIndex % 2 == 0 && !prevSnapshot.IsRoot && IsNew(prevSnapshot))
+        else if (!prevSnapshot.IsRoot
+                 && _newSnapshotCommitIndex.TryGetValue(prevSnapshot.EntityId, out var prevCommitIndex)
+                 && _checkpointPolicy.MustKeepSnapshot(prevCommitIndex, context.CommitIndex))
         {
+            //a checkpoint falls between the two, so this snapshot is what a replay resuming there seeds the entity from
             context.IntermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
         }
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        AddSnapshot(newSnapshot);
+        AddSnapshot(newSnapshot, context.CommitIndex);
     }
 
-    private void AddSnapshot(ObjectSnapshot snapshot)
+    private void AddSnapshot(ObjectSnapshot snapshot, int commitIndex)
     {
+        _newSnapshotCommitIndex[snapshot.EntityId] = commitIndex;
         if (snapshot.IsRoot)
         {
             _rootSnapshots[snapshot.Entity.Id] = snapshot;
@@ -244,22 +260,5 @@ internal class SnapshotWorker
             //if there was already a pending snapshot there's no need to store it as both may point to the same commit
             _pendingSnapshots[snapshot.Entity.Id] = snapshot;
         }
-    }
-
-    /// <summary>
-    /// snapshot is not from the database
-    /// </summary>
-    private bool IsNew(ObjectSnapshot snapshot)
-    {
-        var entityId = snapshot.EntityId;
-        if (_pendingSnapshots.TryGetValue(entityId, out var pendingSnapshot))
-        {
-            return pendingSnapshot.Id == snapshot.Id;
-        }
-        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
-        {
-            return rootSnapshot.Id == snapshot.Id;
-        }
-        return false;
     }
 }

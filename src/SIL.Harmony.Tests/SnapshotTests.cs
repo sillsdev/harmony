@@ -41,7 +41,8 @@ public class SnapshotTests : DataModelTestBase
     {
         var entityId = Guid.NewGuid();
         var commits = new List<Commit>();
-        for (var i = 0; i < 6; i++)
+        //the batch has to be longer than the checkpoint interval, a shorter one needs no snapshot but the root and the latest
+        for (var i = 0; i < 20; i++)
         {
             commits.Add(await WriteChange(_localClientId,
                 new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(i),

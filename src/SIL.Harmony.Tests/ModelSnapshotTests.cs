@@ -108,9 +108,15 @@ public class ModelSnapshotTests : DataModelTestBase
         thirdWord.Text.Should().Be("third");
     }
 
-    private Task ClearNonRootSnapshots()
+    /// <summary>
+    /// leaves each entity nothing but its root snapshot, so reading state at a commit has to replay history to get there
+    /// </summary>
+    private async Task ClearNonRootSnapshots()
     {
-        return DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        //the flags go first: a checkpoint claims that the snapshots at or before it hold the state a replay resumes from
+        await DbContext.Commits.ExecuteUpdateAsync(s => s.SetProperty(c => c.IsSnapshotCheckpoint, false), TestContext.Current.CancellationToken);
+        await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        DbContext.ChangeTracker.Clear();
     }
 
     [Theory]
@@ -125,15 +131,16 @@ public class ModelSnapshotTests : DataModelTestBase
         var addNew = new List<Commit>(changeCount);
         for (var i = 0; i < changeCount; i++)
         {
-            // todo: these commits all have an odd index, so no intermediate snapshots will be persisted i.e. the snapshot count checking is somewhat deceptive
             changes.Add(await WriteNextChange(SetWord(entityId, $"change {i}"), false).AsTask());
             addNew.Add(await WriteNextChange(SetWord(Guid.NewGuid(), $"add {i}"), false).AsTask());
         }
 
         //adding all via sync means there's sparse snapshots
         await AddCommitsViaSync(changes.Concat(addNew));
-        //there will only be a snapshot for every other commit, but there's change count * 2 commits, plus a first and last change
-        DbContext.Snapshots.Should().HaveCount(2 + changeCount);
+        var commitCount = changeCount * 2;
+        var checkpointCount = Enumerable.Range(1, commitCount).Count(i => SnapshotCheckpointPolicy.Default.IsCheckpoint(i, commitCount));
+        //the root from the first change, a root per newly added word, and one snapshot of the edited word per checkpoint
+        DbContext.Snapshots.Should().HaveCount(1 + changeCount + checkpointCount);
 
         for (int i = 0; i < changeCount; i++)
         {
@@ -156,7 +163,7 @@ public class ModelSnapshotTests : DataModelTestBase
 
         var latestSnapshot = await DataModel.GetLatestSnapshotByObjectId(entityId);
         //delete snapshots so when we get at then we need to re-apply
-        await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await ClearNonRootSnapshots();
 
         var computedModelSnapshots = await DataModel.GetSnapshotsAtCommit(latestSnapshot.Commit);
 

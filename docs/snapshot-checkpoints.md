@@ -163,6 +163,21 @@ latest snapshot, everything else it accumulated is discarded.
 Extract the decision as a pure function over (previous snapshot commit, current commit, checkpoint
 set). The same function is what thinning runs later, and it can be tested without driving a replay.
 
+## What shipped
+
+`SnapshotCheckpointPolicy` holds both halves of the decision at an interval of 8: `IsCheckpoint` picks every 8th commit
+of a replayed batch plus its last, and `MustKeepSnapshot` is the pure function the pruner and, later, thinning share.
+`CrdtRepository.SetCheckpoints` writes the flags before the replay starts. `DataModel.ResumeFromCheckpoint` is the shared
+primitive, used by `UpdateSnapshots`, `GetSnapshotsAtCommit` and `GetSnapshotAtCommit`.
+
+Two things from the sections above were left alone:
+
+- **The playback still decides during the walk**, incrementally, rather than accumulating an interval's snapshots and
+  deciding at each checkpoint. Same outcome from the same function, and the restructure would not save much: the batch
+  already holds a snapshot per touched entity in `_pendingSnapshots` regardless, which is the O(batch) part.
+- **Reading state at an old commit on a database with no checkpoints replays all of history**, since there is nothing to
+  resume from. Correct but slow, and it lasts until the first late commit establishes checkpoints.
+
 ## Deferred: thinning
 
 Not in the first change. Recorded here so we know the room exists.

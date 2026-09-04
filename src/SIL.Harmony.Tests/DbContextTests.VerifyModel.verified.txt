@@ -4,6 +4,7 @@
       Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd
       ClientId (Guid) Required
       Hash (string) Required
+      IsSnapshotCheckpoint (bool) Required
       Metadata (CommitMetadata) Required
         Annotations: 
           Relational:ColumnType: jsonb
@@ -24,7 +25,7 @@
     Keys: 
       Id PK
     Annotations: 
-      CustomIndex:CompositeIndexes: [{"paths":["HybridDateTime.DateTime","HybridDateTime.Counter","Id"],"unique":false,"name":"IX_Commits_DateTime_Counter_Id"}]
+      CustomIndex:CompositeIndexes: [{"paths":["HybridDateTime.DateTime","HybridDateTime.Counter","Id"],"unique":false,"name":"IX_Commits_DateTime_Counter_Id"},{"paths":["IsSnapshotCheckpoint","HybridDateTime.DateTime","HybridDateTime.Counter","Id"],"unique":false,"name":"IX_Commits_IsSnapshotCheckpoint_DateTime_Counter_Id"}]
       Relational:FunctionName: 
       Relational:Schema: 
       Relational:SqlQuery: 

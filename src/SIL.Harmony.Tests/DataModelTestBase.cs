@@ -89,7 +89,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(_localClientId, before.DateTime.AddHours(-1), change, add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId,
+    public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
         IChange change,
         bool add = true)
@@ -97,7 +97,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(clientId, dateTime, [change], add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId,
+    public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
         IEnumerable<IChange> changes,
         bool add = true)
@@ -122,7 +122,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await DataModel.AddChanges(clientId, changes);
     }
 
-    protected async Task AddCommitsViaSync(IEnumerable<Commit> commits)
+    public async Task AddCommitsViaSync(IEnumerable<Commit> commits)
     {
         await ((ISyncable)DataModel).AddRangeFromSync(commits);
     }

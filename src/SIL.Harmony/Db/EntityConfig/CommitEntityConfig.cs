@@ -29,6 +29,10 @@ public class CommitEntityConfig : IEntityTypeConfiguration<Commit>
         builder.HasComplexCompositeIndex(
             c => new { c.HybridDateTime.DateTime, c.HybridDateTime.Counter, c.Id },
             indexName: "IX_Commits_DateTime_Counter_Id");
+        // finding the newest checkpoint before a commit is on the hot path of every out of order commit
+        builder.HasComplexCompositeIndex(
+            c => new { c.IsSnapshotCheckpoint, c.HybridDateTime.DateTime, c.HybridDateTime.Counter, c.Id },
+            indexName: "IX_Commits_IsSnapshotCheckpoint_DateTime_Counter_Id");
         builder.Property(c => c.Metadata)
             .HasColumnType("jsonb")
             .HasConversion(

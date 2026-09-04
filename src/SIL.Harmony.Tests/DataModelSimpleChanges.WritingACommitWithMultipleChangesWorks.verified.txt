@@ -33,6 +33,7 @@
     ],
     Hash: Hash_1,
     ParentHash: Hash_Empty,
+    IsSnapshotCheckpoint: true,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,

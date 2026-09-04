@@ -19,6 +19,7 @@
     ],
     Hash: Hash_1,
     ParentHash: Hash_Empty,
+    IsSnapshotCheckpoint: true,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,
@@ -68,6 +69,7 @@
     ],
     Hash: Hash_2,
     ParentHash: Hash_1,
+    IsSnapshotCheckpoint: true,
     ChangeEntities: [
       {
         $type: ChangeEntity<IChange>,

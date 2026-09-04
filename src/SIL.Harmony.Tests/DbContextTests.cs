@@ -53,6 +53,7 @@ public class DbContextTests : DataModelTestBase
             .Value(c => c.Metadata, new CommitMetadata())
             .Value(c => c.Hash, "")
             .Value(c => c.ParentHash, "")
+            .Value(c => c.IsSnapshotCheckpoint, false)
             .InsertAsync(TestContext.Current.CancellationToken);
         var actualCommit = await DbContext.Commits.SingleOrDefaultAsyncEF(c => c.Id == commitId, TestContext.Current.CancellationToken);
         actualCommit!.HybridDateTime.DateTime.Should().Be(expectedDateTime, "EF");

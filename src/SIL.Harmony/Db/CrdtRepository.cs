@@ -10,6 +10,7 @@ using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
+using SIL.Harmony.Prototype;
 using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
@@ -156,6 +157,31 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return await checkpoints.DefaultOrderDescending().FirstOrDefaultAsync();
     }
 
+    //PROTOTYPE (#110) ---------------------------------------------------------------------------------------------
+    private IQueryable<SnapshotHole> Holes => _dbContext.Set<SnapshotHole>().AsNoTracking();
+
+    /// <summary>What replaces <see cref="FindNewestCheckpoint"/> under design 2. Same signature, derived answer.</summary>
+    public Task<Commit?> FindNewestResumePoint(Commit? before = null)
+        => PrototypeResumePointQueries.FromHoles(Commits, Holes, before);
+
+    public async Task AddHoles(IEnumerable<SnapshotHole> holes)
+    {
+        _dbContext.Set<SnapshotHole>().AddRange(holes);
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task AddResumePoints(IEnumerable<Commit> commits)
+    {
+        _dbContext.Set<PrototypeResumePoint>().AddRange(commits.Select(c => new PrototypeResumePoint
+        {
+            CommitId = c.Id,
+            DateTime = c.HybridDateTime.DateTime,
+            Counter = c.HybridDateTime.Counter,
+        }));
+        await _dbContext.SaveChangesAsync();
+    }
+    //PROTOTYPE end -------------------------------------------------------------------------------------------------
+
     /// <summary>
     /// Records which of the commits about to be replayed are checkpoints. Has to run before the replay, which keeps
     /// whatever snapshots this choice needs, and only ever covers commits being replayed: see <see cref="SnapshotCheckpointPolicy"/>.
@@ -169,6 +195,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         }
 
         await _dbContext.SaveChangesAsync();
+        //PROTOTYPE (#110): design 3 records the same choice as rows in its own table instead of flags on Commits
+        await AddResumePoints(commitsToReplay.Where(c => c.IsSnapshotCheckpoint));
     }
 
     public async Task DeleteSnapshotsAndProjectedTables()

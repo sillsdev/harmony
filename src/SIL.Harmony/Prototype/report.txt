@@ -1,0 +1,73 @@
+positions flagged by the shipped design: 8,16,24,32,40
+positions derived from holes:            1,2,3,8,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,32,39,40
+positions derived, rounded outward:      1,2,3,14,15,16,17,18,19,20,21,22,23,24,25,26,27,40
+holes: AA465DAB-AAE2-4768-9CF9-44E0E380DAE6 -> 9A5EF803-A024-4F45-8D50-745A20511022 29F2540A-3D00-4BBF-B877-B06424709E1B -> 16E0E5B4-0649-4FD2-833E-0C27E440292E B24D8BD7-E46F-4B58-B787-6AAA11A6C789 -> F8B5AC7A-6669-4441-8E33-8E8B35C762A6 B5BD50AE-D59C-4A58-8229-9EECD31CDF76 -> D7488A15-D916-4231-AD8A-8AFF6F3A8D9C F8B5AC7A-6669-4441-8E33-8E8B35C762A6 -> 77349ECB-065B-49A5-905D-47310784FC4E 504423B0-0937-456E-BE5D-CB6C3D556DD9 -> 6099BB3D-7871-4D44-AC86-EC38AF64A73F 77349ECB-065B-49A5-905D-47310784FC4E -> 5906D336-56BB-4B34-A735-CA8AE2A43CCA
+
+plans over commits=600 snapshots=574 holes=26
+
+--- DESIGN 1, flag on Commits ---
+  SCAN c
+  USE TEMP B-TREE FOR ORDER BY
+
+--- DESIGN 2, derived from holes ---
+  SCAN c
+  CORRELATED SCALAR SUBQUERY 1
+  MULTI-INDEX OR
+  INDEX 1
+  SEARCH s USING INDEX IX_SnapshotHoles_FromDateTime_FromCounter_FromCommitId (FromDateTime<?)
+  INDEX 2
+  SEARCH s USING INDEX IX_SnapshotHoles_FromDateTime_FromCounter_FromCommitId (FromDateTime=? AND FromCounter<?)
+  INDEX 3
+  SEARCH s USING INDEX IX_SnapshotHoles_FromDateTime_FromCounter_FromCommitId (FromDateTime=? AND FromCounter=? AND FromCommitId<?)
+  USE TEMP B-TREE FOR ORDER BY
+
+--- DESIGN 2c, derived with a max-hole-span guard ---
+  DOES NOT TRANSLATE: The LINQ expression 'DbSet<SnapshotHole>()
+
+--- DESIGN 3, claimed in its own table ---
+  SCAN p USING COVERING INDEX IX_PrototypeResumePoints_DateTime_Counter_CommitId
+commits=40 snapshots=33 holes=7 resumePoints=5
+
+=== DESIGN 1, shipped: flag on Commits ===
+.param set @before_HybridDateTime_DateTime '2001-02-10 00:00:00'
+.param set @before_HybridDateTime_Counter 0
+.param set @before_Id 'B20D2078-7EE7-4CF3-828A-B9EB85D7BE6D'
+
+SELECT "c"."Id", "c"."ClientId", "c"."Hash", "c"."IsSnapshotCheckpoint", "c"."Metadata", "c"."ParentHash", "c"."Counter", "c"."DateTime"
+FROM "Commits" AS "c"
+WHERE "c"."IsSnapshotCheckpoint" AND ("c"."DateTime" < @before_HybridDateTime_DateTime OR ("c"."DateTime" = @before_HybridDateTime_DateTime AND "c"."Counter" < @before_HybridDateTime_Counter) OR ("c"."DateTime" = @before_HybridDateTime_DateTime AND "c"."Counter" = @before_HybridDateTime_Counter AND "c"."Id" < @before_Id) OR "c"."Id" = @before_Id)
+ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
+
+=== DESIGN 2: derived from holes ===
+.param set @before_HybridDateTime_DateTime '2001-02-10 00:00:00'
+.param set @before_HybridDateTime_Counter 0
+.param set @before_Id 'B20D2078-7EE7-4CF3-828A-B9EB85D7BE6D'
+
+SELECT "c"."Id", "c"."ClientId", "c"."Hash", "c"."IsSnapshotCheckpoint", "c"."Metadata", "c"."ParentHash", "c"."Counter", "c"."DateTime"
+FROM "Commits" AS "c"
+WHERE ("c"."DateTime" < @before_HybridDateTime_DateTime OR ("c"."DateTime" = @before_HybridDateTime_DateTime AND "c"."Counter" < @before_HybridDateTime_Counter) OR ("c"."DateTime" = @before_HybridDateTime_DateTime AND "c"."Counter" = @before_HybridDateTime_Counter AND "c"."Id" < @before_Id) OR "c"."Id" = @before_Id) AND NOT EXISTS (
+    SELECT 1
+    FROM "SnapshotHoles" AS "s"
+    WHERE ("s"."FromDateTime" < "c"."DateTime" OR ("s"."FromDateTime" = "c"."DateTime" AND "s"."FromCounter" < "c"."Counter") OR ("s"."FromDateTime" = "c"."DateTime" AND "s"."FromCounter" = "c"."Counter" AND "s"."FromCommitId" <= "c"."Id")) AND ("c"."DateTime" < "s"."ToDateTime" OR ("c"."DateTime" = "s"."ToDateTime" AND "c"."Counter" < "s"."ToCounter") OR ("c"."DateTime" = "s"."ToDateTime" AND "c"."Counter" = "s"."ToCounter" AND "c"."Id" < "s"."ToCommitId")))
+ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
+
+=== DESIGN 2b: derived from holes, endpoints rounded outward ===
+.param set @before_HybridDateTime_DateTime '2001-02-10 00:00:00'
+.param set @before_HybridDateTime_Counter 0
+.param set @before_Id 'B20D2078-7EE7-4CF3-828A-B9EB85D7BE6D'
+
+SELECT "c"."Id", "c"."ClientId", "c"."Hash", "c"."IsSnapshotCheckpoint", "c"."Metadata", "c"."ParentHash", "c"."Counter", "c"."DateTime"
+FROM "Commits" AS "c"
+WHERE ("c"."DateTime" < @before_HybridDateTime_DateTime OR ("c"."DateTime" = @before_HybridDateTime_DateTime AND "c"."Counter" < @before_HybridDateTime_Counter) OR ("c"."DateTime" = @before_HybridDateTime_DateTime AND "c"."Counter" = @before_HybridDateTime_Counter AND "c"."Id" < @before_Id) OR "c"."Id" = @before_Id) AND NOT EXISTS (
+    SELECT 1
+    FROM "SnapshotHoles" AS "s"
+    WHERE ("s"."FromDateTime" < "c"."DateTime" OR ("s"."FromDateTime" = "c"."DateTime" AND "s"."FromCounter" <= "c"."Counter")) AND ("c"."DateTime" < "s"."ToDateTime" OR ("c"."DateTime" = "s"."ToDateTime" AND "c"."Counter" <= "s"."ToCounter")))
+ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
+
+=== DESIGN 2c: derived from holes, with a max-hole-span guard ===
+DOES NOT TRANSLATE: The LINQ expression 'DbSet<SnapshotHole>()
+
+=== DESIGN 3: claimed, in its own table ===
+SELECT "p"."CommitId", "p"."Counter", "p"."DateTime"
+FROM "PrototypeResumePoints" AS "p"
+ORDER BY "p"."DateTime" DESC, "p"."Counter" DESC, "p"."CommitId" DESC

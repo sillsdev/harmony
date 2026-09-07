@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
+using SIL.Harmony.Prototype;
 
 namespace SIL.Harmony;
 
@@ -20,6 +21,8 @@ internal class SnapshotWorker
     /// <summary>position in the batch of each snapshot this run generated, which is what decides whether it may be dropped</summary>
     private readonly Dictionary<Guid, int> _newSnapshotCommitIndex = [];
     private readonly SnapshotCheckpointPolicy _checkpointPolicy = SnapshotCheckpointPolicy.Default;
+    /// <summary>PROTOTYPE (#110): the holes this run's pruning opened up</summary>
+    private readonly List<SnapshotHole> _newHoles = [];
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, Guid?> snapshotLookup,
@@ -65,6 +68,7 @@ internal class SnapshotWorker
         //deciding the checkpoints before the replay is what makes them a decision rather than a record of what happened to be safe
         await _crdtRepository.SetCheckpoints(commits, _checkpointPolicy);
         await ApplyCommitChanges(commits);
+        await _crdtRepository.AddHoles(_newHoles); //PROTOTYPE (#110)
         await _crdtRepository.AddSnapshots([
             .._rootSnapshots.Values,
             .._newIntermediateSnapshots,
@@ -236,11 +240,28 @@ internal class SnapshotWorker
             //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
         }
         else if (!prevSnapshot.IsRoot
-                 && _newSnapshotCommitIndex.TryGetValue(prevSnapshot.EntityId, out var prevCommitIndex)
-                 && _checkpointPolicy.MustKeepSnapshot(prevCommitIndex, context.CommitIndex))
+                 && _newSnapshotCommitIndex.TryGetValue(prevSnapshot.EntityId, out var prevCommitIndex))
         {
-            //a checkpoint falls between the two, so this snapshot is what a replay resuming there seeds the entity from
-            context.IntermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
+            if (_checkpointPolicy.MustKeepSnapshot(prevCommitIndex, context.CommitIndex))
+            {
+                //a resume point falls between the two, so this snapshot is what a replay resuming there seeds the entity from
+                context.IntermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
+            }
+            else
+            {
+                //PROTOTYPE (#110): dropping it leaves the entity's state unrecorded from its commit up to this one
+                _newHoles.Add(new SnapshotHole
+                {
+                    Id = Guid.NewGuid(),
+                    EntityId = prevSnapshot.EntityId,
+                    FromDateTime = prevSnapshot.Commit.HybridDateTime.DateTime,
+                    FromCounter = prevSnapshot.Commit.HybridDateTime.Counter,
+                    FromCommitId = prevSnapshot.CommitId,
+                    ToDateTime = context.Commit.HybridDateTime.DateTime,
+                    ToCounter = context.Commit.HybridDateTime.Counter,
+                    ToCommitId = context.Commit.Id,
+                });
+            }
         }
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);

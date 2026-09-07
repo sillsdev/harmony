@@ -23,6 +23,8 @@ internal class SnapshotWorker
     private readonly SnapshotCheckpointPolicy _checkpointPolicy = SnapshotCheckpointPolicy.Default;
     /// <summary>PROTOTYPE (#110): the holes this run's pruning opened up</summary>
     private readonly List<SnapshotHole> _newHoles = [];
+    /// <summary>PROTOTYPE (#115): the same holes as batch positions, half open, which is all the ranges need</summary>
+    private readonly List<(int From, int To)> _holePositions = [];
 
     private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, Guid?> snapshotLookup,
@@ -69,6 +71,8 @@ internal class SnapshotWorker
         await _crdtRepository.SetCheckpoints(commits, _checkpointPolicy);
         await ApplyCommitChanges(commits);
         await _crdtRepository.AddHoles(_newHoles); //PROTOTYPE (#110)
+        //PROTOTYPE (#115): all the interval work, once, over data already in hand
+        await _crdtRepository.AddResumeRanges(commits, PrototypeResumeRangeQueries.SafeRuns(commits.Count, _holePositions));
         await _crdtRepository.AddSnapshots([
             .._rootSnapshots.Values,
             .._newIntermediateSnapshots,
@@ -249,7 +253,9 @@ internal class SnapshotWorker
             }
             else
             {
-                //PROTOTYPE (#110): dropping it leaves the entity's state unrecorded from its commit up to this one
+                //PROTOTYPE (#115): dropping it leaves the entity's state unrecorded from its commit up to this one
+                _holePositions.Add((prevCommitIndex, context.CommitIndex));
+                //PROTOTYPE (#110): the superseded encoding, kept so both can be compared on one database
                 _newHoles.Add(new SnapshotHole
                 {
                     Id = Guid.NewGuid(),

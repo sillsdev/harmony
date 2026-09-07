@@ -1,0 +1,17 @@
+commits=600 snapshots=574 holes=26 ranges=19 flags=75
+safe positions: 534 of 600
+ranges: [1-1] [6-8] [15-16] [21-24] [31-37] [40-57] [62-75] [77-88] [94-97] [102-112] [116-200] [203-210] [213-226] [232-285] [288-345] [352-388] [391-418] [421-561] [568-600]
+
+--- SEEK 1, the only candidate range ---
+  SCAN r USING INDEX IX_ResumeRanges_FromDateTime_FromCounter_FromCommitId
+
+--- SEEK 2a, the range's own end, when the bound is past the range ---
+  SEARCH c USING INDEX sqlite_autoindex_Commits_1 (Id=?)
+
+--- SEEK 2b, the commit before the bound, when the bound is inside the range ---
+  SCAN c
+  USE TEMP B-TREE FOR ORDER BY
+
+--- for comparison, the compound two sided bound this replaced ---
+  SCAN c
+  USE TEMP B-TREE FOR ORDER BY

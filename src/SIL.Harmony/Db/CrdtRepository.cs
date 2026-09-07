@@ -170,6 +170,34 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await _dbContext.SaveChangesAsync();
     }
 
+    private IQueryable<ResumeRange> Ranges => _dbContext.Set<ResumeRange>().AsNoTracking();
+
+    /// <summary>PROTOTYPE (#115): what replaces <see cref="FindNewestCheckpoint"/> under the resume range design.</summary>
+    public Task<Commit?> FindNewestResumeRangePoint(Commit? before = null, bool inclusive = false)
+        => PrototypeResumeRangeQueries.FindNewestResumePoint(Commits, Ranges, before, inclusive);
+
+    /// <param name="runs">closed runs of 1 based batch positions</param>
+    public async Task AddResumeRanges(SortedSet<Commit> replayed, List<(int From, int To)> runs)
+    {
+        var byPosition = replayed.ToArray();
+        _dbContext.Set<ResumeRange>().AddRange(runs.Select(run =>
+        {
+            var from = byPosition[run.From - 1];
+            var to = byPosition[run.To - 1];
+            return new ResumeRange
+            {
+                Id = Guid.NewGuid(),
+                FromDateTime = from.HybridDateTime.DateTime,
+                FromCounter = from.HybridDateTime.Counter,
+                FromCommitId = from.Id,
+                ToDateTime = to.HybridDateTime.DateTime,
+                ToCounter = to.HybridDateTime.Counter,
+                ToCommitId = to.Id,
+            };
+        }));
+        await _dbContext.SaveChangesAsync();
+    }
+
     public async Task AddResumePoints(IEnumerable<Commit> commits)
     {
         _dbContext.Set<PrototypeResumePoint>().AddRange(commits.Select(c => new PrototypeResumePoint

@@ -64,6 +64,11 @@ public class RepositoryTests : IAsyncLifetime
         return new(new Word { Text = "test", Id = entityId }, Commit(commitId, time), false) { };
     }
 
+    private ObjectSnapshot WordSnapshot(Guid entityId, HybridDateTime time, Guid? antonymId = null)
+    {
+        return new(new Word { Text = "test", Id = entityId, AntonymId = antonymId }, Commit(Guid.NewGuid(), time), false);
+    }
+
     private Guid[] OrderedIds(int count)
     {
         return Enumerable.Range(0, count).Select(_ => Guid.NewGuid()).Order().ToArray();
@@ -307,6 +312,26 @@ public class RepositoryTests : IAsyncLifetime
 
         _crdtDbContext.Snapshots.Should().ContainSingle()
             .Which.CommitId.Should().Be(ids[0]);
+    }
+
+    [Fact]
+    public async Task AddSnapshots_ProjectsSameTypeSelfReferencesInDependencyOrder()
+    {
+        // Two words in one projection batch where the first references the second via a self-FK
+        // (Word.AntonymId -> Word.Id). Deliberately order the referencing row FIRST so a naive
+        // dictionary-order upsert inserts it before its referenced row and violates the FK.
+        var referencedId = Guid.NewGuid();
+        var referencingId = Guid.NewGuid();
+        await _repository.AddSnapshots([
+            WordSnapshot(referencingId, Time(1, 0), antonymId: referencedId),
+            WordSnapshot(referencedId, Time(1, 0)),
+        ]);
+
+        var words = await _crdtDbContext.Set<Word>().AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        words.Should().Contain(w => w.Id == referencedId);
+        words.Should().ContainSingle(w => w.Id == referencingId)
+            .Which.AntonymId.Should().Be(referencedId);
     }
 
     [Fact]

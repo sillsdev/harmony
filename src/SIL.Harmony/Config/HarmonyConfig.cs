@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Resource;
@@ -45,11 +46,14 @@ public class HarmonyConfig
     private readonly Lazy<ChangeDiscriminatorMaps> _lazyChangeDiscriminatorMaps;
 
     /// <summary>
-    /// Cache of derived projected-table SQL metadata (keyed by projected CLR type), used by
-    /// <see cref="FastProjection"/>. Stored on the config so it's shared across repositories and
-    /// db contexts and only built once per type.
+    /// Cache of derived projected-table SQL metadata, used by <see cref="FastProjection"/>. Stored on
+    /// the config so it's shared across repositories and db contexts. Keyed by <see cref="IModel"/>
+    /// as well as CLR type because the cached metadata holds model-specific <c>IProperty</c>
+    /// instances, table/column names, converters, and provider-delimited SQL: a single config can be
+    /// paired with more than one EF model (multiple <see cref="ICrdtDbContext"/> types or providers),
+    /// so keying by CLR type alone could hand one model metadata built from another.
     /// </summary>
-    internal ConcurrentDictionary<Type, FastProjection.ProjectedTableInfo> ProjectedTableInfoCache { get; } = new();
+    internal ConcurrentDictionary<(IModel Model, Type Type), FastProjection.ProjectedTableInfo> ProjectedTableInfoCache { get; } = new();
 
     public HarmonyConfig()
     {

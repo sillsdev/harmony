@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Config;
 
@@ -106,8 +107,48 @@ internal class FastProjection
             var live = byType[type].Where(s => !s.EntityIsDeleted).ToList();
             if (live.Count == 0) continue;
             var info = GetTableInfo(dbContext, type, sqlHelper);
+            // within a single type's batch, order rows so a row referenced by another row's
+            // self-FK (e.g. Word.AntonymId -> Word.Id) is inserted before the referencing row.
+            live = OrderRowsBySelfReference(info, live);
             await UpsertPerQueryAsync(connection, transaction, info, live);
         }
+    }
+
+    /// <summary>
+    /// Topologically orders same-type rows by their self-referencing FK so a referenced row is
+    /// upserted before the row that points at it. Cyclic self-references (which cannot be ordered)
+    /// are left in their original relative order and may still fail the FK check.
+    /// </summary>
+    private static List<ObjectSnapshot> OrderRowsBySelfReference(ProjectedTableInfo info, List<ObjectSnapshot> rows)
+    {
+        if (info.SelfReferenceProperties.Count == 0 || rows.Count < 2) return rows;
+
+        var byKey = new Dictionary<object, ObjectSnapshot>(rows.Count);
+        foreach (var row in rows)
+        {
+            var key = GetClrValue(info.PrimaryKey.Property, row.Entity.DbObject);
+            if (key is not null) byKey[key] = row;
+        }
+
+        var ordered = new List<ObjectSnapshot>(rows.Count);
+        var visited = new HashSet<ObjectSnapshot>();
+
+        void Visit(ObjectSnapshot row)
+        {
+            if (!visited.Add(row)) return; // also breaks self-reference cycles
+            var dbObject = row.Entity.DbObject;
+            foreach (var selfRef in info.SelfReferenceProperties)
+            {
+                var reference = GetClrValue(selfRef, dbObject);
+                if (reference is null) continue;
+                if (byKey.TryGetValue(reference, out var principal) && !ReferenceEquals(principal, row))
+                    Visit(principal);
+            }
+            ordered.Add(row);
+        }
+
+        foreach (var row in rows) Visit(row);
+        return ordered;
     }
 
     private static async Task UpsertPerQueryAsync(
@@ -158,12 +199,12 @@ internal class FastProjection
     private static object? GetProviderValue(ColumnInfo column, ObjectSnapshot snapshot, object dbObject)
     {
         if (column.IsShadowSnapshotId) return snapshot.Id;
-        var raw = column.Property.PropertyInfo is { } pi
-            ? pi.GetValue(dbObject)
-            : column.Property.FieldInfo?.GetValue(dbObject);
-        var converter = column.Property.GetValueConverter();
-        return converter is null ? raw : converter.ConvertToProvider(raw);
+        var raw = GetClrValue(column.Property, dbObject);
+        return column.Converter is null ? raw : column.Converter.ConvertToProvider(raw);
     }
+
+    private static object? GetClrValue(IProperty property, object dbObject)
+        => property.PropertyInfo is { } pi ? pi.GetValue(dbObject) : property.FieldInfo?.GetValue(dbObject);
 
     private static object ToParameterValue(object? value) => value ?? DBNull.Value;
 
@@ -171,13 +212,23 @@ internal class FastProjection
 
     private ProjectedTableInfo GetTableInfo(ICrdtDbContext dbContext, Type clrType, ISqlGenerationHelper sqlHelper)
     {
-        return _crdtConfig.ProjectedTableInfoCache.GetOrAdd(clrType, t => BuildTableInfo(dbContext, t, sqlHelper));
+        return _crdtConfig.ProjectedTableInfoCache.GetOrAdd(
+            (dbContext.Model, clrType),
+            key => BuildTableInfo(dbContext, key.Type, sqlHelper));
     }
 
     private static ProjectedTableInfo BuildTableInfo(ICrdtDbContext dbContext, Type clrType, ISqlGenerationHelper sqlHelper)
     {
         var entityType = dbContext.Model.FindEntityType(clrType)
             ?? throw new InvalidOperationException($"No EF entity type found for projected type {clrType.Name}");
+        // FastProjection sources every column value from the projected CLR instance, so it cannot
+        // reproduce EF's write semantics for TPH inheritance / discriminator columns. Reject them
+        // up front rather than silently writing wrong or null values.
+        if (entityType.BaseType is not null
+            || entityType.GetDerivedTypes().Any()
+            || entityType.FindDiscriminatorProperty() is not null)
+            throw new NotSupportedException(
+                $"Fast projection does not support TPH inheritance or discriminator columns for projected type {clrType.Name}.");
         var tableName = entityType.GetTableName()
             ?? throw new InvalidOperationException($"No table name found for projected type {clrType.Name}");
         var schema = entityType.GetSchema();
@@ -192,10 +243,21 @@ internal class FastProjection
         {
             var columnName = property.GetColumnName(storeObject);
             if (columnName is null) continue; // not mapped to this table
+            var isShadowSnapshotId = property.Name == ObjectSnapshot.ShadowRefName;
+            // Any shadow property other than the SnapshotId FK has no CLR value to source from the
+            // projected instance, so it would silently project as null. Reject rather than corrupt.
+            if (!isShadowSnapshotId && property.IsShadowProperty())
+                throw new NotSupportedException(
+                    $"Fast projection cannot source shadow property '{property.Name}' on projected type {clrType.Name}; " +
+                    $"only the '{ObjectSnapshot.ShadowRefName}' shadow FK is supported.");
             columns.Add(new ColumnInfo(
                 sqlHelper.DelimitIdentifier(columnName),
                 property,
-                property.Name == ObjectSnapshot.ShadowRefName,
+                // Reproduce EF's relational write semantics by using the converter from the property's
+                // relational type mapping, which includes converters supplied by the type mapping and
+                // not just those returned by IProperty.GetValueConverter() (e.g. HasConversion).
+                isShadowSnapshotId ? null : property.GetRelationalTypeMapping().Converter,
+                isShadowSnapshotId,
                 pkPropertyNames.Contains(property.Name)));
         }
 
@@ -203,6 +265,16 @@ internal class FastProjection
         if (pkColumns.Count != 1)
             throw new NotSupportedException($"Fast projection requires a single-column primary key for {clrType.Name}");
         var pk = pkColumns[0];
+
+        // Self-referencing FKs whose principal key is this table's primary key (e.g. Word.AntonymId
+        // -> Word.Id). Their dependent value can be compared to another row's PK to order inserts.
+        var primaryKey = entityType.FindPrimaryKey();
+        var selfReferenceProperties = entityType.GetForeignKeys()
+            .Where(fk => fk.PrincipalEntityType == entityType
+                && fk.PrincipalKey == primaryKey
+                && fk.Properties.Count == 1)
+            .Select(fk => fk.Properties[0])
+            .ToList();
 
         var delimitedTable = sqlHelper.DelimitIdentifier(tableName, schema);
         var columnList = string.Join(",", columns.Select(c => c.DelimitedName));
@@ -216,6 +288,7 @@ internal class FastProjection
         return new ProjectedTableInfo(
             columns,
             pk,
+            selfReferenceProperties,
             InsertSql: $"INSERT INTO {delimitedTable} ({columnList}) VALUES ({parameterList}) {onConflict};",
             DeleteSql: $"DELETE FROM {delimitedTable} WHERE {pk.DelimitedName}=@p0;");
     }
@@ -252,12 +325,14 @@ internal class FastProjection
     internal sealed record ColumnInfo(
         string DelimitedName,
         IProperty Property,
+        ValueConverter? Converter,
         bool IsShadowSnapshotId,
         bool IsPrimaryKey);
 
     internal sealed record ProjectedTableInfo(
         IReadOnlyList<ColumnInfo> Columns,
         ColumnInfo PrimaryKey,
+        IReadOnlyList<IProperty> SelfReferenceProperties,
         string InsertSql,
         string DeleteSql);
 }

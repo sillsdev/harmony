@@ -36,8 +36,10 @@ public class ProjectionProperties
     /// converge to identical entity content and the same canonical commit-hash chain. Primary,
     /// order-independent oracle: any order-dependent rollback or tiebreak bug diverges here.
     /// </summary>
-    private static Task ConvergesAcrossArrivalOrders(Gen<Schedule> schedules) =>
-        schedules.SampleAsync(async schedule =>
+    private static Task ConvergesAcrossArrivalOrders(Gen<Schedule> schedules)
+    {
+        var output = TestContext.Current.TestOutputHelper;
+        return schedules.SampleAsync(async schedule =>
         {
             await using var replicaA = await NewEngine();
             await using var replicaB = await NewEngine();
@@ -49,15 +51,18 @@ public class ProjectionProperties
                 await Read(replicaA.DataModel),
                 await Read(replicaB.DataModel),
                 "two replicas receiving the same commit set in different arrival orders must converge");
-        }, print: s => ReproCode.Render(s, ReproTemplate.Converge));
+        }, print: s => ReproCode.Emit(output, s, ReproTemplate.Converge));
+    }
 
     /// <summary>
     /// P-regenerate (doc P-master, secondary oracle): the state built incrementally by the
     /// rollback engine must equal a full from-scratch replay via <c>RegenerateSnapshots()</c>,
     /// which rebuilds without any rollback machinery.
     /// </summary>
-    private static Task IncrementalEqualsFromScratch(Gen<Schedule> schedules) =>
-        schedules.SampleAsync(async schedule =>
+    private static Task IncrementalEqualsFromScratch(Gen<Schedule> schedules)
+    {
+        var output = TestContext.Current.TestOutputHelper;
+        return schedules.SampleAsync(async schedule =>
         {
             await using var engine = await NewEngine();
 
@@ -71,14 +76,17 @@ public class ProjectionProperties
                 incremental,
                 fromScratch,
                 "the incrementally rolled-back projection must equal a from-scratch replay of the same commits");
-        }, print: s => ReproCode.Render(s, ReproTemplate.IncrementalVsFromScratch));
+        }, print: s => ReproCode.Emit(output, s, ReproTemplate.IncrementalVsFromScratch));
+    }
 
     /// <summary>
     /// P-dup (doc §5.4): re-ingesting commits already in the log is idempotent. Re-sending the
     /// entire commit set as one batch must not change the projection or the commit-hash chain.
     /// </summary>
-    private static Task ReingestIsIdempotent(Gen<Schedule> schedules) =>
-        schedules.SampleAsync(async schedule =>
+    private static Task ReingestIsIdempotent(Gen<Schedule> schedules)
+    {
+        var output = TestContext.Current.TestOutputHelper;
+        return schedules.SampleAsync(async schedule =>
         {
             await using var engine = await NewEngine();
 
@@ -89,14 +97,17 @@ public class ProjectionProperties
             var after = await Read(engine.DataModel);
 
             AssertSameProjection(before, after, "re-ingesting already-present commits must leave the projection unchanged");
-        }, print: s => ReproCode.Render(s, ReproTemplate.ReingestIdempotent));
+        }, print: s => ReproCode.Emit(output, s, ReproTemplate.ReingestIdempotent));
+    }
 
     /// <summary>
     /// R-determinism (doc §5.6): replay is reproducible. Feeding the identical schedule to two
     /// fresh engines yields identical projected content and commit-hash chains.
     /// </summary>
-    private static Task ReplayIsDeterministic(Gen<Schedule> schedules) =>
-        schedules.SampleAsync(async schedule =>
+    private static Task ReplayIsDeterministic(Gen<Schedule> schedules)
+    {
+        var output = TestContext.Current.TestOutputHelper;
+        return schedules.SampleAsync(async schedule =>
         {
             await using var first = await NewEngine();
             await using var second = await NewEngine();
@@ -108,7 +119,8 @@ public class ProjectionProperties
                 await Read(first.DataModel),
                 await Read(second.DataModel),
                 "feeding the identical schedule twice must produce identical projections");
-        }, print: s => ReproCode.Render(s, ReproTemplate.ReplayDeterministic));
+        }, print: s => ReproCode.Emit(output, s, ReproTemplate.ReplayDeterministic));
+    }
 
     // ---- Tier 1: create-or-edit text only ------------------------------------------------
 

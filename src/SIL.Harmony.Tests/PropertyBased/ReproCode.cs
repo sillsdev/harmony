@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Xunit;
 
 namespace SIL.Harmony.Tests.PropertyBased;
 
@@ -36,17 +37,27 @@ public static class ReproCode
     private static string Time(HybridDateTime time) =>
         $"new HybridDateTime(System.DateTimeOffset.Parse(\"{time.DateTime:O}\"), {time.Counter}L)";
 
+    /// <summary>
+    /// Writes the full ready-to-run reproduction to the test output (untruncated in CI logs) and
+    /// returns a compact summary for CsCheck's failure message, which CsCheck hard-caps at 5000
+    /// chars. Call this from a property's <c>print:</c> argument; CsCheck invokes it exactly once,
+    /// on the final shrunk counterexample. Pass the <see cref="ITestOutputHelper"/> captured at the
+    /// start of the test (so it is available regardless of which thread CsCheck calls back on).
+    /// </summary>
+    public static string Emit(ITestOutputHelper? output, Schedule schedule, ReproTemplate template)
+    {
+        var code = Render(schedule, template);
+        if (output is not null) output.WriteLine(code);
+        else Console.WriteLine(code);
+        return schedule + "// Full ready-to-run reproduction written to the test output above.";
+    }
+
     public static string Render(Schedule schedule, ReproTemplate template)
     {
         var indexById = new Dictionary<Guid, int>();
         for (var i = 0; i < schedule.Commits.Count; i++) indexById[schedule.Commits[i].Id] = i;
 
         var sb = new StringBuilder();
-
-        // Human-readable summary (commented, so the whole blob stays paste-able as C#).
-        foreach (var line in schedule.ToString().Split('\n'))
-            sb.Append("// ").AppendLine(line.TrimEnd('\r'));
-        sb.AppendLine();
 
         sb.AppendLine("// ---- Ready-to-run reproduction (hard-coded CsCheck counterexample) ----");
         sb.AppendLine("// Paste into a class with: using static SIL.Harmony.Tests.PropertyBased.HarmonyEngineHarness;");

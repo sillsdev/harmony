@@ -49,7 +49,9 @@ public static class ReproCode
         var code = Render(schedule, template);
         if (output is not null) output.WriteLine(code);
         else Console.WriteLine(code);
-        return schedule + "// Full ready-to-run reproduction written to the test output above.";
+        // Keep this short: CsCheck hard-caps the embedded message at 5000 chars. The full,
+        // untruncated method is in the test output above; the assertion diff follows below.
+        return $"Full ready-to-run reproduction ({schedule.Commits.Count} commits) written to the test output above — copy the Repro_{template} method to re-run without CsCheck.";
     }
 
     public static string Render(Schedule schedule, ReproTemplate template)

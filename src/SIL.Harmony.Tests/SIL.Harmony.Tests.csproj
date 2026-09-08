@@ -10,6 +10,7 @@
 
     <ItemGroup>
         <PackageReference Include="BenchmarkDotNet" />
+        <PackageReference Include="CsCheck" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="GitHubActionsTestLogger" />
         <PackageReference Include="JetBrains.Profiler.SelfApi" />

@@ -77,10 +77,24 @@ internal class FastProjection
         return latest;
     }
 
+    // The projected-table upserts use SQLite's `INSERT ... ON CONFLICT(pk) DO UPDATE SET col=excluded.col`
+    // dialect, so fast projection is only supported on the SQLite provider.
+    internal const string SqliteProviderName = "Microsoft.EntityFrameworkCore.Sqlite";
+
+    internal static void EnsureSupportedProvider(string? providerName)
+    {
+        if (providerName == SqliteProviderName) return;
+        throw new NotSupportedException(
+            $"Fast projection into projected tables is only supported on the SQLite provider " +
+            $"('{SqliteProviderName}'), but the configured provider is '{providerName ?? "(none)"}'. " +
+            $"Set {nameof(HarmonyConfig)}.{nameof(HarmonyConfig.EnableProjectedTables)} to false to disable projected tables.");
+    }
+
     private async Task ProjectAsync(
         ICrdtDbContext dbContext,
         Dictionary<Guid, ObjectSnapshot> latest)
     {
+        EnsureSupportedProvider(dbContext.Database.ProviderName);
         var connection = dbContext.Database.GetDbConnection();
         var transaction = dbContext.Database.CurrentTransaction!.GetDbTransaction();
         var sqlHelper = dbContext.Database.GetService<ISqlGenerationHelper>();

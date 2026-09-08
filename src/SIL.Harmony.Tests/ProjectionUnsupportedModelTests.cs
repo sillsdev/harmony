@@ -44,6 +44,22 @@ public class ProjectionUnsupportedModelTests
             .WithMessage("*ExtraShadow*");
     }
 
+    [Fact]
+    public void RejectsNonSqliteProvider()
+    {
+        var act = () => FastProjection.EnsureSupportedProvider("Npgsql.EntityFrameworkCore.PostgreSQL");
+        act.Should().Throw<NotSupportedException>()
+            .WithMessage("*SQLite*")
+            .WithMessage("*Npgsql*");
+    }
+
+    [Fact]
+    public void AllowsSqliteProvider()
+    {
+        var act = () => FastProjection.EnsureSupportedProvider(FastProjection.SqliteProviderName);
+        act.Should().NotThrow();
+    }
+
     private static ObjectSnapshot WordSnapshot()
     {
         var word = new Word { Text = "test", Id = Guid.NewGuid() };

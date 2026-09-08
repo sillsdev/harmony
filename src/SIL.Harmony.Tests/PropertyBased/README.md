@@ -140,6 +140,17 @@ Capture the seed and the minimized schedule and report it — do not loosen the 
 or special-case the oracle to make it pass. Only relax a property if it is genuinely
 wrong about Harmony's intended semantics (and say so explicitly).
 
+### Ready-to-run reproduction in the failure message
+
+Each property passes `print:` to CsCheck (`ReproCode.Render`), so the failure message
+contains **the full C# source of a self-contained `[Fact]`** with the shrunk
+counterexample hard-coded — no CsCheck, no seed, no shrinking needed to re-run it. Copy
+the emitted `Repro_*` method into a class that has
+`using static SIL.Harmony.Tests.PropertyBased.HarmonyEngineHarness;` (e.g.
+`ProjectionProperties`) and run it directly to debug or attach to the bug report. There
+is one body template per property type (`ReproTemplate`); each `ChangeSpec` renders itself
+via `ToCode()`. Keep the templates in `ReproCode.Body` in sync with the property bodies.
+
 ## Proving the suite bites
 
 The strongest evidence is empirical: **the suite already caught a real, pre-existing bug

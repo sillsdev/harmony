@@ -49,7 +49,7 @@ public class ProjectionProperties
                 await Read(replicaA.DataModel),
                 await Read(replicaB.DataModel),
                 "two replicas receiving the same commit set in different arrival orders must converge");
-        });
+        }, print: s => ReproCode.Render(s, ReproTemplate.Converge));
 
     /// <summary>
     /// P-regenerate (doc P-master, secondary oracle): the state built incrementally by the
@@ -71,7 +71,7 @@ public class ProjectionProperties
                 incremental,
                 fromScratch,
                 "the incrementally rolled-back projection must equal a from-scratch replay of the same commits");
-        });
+        }, print: s => ReproCode.Render(s, ReproTemplate.IncrementalVsFromScratch));
 
     /// <summary>
     /// P-dup (doc §5.4): re-ingesting commits already in the log is idempotent. Re-sending the
@@ -89,7 +89,7 @@ public class ProjectionProperties
             var after = await Read(engine.DataModel);
 
             AssertSameProjection(before, after, "re-ingesting already-present commits must leave the projection unchanged");
-        });
+        }, print: s => ReproCode.Render(s, ReproTemplate.ReingestIdempotent));
 
     /// <summary>
     /// R-determinism (doc §5.6): replay is reproducible. Feeding the identical schedule to two
@@ -108,7 +108,7 @@ public class ProjectionProperties
                 await Read(first.DataModel),
                 await Read(second.DataModel),
                 "feeding the identical schedule twice must produce identical projections");
-        });
+        }, print: s => ReproCode.Render(s, ReproTemplate.ReplayDeterministic));
 
     // ---- Tier 1: create-or-edit text only ------------------------------------------------
 

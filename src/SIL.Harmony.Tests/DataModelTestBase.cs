@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
@@ -64,6 +65,15 @@ public class DataModelTestBase : IAsyncLifetime
     {
         currentDate = dateTime;
     }
+
+    /// <summary>
+    /// Creates a repository over this instance's DbContext. Exposed so benchmarks can drive
+    /// <see cref="CrdtRepository"/> methods (e.g. AddSnapshots) directly without going through the sync pipeline.
+    /// </summary>
+    internal CrdtRepository CreateRepository() =>
+        _services.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
+
+    internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
 
     private static int _instanceCount = 0;
     private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0).AddHours(_instanceCount++));
@@ -130,6 +140,11 @@ public class DataModelTestBase : IAsyncLifetime
     public IChange SetWord(Guid entityId, string value)
     {
         return new SetWordTextChange(entityId, value);
+    }
+
+    public IChange SetWordNote(Guid entityId, string note)
+    {
+        return new SetWordNoteChange(entityId, note);
     }
 
     public IChange DeleteWord(Guid entityId)

@@ -152,10 +152,20 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();
     }
 
+    public async Task<Commit?> FindCheckpointBefore(Commit before)
+    {
+        return await FindNewestCheckpoint(before, inclusive: false);
+    }
+
+    public async Task<Commit?> FindCheckpointAtOrBefore(Commit commit)
+    {
+        return await FindNewestCheckpoint(commit, inclusive: true);
+    }
+
     /// <summary>
     /// The newest commit a replay may resume from, or null when there is none and all of history has to be replayed.
     /// </summary>
-    public async Task<Commit?> FindNewestCheckpoint(Commit before, bool inclusive = false)
+    private async Task<Commit?> FindNewestCheckpoint(Commit before, bool inclusive)
     {
         return await Commits.Where(c => c.IsSnapshotCheckpoint)
             .WhereBefore(before, inclusive)

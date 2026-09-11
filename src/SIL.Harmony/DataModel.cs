@@ -191,26 +191,42 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         if (commitsToApply.Count == 0) return;
         var oldestAddedCommit = commitsToApply.First();
-        if (await repo.HasSnapshotsAfter(oldestAddedCommit))
+        //nothing the batch can invalidate, so apply it as it is rather than rewinding and re-reading
+        if (!await repo.HasSnapshotsAfter(oldestAddedCommit))
         {
-            //rolling back to the new commit is not enough: an entity's newest surviving snapshot can predate edits whose
-            //snapshots were pruned, and nothing in the window would re-apply them. Resume from a checkpoint instead.
-            var checkpoint = await repo.FindNewestCheckpoint(oldestAddedCommit);
-            if (checkpoint is null)
-            {
-                //no checkpoint to resume from, so every snapshot has to be rebuilt. Replaying all of history against a
-                //populated table measured about 3x the cost per commit of dropping everything and regenerating.
-                await repo.DeleteSnapshotsAndProjectedTables();
-                //the delete goes around the change tracker, so drop what it holds and read the commits back fresh
-                repo.ClearChangeTracker();
-            }
-            else
-            {
-                await repo.DeleteSnapshotsAfter(checkpoint);
-            }
-            commitsToApply = (await repo.GetCommitsAfter(checkpoint)).ToSortedSet();
+            await ApplyCommits(repo, commitsToApply);
+            return;
         }
 
+        //rolling back to the new commit is not enough: an entity's newest surviving snapshot can predate edits whose
+        //snapshots were pruned, and nothing in the window would re-apply them. Resume from a checkpoint instead.
+        await ReplayFromCheckpoint(repo, await repo.FindCheckpointBefore(oldestAddedCommit));
+    }
+
+    /// <summary>
+    /// Rebuilds every snapshot after <paramref name="checkpoint"/> by replaying the commits that follow it.
+    /// A null checkpoint rebuilds all of history.
+    /// </summary>
+    private async Task ReplayFromCheckpoint(CrdtRepository repo, Commit? checkpoint)
+    {
+        if (checkpoint is null)
+        {
+            //no checkpoint to resume from, so every snapshot has to be rebuilt. Replaying all of history against a
+            //populated table measured about 3x the cost per commit of dropping everything and regenerating.
+            await repo.DeleteSnapshotsAndProjectedTables();
+            //the delete goes around the change tracker, so drop what it holds and read the commits back fresh
+            repo.ClearChangeTracker();
+        }
+        else
+        {
+            await repo.DeleteSnapshotsAfter(checkpoint);
+        }
+
+        await ApplyCommits(repo, (await repo.GetCommitsAfter(checkpoint)).ToSortedSet());
+    }
+
+    private async Task ApplyCommits(CrdtRepository repo, SortedSet<Commit> commitsToApply)
+    {
         Dictionary<Guid, ObjectSnapshot?> snapshotLookup = [];
         if (commitsToApply.Count > 10)
         {
@@ -259,12 +275,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task RegenerateSnapshots()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        await repo.DeleteSnapshotsAndProjectedTables();
-        repo.ClearChangeTracker();
-        var allCommits = await repo.CurrentCommits()
-            .Include(c => c.ChangeEntities)
-            .ToSortedSetAsync();
-        await UpdateSnapshots(repo, allCommits);
+        await ReplayFromCheckpoint(repo, null);
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
@@ -340,7 +351,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         Commit commit,
         CrdtRepository repo)
     {
-        var checkpoint = await repo.FindNewestCheckpoint(commit, inclusive: true);
+        var checkpoint = await repo.FindCheckpointAtOrBefore(commit);
         var commitsToReplay = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: commit);
         return (repo.GetScopedRepository(checkpoint), commitsToReplay);
     }

@@ -311,7 +311,7 @@ internal class FastProjection
     /// Post-order DFS over FK edges so principal (parent) types come before dependents. Self
     /// references and FKs to non-projected types (e.g. the SnapshotId FK to Snapshots) are ignored.
     /// </summary>
-    private static List<Type> OrderTypesByDependency(IModel model, IEnumerable<Type> types)
+    internal static List<Type> OrderTypesByDependency(IModel model, IEnumerable<Type> types)
     {
         var typeSet = types.ToHashSet();
         var ordered = new List<Type>(typeSet.Count);

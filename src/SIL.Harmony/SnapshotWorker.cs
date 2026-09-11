@@ -14,19 +14,33 @@ internal class SnapshotWorker
     private readonly Dictionary<Guid, ObjectSnapshot?> _snapshotCache;
     private readonly CrdtRepository _crdtRepository;
     private readonly HarmonyConfig _crdtConfig;
+    private readonly Commit[] _batchCommits;
+    private readonly bool _snapshotTableIsEmpty;
+    private readonly SnapshotCheckpointPolicy _policy;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
     private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
+    /// <summary>batch position of each entity's newest droppable (non-root, this-run) snapshot; see KeepOrDrop</summary>
+    private readonly Dictionary<Guid, int> _droppableSnapshotCommitIndex = [];
+    /// <summary>half-open [from, to) batch position ranges left unsafe by a dropped snapshot; the input to checkpoint discovery</summary>
+    private readonly List<(int From, int ToExclusive)> _holes = [];
 
-    private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
+    private SnapshotWorker(SortedSet<Commit> commits,
+        Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
-        HarmonyConfig crdtConfig)
+        HarmonyConfig crdtConfig,
+        bool snapshotTableIsEmpty)
     {
+        _batchCommits = [.. commits];
+        _policy = new SnapshotCheckpointPolicy(
+            _batchCommits.Select(c => c.ChangeEntities.Count),
+            crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
         _pendingSnapshots = snapshots;
         _crdtRepository = crdtRepository;
         _snapshotCache = snapshotCache;
         _crdtConfig = crdtConfig;
+        _snapshotTableIsEmpty = snapshotTableIsEmpty;
     }
 
     internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
@@ -37,27 +51,37 @@ internal class SnapshotWorker
     {
         //we need to pass in the snapshots because we expect it to be modified, this is intended.
         //if the constructor makes a copy in the future this will need to be updated
-        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig).ApplyCommitChanges(commits);
+        var worker = new SnapshotWorker(commits, snapshots, [], crdtRepository, crdtConfig, false);
+        await worker.ApplyCommitChanges();
+        foreach (var (entityId, rootSnapshot) in worker._rootSnapshots)
+        {
+            //entities created during the replay only exist as roots, and a caller asking for state at a commit wants them too
+            snapshots.TryAdd(entityId, rootSnapshot);
+        }
+
         return snapshots;
     }
 
-    /// <param name="snapshotCache">a dictionary of entity id to latest snapshot id</param>
-    /// <param name="crdtRepository"></param>
-    /// <param name="crdtConfig"></param>
-    internal SnapshotWorker(Dictionary<Guid, ObjectSnapshot?> snapshotCache,
+    /// <param name="snapshotCache">a dictionary of entity id to its latest snapshot, or null when it has none</param>
+    /// <param name="snapshotTableIsEmpty">the snapshot table was emptied and stays that way until this run persists, so snapshot reads are skipped</param>
+    internal SnapshotWorker(SortedSet<Commit> commits,
+        Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
-        HarmonyConfig crdtConfig) : this([], snapshotCache, crdtRepository, crdtConfig)
+        HarmonyConfig crdtConfig,
+        bool snapshotTableIsEmpty = false) : this(commits, [], snapshotCache, crdtRepository, crdtConfig, snapshotTableIsEmpty)
     {
     }
 
-    public async Task UpdateSnapshots(SortedSet<Commit> commits)
+    public async Task UpdateSnapshots()
     {
-        await ApplyCommitChanges(commits);
+        await ApplyCommitChanges();
         await _crdtRepository.AddSnapshots([
             .._rootSnapshots.Values,
             .._newIntermediateSnapshots,
             .._pendingSnapshots.Values
         ]);
+        //flag checkpoints after the replay: the holes that say where a resume is safe are only known once it has finished
+        await _crdtRepository.SetCheckpoints(_batchCommits, _policy.DiscoverCheckpoints(_holes));
     }
 
     /// <summary>
@@ -65,17 +89,17 @@ internal class SnapshotWorker
     /// of snapshots that would be persisted instead of writing them. Used by benchmarks to isolate the
     /// <see cref="CrdtRepository.AddSnapshots"/> step from commit application.
     /// </summary>
-    internal async Task<IReadOnlyList<ObjectSnapshot>> ComputeSnapshotsToPersist(SortedSet<Commit> commits)
+    internal async Task<IReadOnlyList<ObjectSnapshot>> ComputeSnapshotsToPersist()
     {
-        await ApplyCommitChanges(commits);
+        await ApplyCommitChanges();
         return [.. _rootSnapshots.Values, .. _newIntermediateSnapshots, .. _pendingSnapshots.Values];
     }
 
-    private async ValueTask ApplyCommitChanges(SortedSet<Commit> commits)
+    private async ValueTask ApplyCommitChanges()
     {
         var intermediateSnapshots = new Dictionary<Guid, ObjectSnapshot>();
         var commitIndex = 0;
-        foreach (var commit in commits)
+        foreach (var commit in _batchCommits)
         {
             commitIndex++;
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
@@ -175,6 +199,8 @@ internal class SnapshotWorker
             return snapshot;
         }
 
+        if (_snapshotTableIsEmpty) return null;
+
         snapshot = await _crdtRepository.GetCurrentSnapshotByObjectId(entityId, true);
         _snapshotCache[entityId] = snapshot;
 
@@ -204,6 +230,8 @@ internal class SnapshotWorker
             yield return snapshot;
         }
 
+        if (_snapshotTableIsEmpty) yield break;
+
         await foreach (var snapshot in _crdtRepository.CurrentSnapshots()
             .Where(predicateExpression)
             .AsAsyncEnumerable())
@@ -216,34 +244,29 @@ internal class SnapshotWorker
 
     private async Task GenerateSnapshotForEntity(IObjectBase entity, ObjectSnapshot? prevSnapshot, ChangeContext context)
     {
-        //to get the state in a point in time we would have to find a snapshot before that time, then apply any commits that came after that snapshot but still before the point in time.
-        //we would probably want the most recent snapshot to always follow current, so we might need to track the number of changes a given snapshot represents so we can
-        //decide when to create a new snapshot instead of replacing one inline. This would be done by using the current snapshots parent, instead of the snapshot itself.
-        // s0 -> s1 -> sCurrent
-        // if always taking snapshots would become
-        // s0 -> s1 -> sCurrent -> sNew
-        //but but to not snapshot every change we could do this instead
-        // s0 -> s1 -> sNew
-
         //when both snapshots are for the same commit we don't want to keep the previous, therefore the new snapshot should be root
         var isRoot = prevSnapshot is null || (prevSnapshot.IsRoot && prevSnapshot.CommitId == context.Commit.Id);
         var newSnapshot = new ObjectSnapshot(entity, context.Commit, isRoot);
-        //if both snapshots are for the same commit then we don't want to keep the previous snapshot
-        if (prevSnapshot is null || prevSnapshot.CommitId == context.Commit.Id)
-        {
-            //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
-        }
-        else if (context.CommitIndex % 2 == 0 && !prevSnapshot.IsRoot && IsNew(prevSnapshot))
-        {
-            context.IntermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
-        }
+        //a previous snapshot at this same commit is just replaced in _pendingSnapshots; an earlier one is kept or holed
+        if (prevSnapshot is not null && prevSnapshot.CommitId != context.Commit.Id)
+            KeepOrDrop(prevSnapshot, context);
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        AddSnapshot(newSnapshot);
+        AddSnapshot(newSnapshot, context.CommitIndex);
     }
 
-    private void AddSnapshot(ObjectSnapshot snapshot)
+    private void KeepOrDrop(ObjectSnapshot prevSnapshot, ChangeContext context)
+    {
+        //only a non-root snapshot from this run is droppable; a root or a pre-batch snapshot stays and covers its gap
+        if (!_droppableSnapshotCommitIndex.TryGetValue(prevSnapshot.EntityId, out var prevCommitIndex)) return;
+        if (_policy.MustKeepSnapshot(prevCommitIndex, context.CommitIndex))
+            context.IntermediateSnapshots[prevSnapshot.EntityId] = prevSnapshot;
+        else
+            _holes.Add((prevCommitIndex, context.CommitIndex));
+    }
+
+    private void AddSnapshot(ObjectSnapshot snapshot, int commitIndex)
     {
         if (snapshot.IsRoot)
         {
@@ -253,23 +276,7 @@ internal class SnapshotWorker
         {
             //if there was already a pending snapshot there's no need to store it as both may point to the same commit
             _pendingSnapshots[snapshot.Entity.Id] = snapshot;
+            _droppableSnapshotCommitIndex[snapshot.EntityId] = commitIndex;
         }
-    }
-
-    /// <summary>
-    /// snapshot is not from the database
-    /// </summary>
-    private bool IsNew(ObjectSnapshot snapshot)
-    {
-        var entityId = snapshot.EntityId;
-        if (_pendingSnapshots.TryGetValue(entityId, out var pendingSnapshot))
-        {
-            return pendingSnapshot.Id == snapshot.Id;
-        }
-        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
-        {
-            return rootSnapshot.Id == snapshot.Id;
-        }
-        return false;
     }
 }

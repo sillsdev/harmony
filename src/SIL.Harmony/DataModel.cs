@@ -190,10 +190,45 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply)
     {
         if (commitsToApply.Count == 0) return;
-        var oldestAddedCommit = commitsToApply.First();
-        await repo.DeleteStaleSnapshots(oldestAddedCommit);
+        await ReplayFromCheckpoint(repo, await repo.FindCheckpointBefore(commitsToApply.First()));
+    }
+
+    /// <summary>
+    /// Rebuilds every snapshot after <paramref name="checkpoint"/> by replaying the commits that follow it.
+    /// A null checkpoint rebuilds all of history.
+    /// </summary>
+    private async Task ReplayFromCheckpoint(CrdtRepository repo, Commit? checkpoint)
+    {
+        if (checkpoint?.IsSnapshotCheckpoint == false)
+            throw new ArgumentException("checkpoint must be a snapshot checkpoint or null", nameof(checkpoint));
+
+        // A database with no checkpoints replays all of history,
+        // which is what we want, because it will trigger creating checkpoints
+        if (checkpoint is null)
+        {
+            //a new project has nothing to drop, and nothing stale in the change tracker either
+            if (await repo.HasSnapshots())
+            {
+                //replaying all of history against a populated table measured about 3x the cost per commit
+                //of dropping everything and regenerating
+                await repo.DeleteSnapshotsAndProjectedTables();
+                //the delete goes around the change tracker, so drop what it holds and read the commits back fresh
+                repo.ClearChangeTracker();
+            }
+        }
+        else
+        {
+            await repo.DeleteSnapshotsAfter(checkpoint);
+        }
+
+        await ApplyCommits(repo, (await repo.GetCommitsAfter(checkpoint)).ToSortedSet(), snapshotTableIsEmpty: checkpoint is null);
+    }
+
+    private async Task ApplyCommits(CrdtRepository repo, SortedSet<Commit> commitsToApply, bool snapshotTableIsEmpty = false)
+    {
         Dictionary<Guid, ObjectSnapshot?> snapshotLookup = [];
-        if (commitsToApply.Count > 10)
+        //an empty table can only yield a null per entity, so tell the worker that instead of loading it
+        if (!snapshotTableIsEmpty && commitsToApply.Count > 10)
         {
             // Bulk-load relevant snapshots to minimize DB queries
             var entityIds = commitsToApply
@@ -213,8 +248,8 @@ public class DataModel : ISyncable, IAsyncDisposable
             }
         }
 
-        var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
-        await snapshotWorker.UpdateSnapshots(commitsToApply);
+        var snapshotWorker = new SnapshotWorker(commitsToApply, snapshotLookup, repo, _crdtConfig.Value, snapshotTableIsEmpty);
+        await snapshotWorker.UpdateSnapshots();
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -240,12 +275,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task RegenerateSnapshots()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        await repo.DeleteSnapshotsAndProjectedTables();
-        repo.ClearChangeTracker();
-        var allCommits = await repo.CurrentCommits()
-            .Include(c => c.ChangeEntities)
-            .ToSortedSetAsync();
-        await UpdateSnapshots(repo, allCommits);
+        await ReplayFromCheckpoint(repo, null);
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)
@@ -306,18 +336,24 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAtCommit(Commit commit)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        var repository = repo.GetScopedRepository(commit);
-        var (snapshots, pendingCommits) = await repository.GetCurrentSnapshotsAndPendingCommits();
+        var (checkpointRepo, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
+        var snapshots = await checkpointRepo.GetCurrentSnapshots();
+        if (commitsToReplay.Count == 0) return snapshots;
+        return await SnapshotWorker.ApplyCommitsToSnapshots(snapshots, checkpointRepo, commitsToReplay, _crdtConfig.Value);
+    }
 
-        if (pendingCommits.Count != 0)
-        {
-            snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots,
-                repository,
-                pendingCommits,
-                _crdtConfig.Value);
-        }
-
-        return snapshots;
+    /// <summary>
+    /// What the point-in-time read paths resume from: a repository scoped to the newest checkpoint at or before
+    /// <paramref name="commit"/> (so every entity's current snapshot there is its complete state), and the commits to
+    /// replay onto it to reach <paramref name="commit"/>.
+    /// </summary>
+    private static async Task<(CrdtRepository checkpointRepo, SortedSet<Commit> commitsToReplay)> ResumeFromCheckpoint(
+        Commit commit,
+        CrdtRepository repo)
+    {
+        var checkpoint = await repo.FindCheckpointAtOrBefore(commit);
+        var commitsToReplay = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: commit);
+        return (repo.GetScopedRepository(checkpoint), commitsToReplay);
     }
 
     public async Task<T> GetAtTime<T>(DateTimeOffset time, Guid entityId)
@@ -374,26 +410,22 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     private async Task<ObjectSnapshot?> GetSnapshotAtCommit(Commit commit, Guid entityId, CrdtRepository repo)
     {
-        var repository = repo.GetScopedRepository(commit);
-        var snapshot = await repository.GetCurrentSnapshotByObjectId(entityId, false);
-        if (snapshot is null) return null;
-        var newCommits = await repository.CurrentCommits()
-            .Include(c => c.ChangeEntities)
-            .WhereAfter(snapshot.Commit)
-            .ToSortedSetAsync();
-        if (newCommits.Count > 0)
+        //fast path: every entity is complete at a checkpoint, so if the entity's newest snapshot as of the next checkpoint
+        //is already at or before this commit, nothing touched it in between and that snapshot is its state here, no replay.
+        var nextCheckpoint = await repo.FindCheckpointAtOrAfter(commit);
+        if (nextCheckpoint is not null)
         {
-            var snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(
-                new Dictionary<Guid, ObjectSnapshot>([
-                    new KeyValuePair<Guid, ObjectSnapshot>(snapshot.EntityId, snapshot)
-                ]),
-                repository,
-                newCommits,
-                _crdtConfig.Value);
-            snapshot = snapshots[snapshot.EntityId];
+            var newestByNextCheckpoint = await repo.GetScopedRepository(nextCheckpoint).GetCurrentSnapshotByObjectId(entityId);
+            //no snapshot by the next checkpoint means the entity does not exist at the commit either (roots are never pruned)
+            if (newestByNextCheckpoint is null) return null;
+            if (newestByNextCheckpoint.Commit.CompareKey.CompareTo(commit.CompareKey) <= 0) return newestByNextCheckpoint;
         }
 
-        return snapshot;
+        //we don't have a persisted snapshot in the correct state,
+        //so resume from the last checkpoint and replay the commits to this one to rebuild it
+        var (checkpointRepo, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
+        var snapshots = await SnapshotWorker.ApplyCommitsToSnapshots([], checkpointRepo, commitsToReplay, _crdtConfig.Value);
+        return snapshots.GetValueOrDefault(entityId) ?? await checkpointRepo.GetCurrentSnapshotByObjectId(entityId);
     }
 
     public async Task<SyncState> GetSyncState()

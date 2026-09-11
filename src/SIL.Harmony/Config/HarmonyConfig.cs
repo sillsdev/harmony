@@ -31,6 +31,11 @@ public class HarmonyConfig
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
     /// <summary>
+    /// Bounds how far back a replay of an out-of-order commit resumes, in changes. Lower keeps more snapshots (more
+    /// storage, cheaper replay); higher keeps fewer. The only dial in the snapshot checkpoint design.
+    /// </summary>
+    public int MaxChangesBetweenSnapshotCheckpoints { get; set; } = 100;
+    /// <summary>
     /// Controls how an unknown <see cref="IChange"/> <c>$type</c> is handled during deserialization.
     /// Defaults to <see cref="UnknownChangeHandling.Throw"/>; set to <see cref="UnknownChangeHandling.Fallback"/>
     /// to preserve unknown changes as <see cref="OpaqueChange"/>.

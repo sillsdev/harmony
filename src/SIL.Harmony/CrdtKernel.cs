@@ -48,7 +48,9 @@ public static class CrdtKernel
     {
         services.AddLogging();
         services.AddOptions<HarmonyConfig>().Configure(configureCrdt)
-            .Validate(config => config.MaxChangesBetweenSnapshotCheckpoints >= 1, "MaxChangesBetweenSnapshotCheckpoints must be at least 1")
+            .Validate(
+                config => config.MaxChangesBetweenSnapshotCheckpoints >= 1,
+                $"{nameof(HarmonyConfig.MaxChangesBetweenSnapshotCheckpoints)} must be at least 1")
             .PostConfigure(crdtConfig => crdtConfig.ObjectTypeListBuilder.Freeze());
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<HarmonyConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);

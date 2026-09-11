@@ -182,6 +182,12 @@ Two independent halves, sharing only the holes:
   recorded. This finds *every* safe commit, not only the grid's; the floor boundaries come out safe by construction, so
   the flagged set always contains them.
 
+`UpdateSnapshots` has no fast path: every write resolves the newest checkpoint before the batch and resumes there.
+On a healthy database that is the head commit (every batch leaves its last commit flagged), so an ordinary append
+deletes nothing and replays only the commits it added, the same work the old "no snapshots after this" shortcut did. The
+shortcut was dropped because it skipped the checkpoint lookup entirely, which left a database with no flags waiting for
+a late commit before it ever got any.
+
 `DataModel.ResumeFromCheckpoint` is the resume primitive the point-in-time read paths share (`GetSnapshotsAtCommit`,
 `GetSnapshotAtCommit`); the late-commit write path in `UpdateSnapshots` resolves its own resume point the same way.
 `FindNewestCheckpoint` reads the flags; the lookup is a partial index over the ordering tuple
@@ -203,7 +209,7 @@ Two things from the sections above were left alone:
   by each hole it covers (O(sum of hole lengths), bounded by drops times the floor width), next to the snapshots the
   batch already holds.
 - **Reading state at an old commit on a database with no checkpoints replays all of history**, since there is nothing to
-  resume from. Correct but slow, and it lasts until the first late commit establishes checkpoints.
+  resume from. Correct but slow, and it lasts until the first write establishes checkpoints.
 
 ## Deferred: thinning
 
@@ -228,10 +234,9 @@ root (insurance, see above).
 
 **Decision: do nothing. Ship no migration step, no detection, and do not mark anything.**
 
-Legacy databases have no flags, so the first late commit finds no checkpoint and replays all of
-history, which rebuilds every snapshot correctly and establishes checkpoints throughout. That is
-simultaneously the repair and the bootstrap, triggered automatically at the moment it is actually
-needed, with no upgrade path to write and nothing to detect.
+Legacy databases have no flags, so the first write of any kind finds no checkpoint and replays all
+of history, which rebuilds every snapshot correctly and establishes checkpoints throughout. That is
+simultaneously the repair and the bootstrap, with no upgrade path to write and nothing to detect.
 
 The reasoning for not marking the newest commit, which was the obvious alternative:
 
@@ -251,13 +256,12 @@ The reasoning for not marking the newest commit, which was the obvious alternati
 
 Accepted consequences:
 
-- The first sync that carries a late commit is slow, once, on the order of seconds to a few minutes
-  by the measurements below. Afterwards checkpoints exist and rollbacks are narrow.
-- A client that never receives a late commit never heals and never gets checkpoints. That is
-  self-consistent, since it also never rewinds, but any existing corruption stays and can still
-  escape at the FieldWorks sync boundary, where current snapshot state is authoritative rather than
-  the commits. Devices that sync to FLEx are therefore the ones worth watching, and
-  `RegenerateSnapshots` stays the support path for them.
+- The first write after upgrading is slow, once, on the order of seconds to a few minutes by the
+  measurements below. Afterwards checkpoints exist and rollbacks are narrow. That write is whatever
+  the user does first, a local edit as much as a sync, so it is not always behind a sync spinner.
+- Every client heals, including one that only ever edits locally. Waiting for a late commit instead
+  would leave those clients corrupt indefinitely, and their state still escapes at the FieldWorks
+  sync boundary, where current snapshot state is authoritative rather than the commits.
 - **Implementation note:** when no checkpoint is found, take the regenerate path rather than the
   rewind path. A rewind covering all of history measured about 3x more per commit than a regenerate,
   because it replays against a still-populated table, and it leaves the projected tables to be

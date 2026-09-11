@@ -259,15 +259,6 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task HasSnapshotsAfter_ComparesTheWholeCommitOrder()
-    {
-        await _repository.AddSnapshots([Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 1))]);
-
-        (await _repository.HasSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 0)))).Should().BeTrue();
-        (await _repository.HasSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 2)))).Should().BeFalse();
-    }
-
-    [Fact]
     public async Task DeleteSnapshotsAfter_KeepsSnapshotsOlderThanTheCommit()
     {
         await _repository.AddSnapshots([

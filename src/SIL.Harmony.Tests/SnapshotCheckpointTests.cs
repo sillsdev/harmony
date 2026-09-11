@@ -269,6 +269,22 @@ public class SnapshotCheckpointTests() : DataModelTestBase(configure: services =
     }
 
     [Fact]
+    public async Task AnOrdinaryAppendReplaysOnlyTheCommitsItAdds()
+    {
+        var commits = await AddInOneBatch(this, PlanHistory(20, seed: 7));
+        var existingSnapshotIds = await DbContext.Snapshots.AsNoTracking()
+            .Select(s => s.Id)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+
+        await WriteChangeAfter(commits[^1], SetWord(Guid.NewGuid(), "appended"));
+
+        var snapshotIds = await DbContext.Snapshots.AsNoTracking()
+            .Select(s => s.Id)
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        snapshotIds.Should().Contain(existingSnapshotIds, "the head is a checkpoint, so an append resumes there and rebuilds nothing");
+    }
+
+    [Fact]
     public async Task ReadingAnEntityAtACommitItIsCompleteAtReturnsItsStoredSnapshot()
     {
         //wordId is set once early and edited once at the very end; a second word churns every commit in between, which
@@ -307,6 +323,24 @@ public class SnapshotCheckpointTests() : DataModelTestBase(configure: services =
         (await CheckpointIds()).Should().NotBeEmpty("the repair is also the bootstrap");
         var state = await CurrentState(this);
         state.Remove(late.ChangeEntities[0].EntityId).Should().BeTrue();
+        state.Should().BeEquivalentTo(expected);
+    }
+
+    [Fact]
+    public async Task ADatabaseWithNoCheckpointsRebuildsEverySnapshotOnAnOrdinaryAppend()
+    {
+        var commits = await AddInOneBatch(this, PlanHistory(12, seed: 6));
+        var expected = await CurrentState(this);
+        //what a database written before checkpoints existed looks like
+        await DbContext.Commits.ExecuteUpdateAsync(s => s.SetProperty(c => c.IsSnapshotCheckpoint, false), TestContext.Current.CancellationToken);
+        DbContext.ChangeTracker.Clear();
+
+        var appended = await WriteChangeAfter(commits[^1], SetWord(Guid.NewGuid(), "appended"));
+
+        (await CheckpointIds()).Should().IntersectWith(commits.Select(c => c.Id),
+            "any write replays the unflagged history and flags it, rather than waiting for a late commit");
+        var state = await CurrentState(this);
+        state.Remove(appended.ChangeEntities[0].EntityId).Should().BeTrue();
         state.Should().BeEquivalentTo(expected);
     }
 

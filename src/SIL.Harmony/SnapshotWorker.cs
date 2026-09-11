@@ -15,6 +15,7 @@ internal class SnapshotWorker
     private readonly CrdtRepository _crdtRepository;
     private readonly HarmonyConfig _crdtConfig;
     private readonly Commit[] _batchCommits;
+    private readonly bool _snapshotTableIsEmpty;
     private readonly SnapshotCheckpointPolicy _policy;
     private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots = [];
     private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
@@ -28,7 +29,8 @@ internal class SnapshotWorker
         Dictionary<Guid, ObjectSnapshot> snapshots,
         Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
-        HarmonyConfig crdtConfig)
+        HarmonyConfig crdtConfig,
+        bool snapshotTableIsEmpty)
     {
         _batchCommits = [.. commits];
         _policy = new SnapshotCheckpointPolicy(
@@ -38,6 +40,7 @@ internal class SnapshotWorker
         _crdtRepository = crdtRepository;
         _snapshotCache = snapshotCache;
         _crdtConfig = crdtConfig;
+        _snapshotTableIsEmpty = snapshotTableIsEmpty;
     }
 
     internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
@@ -48,7 +51,7 @@ internal class SnapshotWorker
     {
         //we need to pass in the snapshots because we expect it to be modified, this is intended.
         //if the constructor makes a copy in the future this will need to be updated
-        var worker = new SnapshotWorker(commits, snapshots, [], crdtRepository, crdtConfig);
+        var worker = new SnapshotWorker(commits, snapshots, [], crdtRepository, crdtConfig, false);
         await worker.ApplyCommitChanges();
         foreach (var (entityId, rootSnapshot) in worker._rootSnapshots)
         {
@@ -60,10 +63,12 @@ internal class SnapshotWorker
     }
 
     /// <param name="snapshotCache">a dictionary of entity id to its latest snapshot, or null when it has none</param>
+    /// <param name="snapshotTableIsEmpty">the snapshot table was emptied and stays that way until this run persists, so snapshot reads are skipped</param>
     internal SnapshotWorker(SortedSet<Commit> commits,
         Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
-        HarmonyConfig crdtConfig) : this(commits, [], snapshotCache, crdtRepository, crdtConfig)
+        HarmonyConfig crdtConfig,
+        bool snapshotTableIsEmpty = false) : this(commits, [], snapshotCache, crdtRepository, crdtConfig, snapshotTableIsEmpty)
     {
     }
 
@@ -194,6 +199,8 @@ internal class SnapshotWorker
             return snapshot;
         }
 
+        if (_snapshotTableIsEmpty) return null;
+
         snapshot = await _crdtRepository.GetCurrentSnapshotByObjectId(entityId, true);
         _snapshotCache[entityId] = snapshot;
 
@@ -222,6 +229,8 @@ internal class SnapshotWorker
         {
             yield return snapshot;
         }
+
+        if (_snapshotTableIsEmpty) yield break;
 
         await foreach (var snapshot in _crdtRepository.CurrentSnapshots()
             .Where(predicateExpression)

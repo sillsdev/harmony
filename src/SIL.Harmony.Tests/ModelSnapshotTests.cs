@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using SIL.Harmony.Config;
 using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
@@ -137,10 +138,12 @@ public class ModelSnapshotTests : DataModelTestBase
 
         //adding all via sync means there's sparse snapshots
         await AddCommitsViaSync(changes.Concat(addNew));
-        var commitCount = changeCount * 2;
-        var checkpointCount = Enumerable.Range(1, commitCount).Count(i => SnapshotCheckpointPolicy.Default.IsCheckpoint(i, commitCount));
-        //the root from the first change, a root per newly added word, and one snapshot of the edited word per checkpoint
-        DbContext.Snapshots.Should().HaveCount(1 + changeCount + checkpointCount);
+        //the edited word is touched at odd batch positions (interleaved with the new words); the floor keeps its snapshot
+        //at any such position whose gap to the next spans a boundary, plus its latest, plus the root from the first commit
+        var floor = new SnapshotCheckpointPolicy(Enumerable.Repeat(1, changeCount * 2), new HarmonyConfig().MaxChangesBetweenSnapshotCheckpoints);
+        var editPositions = Enumerable.Range(0, changeCount).Select(i => 2 * i + 1).ToArray();
+        var keptEdits = editPositions.Zip(editPositions.Skip(1), (from, to) => floor.MustKeepSnapshot(from, to)).Count(kept => kept) + 1;
+        DbContext.Snapshots.Should().HaveCount(1 + changeCount + keptEdits);
 
         for (int i = 0; i < changeCount; i++)
         {

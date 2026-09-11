@@ -2,57 +2,74 @@ namespace SIL.Harmony.Tests;
 
 public class SnapshotCheckpointPolicyTests
 {
-    private static readonly SnapshotCheckpointPolicy Policy = new(4);
+    // one change per commit makes the floor reduce to the old grid: keep iff a multiple of maxChanges falls in the gap
+    private static SnapshotCheckpointPolicy SingleChangeCommits(int commitCount, int maxChanges) =>
+        new(Enumerable.Repeat(1, commitCount), maxChanges);
 
     [Theory]
-    [InlineData(1, 10, false)]
-    [InlineData(4, 10, true)]
-    [InlineData(8, 10, true)]
-    [InlineData(9, 10, false)]
-    [InlineData(10, 10, true)]
-    public void PicksEveryNthCommitOfTheBatchAndItsLast(int commitIndex, int commitCount, bool isCheckpoint)
-    {
-        Policy.IsCheckpoint(commitIndex, commitCount).Should().Be(isCheckpoint);
-    }
-
-    [Theory]
-    [InlineData(1, 3, false)]
-    [InlineData(1, 5, true)]
-    //a checkpoint at the snapshot's own commit counts, that's the position a replay would seed the entity from
-    [InlineData(4, 5, true)]
+    [InlineData(1, 3, false)] // gap [1,3) spans no floor boundary
+    [InlineData(1, 5, true)]  // boundary at commit 4
+    [InlineData(4, 5, true)]  // that boundary is the gap's own start
     [InlineData(5, 8, false)]
-    [InlineData(5, 9, true)]
-    public void KeepsASnapshotOnlyWhenACheckpointFallsInTheGapItWouldLeave(int commitIndex, int nextCommitIndex, bool mustKeep)
+    [InlineData(5, 9, true)]  // boundary at commit 8
+    public void KeepsASnapshotOnlyWhenAFloorBoundaryFallsInTheGap(int from, int to, bool mustKeep)
     {
-        Policy.MustKeepSnapshot(commitIndex, nextCommitIndex).Should().Be(mustKeep);
+        SingleChangeCommits(20, maxChanges: 4).MustKeepSnapshot(from, to).Should().Be(mustKeep);
     }
 
     [Fact]
-    public void KeepsExactlyTheSnapshotsTheCheckpointsItPicksNeed()
+    public void ABigCommitIsAFloorBoundaryOfItsOwn()
     {
-        const int commitCount = 40;
-        var policy = new SnapshotCheckpointPolicy(7);
-        var checkpoints = Enumerable.Range(1, commitCount).Where(i => policy.IsCheckpoint(i, commitCount)).ToHashSet();
-
-        for (var commitIndex = 1; commitIndex <= commitCount; commitIndex++)
-        {
-            for (var nextCommitIndex = commitIndex + 1; nextCommitIndex <= commitCount; nextCommitIndex++)
-            {
-                var gapSpansACheckpoint = Enumerable.Range(commitIndex, nextCommitIndex - commitIndex).Any(checkpoints.Contains);
-                policy.MustKeepSnapshot(commitIndex, nextCommitIndex).Should().Be(gapSpansACheckpoint,
-                    $"the gap [{commitIndex}, {nextCommitIndex}) of a {commitCount} commit batch");
-            }
-        }
+        // commit 2 alone carries a whole floor interval of changes, so the snapshot before commit 3 must be kept
+        var policy = new SnapshotCheckpointPolicy([1, 5, 1, 1, 1], maxChanges: 4);
+        policy.MustKeepSnapshot(1, 2).Should().BeFalse("commit 1 is one change, no boundary yet");
+        policy.MustKeepSnapshot(2, 3).Should().BeTrue("commit 2's five changes cross a boundary");
     }
 
     [Fact]
-    public void KeepsEverySnapshotAtTheNeverPruneEndOfTheDensityDial()
+    public void CountsChangesNotCommits()
     {
-        var everyCommit = new SnapshotCheckpointPolicy(1);
-        foreach (var commitIndex in Enumerable.Range(1, 5))
-        {
-            everyCommit.IsCheckpoint(commitIndex, 5).Should().BeTrue();
-            everyCommit.MustKeepSnapshot(commitIndex, commitIndex + 1).Should().BeTrue();
-        }
+        // ten single-change commits hold no boundary at maxChanges 20; ten five-change commits hold two
+        new SnapshotCheckpointPolicy(Enumerable.Repeat(1, 10), 20).MustKeepSnapshot(1, 11).Should().BeFalse();
+        new SnapshotCheckpointPolicy(Enumerable.Repeat(5, 10), 20).MustKeepSnapshot(1, 11).Should().BeTrue();
+    }
+
+    [Fact]
+    public void KeepsEverySnapshotWhenTheFloorIsEveryChange()
+    {
+        // maxChanges 1 forces a boundary at every commit, so no snapshot is ever droppable
+        var everyCommit = SingleChangeCommits(5, maxChanges: 1);
+        foreach (var from in Enumerable.Range(1, 4))
+            everyCommit.MustKeepSnapshot(from, from + 1).Should().BeTrue();
+    }
+
+    private static bool[] CheckpointsOf(int commitCount, params (int From, int ToExclusive)[] holes) =>
+        SingleChangeCommits(commitCount, maxChanges: 1).DiscoverCheckpoints(holes);
+
+    [Fact]
+    public void EveryCommitIsACheckpointWhenNothingWasDropped()
+    {
+        CheckpointsOf(5).Should().Equal(true, true, true, true, true);
+    }
+
+    [Fact]
+    public void AHoleClearsOnlyThePositionsItCovers()
+    {
+        // [2,4) is half-open: positions 2 and 3 unsafe, 4 safe again
+        CheckpointsOf(5, (2, 4)).Should().Equal(true, false, false, true, true);
+    }
+
+    [Fact]
+    public void AdjacentAndOverlappingHolesUnion()
+    {
+        CheckpointsOf(6, (1, 3), (3, 5)).Should().Equal(false, false, false, false, true, true);
+        CheckpointsOf(6, (1, 4), (2, 3)).Should().Equal(false, false, false, true, true, true);
+    }
+
+    [Fact]
+    public void AHoleReachingTheLastCommitClearsUpToButNotIncludingIt()
+    {
+        //a hole's end is always a re-touch, so it can never be the last commit; the last position stays safe
+        CheckpointsOf(5, (3, 5)).Should().Equal(true, true, false, false, true);
     }
 }

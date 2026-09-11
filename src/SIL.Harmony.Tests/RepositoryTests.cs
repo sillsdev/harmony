@@ -259,19 +259,6 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeleteSnapshotsAfter_Null_DeletesEverySnapshot()
-    {
-        await _repository.AddSnapshots([
-            Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
-            Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(2, 0)),
-        ]);
-
-        await _repository.DeleteSnapshotsAfter(null);
-
-        _crdtDbContext.Snapshots.Should().BeEmpty();
-    }
-
-    [Fact]
     public async Task HasSnapshotsAfter_ComparesTheWholeCommitOrder()
     {
         await _repository.AddSnapshots([Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 1))]);

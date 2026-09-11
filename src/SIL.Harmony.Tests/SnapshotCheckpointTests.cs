@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 
@@ -11,8 +13,12 @@ namespace SIL.Harmony.Tests;
 /// entity's state there. These tests check that property rather than any single scenario, because the ways it can break
 /// all look local and harmless (see docs/snapshot-checkpoints.md).
 /// </summary>
-public class SnapshotCheckpointTests : DataModelTestBase
+public class SnapshotCheckpointTests() : DataModelTestBase(configure: services =>
+    services.Configure<HarmonyConfig>(config => config.MaxChangesBetweenSnapshotCheckpoints = TestMaxChanges))
 {
+    // a low floor so short test batches still cross several boundaries; the plans below are one change per commit
+    private const int TestMaxChanges = 8;
+
     private sealed record PlannedChange(DateTimeOffset Date, IChange Change);
 
     /// <summary>
@@ -119,6 +125,16 @@ public class SnapshotCheckpointTests : DataModelTestBase
             .ToArrayAsync(TestContext.Current.CancellationToken);
     }
 
+    // 1-based positions in the batch that came out as checkpoints, ascending
+    private async Task<int[]> CheckpointPositions(Commit[] commits)
+    {
+        var checkpointIds = (await CheckpointIds()).ToHashSet();
+        return commits.Select((commit, index) => (commit, position: index + 1))
+            .Where(x => checkpointIds.Contains(x.commit.Id))
+            .Select(x => x.position)
+            .ToArray();
+    }
+
     [Theory]
     [InlineData(1)]
     [InlineData(2)]
@@ -188,12 +204,36 @@ public class SnapshotCheckpointTests : DataModelTestBase
     }
 
     [Fact]
-    public async Task ASyncedBatchGetsACheckpointEveryEighthCommitAndOneAtItsEnd()
+    public async Task ConsecutiveCheckpointsAreNeverMoreThanTheFloorApart()
     {
-        var commits = await AddInOneBatch(this, PlanHistory(20, seed: 4));
+        //one word edited every commit: every intermediate snapshot the floor doesn't keep becomes a hole, so the only
+        //safe commits are the floor boundaries themselves, the worst case for how far apart checkpoints can be
+        var wordId = Guid.NewGuid();
+        var plan = Enumerable.Range(0, 24)
+            .Select(i => new PlannedChange(new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(i + 1),
+                i == 0 ? SetWord(wordId, "word") : new SetWordNoteChange(wordId, $"note {i}")))
+            .ToArray();
+        var commits = await AddInOneBatch(this, plan);
+        var checkpointPositions = await CheckpointPositions(commits);
 
-        //pinned on purpose: one checkpoint per batch is also correct, but it rolls a fresh clone back to the start of history
-        (await CheckpointIds()).Should().Equal(commits[7].Id, commits[15].Id, commits[19].Id);
+        checkpointPositions.Should().Contain(commits.Length, "the last commit is always safe to resume from");
+        checkpointPositions[0].Should().BeLessThanOrEqualTo(TestMaxChanges, "the first resume point is within a floor interval of the start");
+        checkpointPositions.Zip(checkpointPositions.Skip(1), (a, b) => b - a)
+            .Should().OnlyContain(gap => gap <= TestMaxChanges, "no late commit ever has to replay more than a floor interval");
+    }
+
+    [Fact]
+    public async Task DiscoveryFlagsEverySafeCommitNotJustTheFloor()
+    {
+        //every commit creates a distinct word and never touches it again, so nothing is ever dropped and every commit is safe
+        var plan = Enumerable.Range(0, 24)
+            .Select(i => new PlannedChange(new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(i + 1), SetWord(Guid.NewGuid(), $"word {i}")))
+            .ToArray();
+        var commits = await AddInOneBatch(this, plan);
+
+        var checkpointPositions = await CheckpointPositions(commits);
+        checkpointPositions.Should().Equal(Enumerable.Range(1, commits.Length),
+            "with no dropped snapshots there are no holes, so a grid every eighth commit would have missed most of these");
     }
 
     [Fact]
@@ -210,21 +250,46 @@ public class SnapshotCheckpointTests : DataModelTestBase
     public async Task ALateCommitResumesFromTheNewestCheckpointBeforeItRatherThanRebuildingEverything()
     {
         var commits = await AddInOneBatch(this, PlanHistory(20, seed: 5));
-        var checkpoint = commits[7];
-        var untouchedSnapshotIds = await DbContext.Snapshots.AsNoTracking()
-            .Include(s => s.Commit)
-            .ToArrayAsync(TestContext.Current.CancellationToken);
-        var keptSnapshotIds = untouchedSnapshotIds
-            .Where(s => s.Commit.CompareKey.CompareTo(checkpoint.CompareKey) <= 0)
+        var latePosition = 9; // 0-based index of the commit the late commit lands just after
+
+        // the replay must resume at the newest checkpoint before the late commit, so snapshots at or before it survive
+        var checkpointIds = (await CheckpointIds()).ToHashSet();
+        var resumeCheckpoint = commits.Take(latePosition + 1).Last(c => checkpointIds.Contains(c.Id));
+        var keptSnapshotIds = await DbContext.Snapshots.AsNoTracking().Include(s => s.Commit)
+            .Where(s => s.Commit.HybridDateTime.DateTime <= resumeCheckpoint.HybridDateTime.DateTime)
             .Select(s => s.Id)
-            .ToArray();
+            .ToArrayAsync(TestContext.Current.CancellationToken);
         keptSnapshotIds.Should().NotBeEmpty();
 
-        await WriteChangeAfter(commits[9], SetWord(Guid.NewGuid(), "written late"));
+        await WriteChangeAfter(commits[latePosition], SetWord(Guid.NewGuid(), "written late"));
 
         var snapshotIds = await DbContext.Snapshots.AsNoTracking().Select(s => s.Id).ToArrayAsync(TestContext.Current.CancellationToken);
-        snapshotIds.Should().Contain(keptSnapshotIds);
-        (await CheckpointIds()).Should().Contain(checkpoint.Id, "a commit before the replay window keeps its flag");
+        snapshotIds.Should().Contain(keptSnapshotIds, "snapshots at or before the resume checkpoint are never rebuilt");
+        (await CheckpointIds()).Should().Contain(resumeCheckpoint.Id, "a commit before the replay window keeps its flag");
+    }
+
+    [Fact]
+    public async Task ReadingAnEntityAtACommitItIsCompleteAtReturnsItsStoredSnapshot()
+    {
+        //wordId is set once early and edited once at the very end; a second word churns every commit in between, which
+        //holes those positions so they are not checkpoints. Reading wordId in that churny middle still hits the fast path:
+        //it is complete there, so its state is its stored early snapshot, not the late edit and with no replay.
+        var wordId = Guid.NewGuid();
+        var churnId = Guid.NewGuid();
+        var plan = new List<PlannedChange>();
+        DateTimeOffset Day(int i) => new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(i + 1);
+        plan.Add(new PlannedChange(Day(0), SetWord(wordId, "early")));
+        plan.Add(new PlannedChange(Day(1), SetWord(churnId, "churn")));
+        for (var i = 2; i <= 12; i++) plan.Add(new PlannedChange(Day(i), new SetWordNoteChange(churnId, $"churn {i}")));
+        plan.Add(new PlannedChange(Day(13), new SetWordNoteChange(wordId, "late note")));
+        var commits = await AddInOneBatch(this, [.. plan]);
+
+        var readAt = commits[6]; // a churny, non-checkpoint commit well before wordId's late edit
+        (await CheckpointIds()).Should().NotContain(readAt.Id, "otherwise this doesn't exercise a non-checkpoint read");
+
+        var word = await DataModel.GetAtCommit<Word>(readAt.Id, wordId);
+        word.Text.Should().Be("early");
+        word.Note.Should().BeNull("the late note comes after the commit being read");
     }
 
     [Fact]

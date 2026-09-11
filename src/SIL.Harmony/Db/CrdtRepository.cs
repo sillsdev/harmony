@@ -61,27 +61,23 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         ILogger<CrdtRepository> logger,
         FastProjection fastProjection,
         IEnumerable<IProjectedEntityInterceptor> interceptors)
-        : this(dbContext, crdtConfig, logger, fastProjection, interceptors, scoped: false, null)
+        : this(dbContext, MakeCurrentSnapshotsQuery(dbContext), crdtConfig, logger, fastProjection, interceptors)
     {
     }
 
-    private CrdtRepository(ICrdtDbContext dbContext, IOptions<HarmonyConfig> crdtConfig,
+    private CrdtRepository(ICrdtDbContext dbContext,
+        IQueryable<ObjectSnapshot> currentSnapshots,
+        IOptions<HarmonyConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
         FastProjection fastProjection,
-        IEnumerable<IProjectedEntityInterceptor> interceptors,
-        bool scoped,
-        Commit? ignoreChangesAfter)
+        IEnumerable<IProjectedEntityInterceptor> interceptors)
     {
         _crdtConfig = crdtConfig;
-        _dbContext = scoped ? new ScopedDbContext(dbContext, ignoreChangesAfter) : dbContext;
+        _dbContext = dbContext;
         _logger = logger;
         _fastProjection = fastProjection;
         _interceptors = interceptors as IProjectedEntityInterceptor[] ?? interceptors.ToArray();
-        //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
-        //but since we're using a custom query, we can use it directly and apply the scoped filters manually
-        _currentSnapshotsQueryable = scoped && ignoreChangesAfter is null
-            ? dbContext.Set<ObjectSnapshot>().Where(_ => false).AsNoTracking()
-            : MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
+        _currentSnapshotsQueryable = currentSnapshots;
         _lock = Locks.GetOrAdd(DatabaseIdentifier, _ => new AsyncLock());
     }
 
@@ -151,32 +147,43 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return await Snapshots.WhereAfter(commit).AnyAsync();
     }
 
-    /// <param name="commit">null deletes every snapshot</param>
-    public async Task DeleteSnapshotsAfter(Commit? commit)
+    public async Task DeleteSnapshotsAfter(Commit commit)
     {
-        await (commit is null ? Snapshots : Snapshots.WhereAfter(commit)).ExecuteDeleteAsync();
+        await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();
     }
 
     /// <summary>
     /// The newest commit a replay may resume from, or null when there is none and all of history has to be replayed.
     /// </summary>
-    public async Task<Commit?> FindNewestCheckpoint(Commit? before = null, bool inclusive = false)
+    public async Task<Commit?> FindNewestCheckpoint(Commit before, bool inclusive = false)
     {
-        var checkpoints = Commits.Where(c => c.IsSnapshotCheckpoint);
-        if (before is not null) checkpoints = checkpoints.WhereBefore(before, inclusive);
-        return await checkpoints.DefaultOrderDescending().FirstOrDefaultAsync();
+        return await Commits.Where(c => c.IsSnapshotCheckpoint)
+            .WhereBefore(before, inclusive)
+            .DefaultOrderDescending()
+            .FirstOrDefaultAsync();
     }
 
     /// <summary>
-    /// Records which of the commits about to be replayed are checkpoints. Has to run before the replay, which keeps
-    /// whatever snapshots this choice needs, and only ever covers commits being replayed: see <see cref="SnapshotCheckpointPolicy"/>.
+    /// The oldest checkpoint at or after <paramref name="commit"/>, or null when there are no checkpoints yet. Since the
+    /// last commit is always a checkpoint, this is null only on a database that predates checkpoints.
     /// </summary>
-    public async Task SetCheckpoints(SortedSet<Commit> commitsToReplay, SnapshotCheckpointPolicy policy)
+    public async Task<Commit?> FindCheckpointAtOrAfter(Commit commit)
     {
-        var commitIndex = 0;
-        foreach (var commit in commitsToReplay)
+        return await Commits.Where(c => c.IsSnapshotCheckpoint)
+            .WhereAfter(commit, inclusive: true)
+            .DefaultOrder()
+            .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// Persists the discovered checkpoint flags onto the batch's commits. <paramref name="isCheckpoint"/> is in the same
+    /// order as <paramref name="batch"/>.
+    /// </summary>
+    public async Task SetCheckpoints(Commit[] batch, bool[] isCheckpoint)
+    {
+        for (var i = 0; i < batch.Length; i++)
         {
-            commit.IsSnapshotCheckpoint = policy.IsCheckpoint(++commitIndex, commitsToReplay.Count);
+            batch[i].IsSnapshotCheckpoint = isCheckpoint[i];
         }
 
         await _dbContext.SaveChangesAsync();
@@ -206,11 +213,14 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return Commits.DefaultOrder();
     }
 
-    private static IQueryable<ObjectSnapshot> MakeCurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? ignoreChangesAfter)
+    // the whole current snapshot per entity, unscoped
+    private static IQueryable<ObjectSnapshot> MakeCurrentSnapshotsQuery(ICrdtDbContext dbContext) => MakeCurrentSnapshotsQuery(dbContext, upToInclusive: null);
+
+    private static IQueryable<ObjectSnapshot> MakeCurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? upToInclusive)
     {
-        var ignoreAfterDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
-        var ignoreAfterCounter = ignoreChangesAfter?.HybridDateTime.Counter;
-        var ignoreAfterCommitId = ignoreChangesAfter?.Id;
+        var ignoreAfterDate = upToInclusive?.HybridDateTime.DateTime.UtcDateTime;
+        var ignoreAfterCounter = upToInclusive?.HybridDateTime.Counter;
+        var ignoreAfterCommitId = upToInclusive?.Id;
         return dbContext.Set<ObjectSnapshot>().FromSql(
             $"""
              WITH LatestSnapshots AS (SELECT first_value(s1.Id)
@@ -281,6 +291,14 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .WhereAfter(commit)
             .DefaultOrder()
             .ToArrayAsync();
+    }
+
+    /// <summary>The commits in <c>(afterExclusive, upToInclusive]</c>, oldest first. Null <paramref name="afterExclusive"/> starts at the beginning.</summary>
+    public async Task<SortedSet<Commit>> GetCommitsBetween(Commit? afterExclusive, Commit upToInclusive)
+    {
+        var commits = Commits.Include(c => c.ChangeEntities).WhereBefore(upToInclusive, inclusive: true);
+        if (afterExclusive is not null) commits = commits.WhereAfter(afterExclusive);
+        return await commits.ToSortedSetAsync();
     }
 
     public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)
@@ -376,10 +394,13 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await _crdtConfig.Value.OnProjectedEntitiesChanged(batch);
     }
 
-    /// <param name="excludeChangesAfterCommit">null hides all of history, which is what resuming a replay from before the first commit sees</param>
-    public CrdtRepository GetScopedRepository(Commit? excludeChangesAfterCommit)
+    /// <param name="upToInclusive">null scopes to before the first commit, i.e. nothing, which is what a replay resuming from before history sees</param>
+    public CrdtRepository GetScopedRepository(Commit? upToInclusive)
     {
-        return new CrdtRepository(_dbContext, _crdtConfig, _logger, _fastProjection, _interceptors, scoped: true, excludeChangesAfterCommit);
+        var scoped = new ScopedDbContext(_dbContext, upToInclusive);
+        //the scoped context can't serve the custom current-snapshots query, so build it against the raw context and scope by hand
+        var currentSnapshots = upToInclusive is null ? scoped.Snapshots : MakeCurrentSnapshotsQuery(_dbContext, upToInclusive);
+        return new CrdtRepository(scoped, currentSnapshots, _crdtConfig, _logger, _fastProjection, _interceptors);
     }
 
     /// <summary>
@@ -486,15 +507,15 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     }
 }
 
-internal class ScopedDbContext(ICrdtDbContext inner, Commit? ignoreChangesAfter) : ICrdtDbContext
+internal class ScopedDbContext(ICrdtDbContext inner, Commit? upToInclusive) : ICrdtDbContext
 {
-    public IQueryable<Commit> Commits => ignoreChangesAfter is null
+    public IQueryable<Commit> Commits => upToInclusive is null
         ? inner.Commits.Where(_ => false)
-        : inner.Commits.WhereBefore(ignoreChangesAfter, inclusive: true);
+        : inner.Commits.WhereBefore(upToInclusive, inclusive: true);
 
-    public IQueryable<ObjectSnapshot> Snapshots => ignoreChangesAfter is null
+    public IQueryable<ObjectSnapshot> Snapshots => upToInclusive is null
         ? inner.Snapshots.Where(_ => false)
-        : inner.Snapshots.WhereBefore(ignoreChangesAfter, inclusive: true);
+        : inner.Snapshots.WhereBefore(upToInclusive, inclusive: true);
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {

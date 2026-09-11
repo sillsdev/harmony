@@ -44,7 +44,6 @@ public class Commit : CommitBase<IChange>
     /// <summary>
     /// Snapshots are complete as of this commit: every entity's newest snapshot at or before it holds that entity's state
     /// there, so a replay can resume from here. It does not mean every entity has a snapshot dated at this commit.
-    /// A commit that arrives out of order rolls snapshots back to the newest checkpoint before it and replays from there.
     /// Local bookkeeping: never synced, not part of the hash, and different devices legitimately have different sets of it.
     /// </summary>
     [JsonIgnore]

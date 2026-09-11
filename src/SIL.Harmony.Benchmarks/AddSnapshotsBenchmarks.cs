@@ -131,8 +131,8 @@ public class AddSnapshotsBenchmarks
         foreach (var entityId in entityIds)
             snapshotLookup.TryAdd(entityId, null);
 
-        var worker = new SnapshotWorker(snapshotLookup, _repository, _local.CrdtConfig);
-        _snapshotsToAdd = worker.ComputeSnapshotsToPersist(measuredCommits).GetAwaiter().GetResult().ToArray();
+        var worker = new SnapshotWorker(measuredCommits, snapshotLookup, _repository, _local.CrdtConfig);
+        _snapshotsToAdd = worker.ComputeSnapshotsToPersist().GetAwaiter().GetResult().ToArray();
     }
 
     [Benchmark]

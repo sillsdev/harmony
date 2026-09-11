@@ -43,6 +43,11 @@ is what made the first attempt lose data (see Corrections).
 
 ## What we are building
 
+> Superseded in part by **What shipped** below. The bool on `Commit` and the change-based retention floor stand, but
+> checkpoints ended up *discovered* from the holes rather than *preselected* by a grid, so "the flag is a decision, not a
+> record", "many checkpoints per run", and the "Density is the only dial" framing below describe the abandoned grid
+> design. The reasoning is kept for the record.
+
 - **Explicit checkpoints, marked with a bool on `Commit`.** Local-only bookkeeping: `[JsonIgnore]`,
   never synced, not part of the commit hash (the hash is `f(Id, parentHash)` only, so a new column
   is safe). Different devices will legitimately have different checkpoint sets.
@@ -165,16 +170,38 @@ set). The same function is what thinning runs later, and it can be tested withou
 
 ## What shipped
 
-`SnapshotCheckpointPolicy` holds both halves of the decision at an interval of 8: `IsCheckpoint` picks every 8th commit
-of a replayed batch plus its last, and `MustKeepSnapshot` is the pure function the pruner and, later, thinning share.
-`CrdtRepository.SetCheckpoints` writes the flags before the replay starts. `DataModel.ResumeFromCheckpoint` is the shared
-primitive, used by `UpdateSnapshots`, `GetSnapshotsAtCommit` and `GetSnapshotAtCommit`.
+The flag stayed on `Commit`, but it is now **discovered from the holes the replay left**, not preselected from a grid.
+Two independent halves, sharing only the holes:
+
+- **The retention floor** (`SnapshotCheckpointPolicy`). `MustKeepSnapshot(from, to)` keeps a snapshot whenever dropping
+  it would let a hole span a floor boundary, guaranteeing a safe commit at least every `MaxChangesBetweenSnapshotCheckpoints`
+  changes (`HarmonyConfig`, default 100). Changes, not commits, because replay cost is per change: one commit of 1000
+  changes costs as much to replay as 1000 single-change ones. This is the only dial, and it decides retention only.
+- **Discovery** (`SnapshotCheckpointPolicy.DiscoverCheckpoints`, called from `SnapshotWorker.UpdateSnapshots`). After the
+  replay, a commit is flagged iff no entity's dropped-snapshot hole covers it, a single sweep over the holes the worker
+  recorded. This finds *every* safe commit, not only the grid's; the floor boundaries come out safe by construction, so
+  the flagged set always contains them.
+
+`DataModel.ResumeFromCheckpoint` is the resume primitive the point-in-time read paths share (`GetSnapshotsAtCommit`,
+`GetSnapshotAtCommit`); the late-commit write path in `UpdateSnapshots` resolves its own resume point the same way.
+`FindNewestCheckpoint` reads the flags; the lookup is a partial index over the ordering tuple
+filtered on the flag (a leading bool column can't seek, so it filters on the flag and orders by the tuple).
+
+Why this shape rather than the earlier "decision, not record":
+
+- **The flag means what it says.** It records where completeness held, which the floor guarantees at least every interval
+  and discovery fills in between. `IsCheckpoint` and the preselect-then-prune coupling are gone, along with the test that
+  existed only to keep those two in agreement.
+- **It fails safe.** An off-by-one in the retention math (the bug class this whole effort exists to kill) now leaves a
+  position *unflagged* and loudly fails the completeness tests, instead of flagging an unsafe position as safe. A range
+  table, by contrast, would have to *split* on every late commit and loses data if it forgets — the opposite default.
 
 Two things from the sections above were left alone:
 
 - **The playback still decides during the walk**, incrementally, rather than accumulating an interval's snapshots and
-  deciding at each checkpoint. Same outcome from the same function, and the restructure would not save much: the batch
-  already holds a snapshot per touched entity in `_pendingSnapshots` regardless, which is the O(batch) part.
+  deciding at each checkpoint. Discovery adds only a list of hole intervals plus, at flush, one bool per commit cleared
+  by each hole it covers (O(sum of hole lengths), bounded by drops times the floor width), next to the snapshots the
+  batch already holds.
 - **Reading state at an old commit on a database with no checkpoints replays all of history**, since there is nothing to
   resume from. Correct but slow, and it lasts until the first late commit establishes checkpoints.
 

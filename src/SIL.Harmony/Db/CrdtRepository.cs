@@ -167,22 +167,34 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         var ignoreAfterDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
         var ignoreAfterCounter = ignoreChangesAfter?.HybridDateTime.Counter;
         var ignoreAfterCommitId = ignoreChangesAfter?.Id;
+        // Select the newest snapshot per entity in a single grouped pass (SQLite only).
+        //
+        // We scan Snapshots via IX_Snapshots_EntityId, so rows already arrive grouped by EntityId
+        // and GROUP BY needs no sort; max() is a streaming aggregate, so no window sort is needed
+        // either. SQLite guarantees that when a query has exactly one min()/max() aggregate, every
+        // bare (non-aggregated) column in the result takes its value from the same row that produced
+        // that max (https://sqlite.org/lang_select.html#bareagg). So "s".* is the whole snapshot row
+        // whose commit is the greatest. This replaces the previous first_value() window + GROUP BY,
+        // which sorted the join twice (once for the window, once for the GROUP BY).
+        //
+        // The commit order is (DateTime, Counter, Id). max() needs a single scalar, so we encode the
+        // tuple as one lexically-ordered text key: DateTime is stored by EF as fixed-width sortable
+        // text (the same assumption the old ORDER BY relied on), Counter is a non-negative long
+        // zero-padded to 20 digits (covers the full long range) so text order matches numeric order,
+        // and Id (a fixed-width GUID) is last. The trailing max(...) column is not mapped by EF and
+        // is ignored during materialization.
+        //
+        // NOTE: this depends on SQLite's bare-column behaviour and is not valid on other providers.
         return dbContext.Set<ObjectSnapshot>().FromSql(
             $"""
-             WITH LatestSnapshots AS (SELECT first_value(s1.Id)
-                 OVER (
-                 PARTITION BY "s1"."EntityId"
-                 ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
-                 ) AS "LatestSnapshotId"
-                                      FROM "Snapshots" AS "s1"
-                                               INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
-                  WHERE {ignoreAfterDate} IS NULL
-                     OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
-                         ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId}))
-             SELECT *
+             SELECT "s".*,
+                    max("c"."DateTime" || '|' || printf('%020d', "c"."Counter") || '|' || "c"."Id")
              FROM "Snapshots" AS "s"
-                      INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"
-             GROUP BY s.EntityId
+                      INNER JOIN "Commits" AS "c" ON "s"."CommitId" = "c"."Id"
+             WHERE {ignoreAfterDate} IS NULL
+                OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
+                    ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId})
+             GROUP BY "s"."EntityId"
              """).AsNoTracking();
     }
 

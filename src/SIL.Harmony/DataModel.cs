@@ -199,17 +199,20 @@ public class DataModel : ISyncable, IAsyncDisposable
             .ToHashSet();
 
         //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
-        var snapshotLookup = await repo.CurrentSnapshots()
-            .Include(s => s.Commit)
-            .Where(s => EF.Parameter(entityIds).Contains(s.EntityId))
-            .ToDictionaryAsync(s => s.EntityId, s => (ObjectSnapshot?)s);
-        entityIds.ExceptWith(snapshotLookup.Keys);
-        foreach (Guid entityId in entityIds)
+        Dictionary<Guid, ObjectSnapshot?> snapshotLookup = [];
+        if (entityIds.Count > 1)
         {
-            //snapshot does not exist, store null to tell SnapshotWorker NOT to attempt to fetch it from the database
-            snapshotLookup[entityId] = null;
+            snapshotLookup = await repo.CurrentSnapshots()
+                .Include(s => s.Commit)
+                .Where(s => EF.Parameter(entityIds).Contains(s.EntityId))
+                .ToDictionaryAsync(s => s.EntityId, s => (ObjectSnapshot?)s);
+            entityIds.ExceptWith(snapshotLookup.Keys);
+            foreach (Guid entityId in entityIds)
+            {
+                //snapshot does not exist, store null to tell SnapshotWorker NOT to attempt to fetch it from the database
+                snapshotLookup[entityId] = null;
+            }
         }
-
 
         var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
         await snapshotWorker.UpdateSnapshots(commitsToApply);

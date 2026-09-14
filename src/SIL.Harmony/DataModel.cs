@@ -192,26 +192,24 @@ public class DataModel : ISyncable, IAsyncDisposable
         if (commitsToApply.Count == 0) return;
         var oldestAddedCommit = commitsToApply.First();
         await repo.DeleteStaleSnapshots(oldestAddedCommit);
-        Dictionary<Guid, ObjectSnapshot?> snapshotLookup = [];
-        if (commitsToApply.Count > 10)
-        {
-            // Bulk-load relevant snapshots to minimize DB queries
-            var entityIds = commitsToApply
-                .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
-                .ToHashSet();
 
-            //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
-            snapshotLookup = await repo.CurrentSnapshots()
-                .Include(s => s.Commit)
-                .Where(s => EF.Parameter(entityIds).Contains(s.EntityId))
-                .ToDictionaryAsync(s => s.EntityId, s => (ObjectSnapshot?)s);
-            entityIds.ExceptWith(snapshotLookup.Keys);
-            foreach (Guid entityId in entityIds)
-            {
-                //snapshot does not exist, store null to tell SnapshotWorker NOT to attempt to fetch it from the database
-                snapshotLookup[entityId] = null;
-            }
+        // Bulk-load relevant snapshots to minimize DB queries
+        var entityIds = commitsToApply
+            .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
+            .ToHashSet();
+
+        //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
+        var snapshotLookup = await repo.CurrentSnapshots()
+            .Include(s => s.Commit)
+            .Where(s => EF.Parameter(entityIds).Contains(s.EntityId))
+            .ToDictionaryAsync(s => s.EntityId, s => (ObjectSnapshot?)s);
+        entityIds.ExceptWith(snapshotLookup.Keys);
+        foreach (Guid entityId in entityIds)
+        {
+            //snapshot does not exist, store null to tell SnapshotWorker NOT to attempt to fetch it from the database
+            snapshotLookup[entityId] = null;
         }
+
 
         var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
         await snapshotWorker.UpdateSnapshots(commitsToApply);

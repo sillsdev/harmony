@@ -169,7 +169,7 @@ public class ProjectedEntityInterceptorTests
         var fixture = new DataModelTestBase(configure: services =>
         {
             services.AddScoped<IProjectedEntityInterceptor>(_ =>
-                new OrderRecordingInterceptor(order, interceptor));
+                new OrderRecordingInterceptor(order, interceptor, "di"));
             services.Configure<HarmonyConfig>(config =>
             {
                 config.OnProjectedEntitiesChanged = batch =>
@@ -227,11 +227,12 @@ public class ProjectedEntityInterceptorTests
 
     private sealed class OrderRecordingInterceptor(
         List<string> order,
-        RecordingInterceptor inner) : IProjectedEntityInterceptor
+        RecordingInterceptor inner,
+        string name) : IProjectedEntityInterceptor
     {
         public ValueTask OnProjectedEntitiesChanged(ProjectedEntityBatch batch)
         {
-            order.Add("di");
+            order.Add(name);
             return inner.OnProjectedEntitiesChanged(batch);
         }
     }

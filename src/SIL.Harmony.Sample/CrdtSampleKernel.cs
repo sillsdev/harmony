@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Linq2db;
 using SIL.Harmony.Sample.Changes;
@@ -30,7 +31,7 @@ public static class CrdtSampleKernel
             builder.EnableDetailedErrors();
             builder.EnableSensitiveDataLogging();
 #if DEBUG
-            builder.LogTo(s => Debug.WriteLine(s));
+            builder.LogTo(s => Debug.WriteLine(s), minimumLevel: LogLevel.Information);
 #endif
         });
         services.AddCrdtData<SampleDbContext>(config =>

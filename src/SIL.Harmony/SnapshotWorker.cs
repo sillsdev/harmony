@@ -52,12 +52,7 @@ internal class SnapshotWorker
 
     public async Task UpdateSnapshots(SortedSet<Commit> commits)
     {
-        await ApplyCommitChanges(commits);
-        await _crdtRepository.AddSnapshots([
-            .._rootSnapshots.Values,
-            .._newIntermediateSnapshots,
-            .._pendingSnapshots.Values
-        ]);
+        await _crdtRepository.AddSnapshots(await ComputeSnapshotsToPersist(commits));
     }
 
     /// <summary>

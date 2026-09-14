@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using SIL.Harmony.Changes;
@@ -41,16 +42,15 @@ public class DataModelSyncBenchmarks
     private DataModelTestBase remote = null!;
     private DataModelTestBase local = null!;
 
-    [Params(
-        1000
-        // ,         10_000
-        )]
+    [Params(1000, 10_000)]
     public int ChangeCount { get; set; }
 
     [ParamsAllValues]
     public SyncWorkload Workload { get; set; }
 
     private Commit[] _commits = null!;
+    private List<Commit>? _toSeed = null;
+    private List<Commit>? _toSync = null;
     private HashSet<Guid>? _syncCommitIds;
 
     [GlobalSetup]
@@ -82,13 +82,21 @@ public class DataModelSyncBenchmarks
                 break;
             case SyncWorkload.OutOfOrderInsert:
                 var (seed, toSync) = BenchmarkWorkloadBuilders.BuildOutOfOrderInsert(remote, clientId, ChangeCount);
-                _syncCommitIds = toSync.Select(c => c.Id).ToHashSet();
+                _toSeed = seed;
+                _toSync = toSync;
                 commits = [.. seed, .. toSync];
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
         }
         ((ISyncable)remote.DataModel).AddRangeFromSync(commits).Wait();
+        _toSync ??= commits;
+    }
+
+    private T Copy<T>(T obj) where T : class
+    {
+        var json = JsonSerializer.Serialize(obj, remote.CrdtConfig.JsonSerializerOptions);
+        return JsonSerializer.Deserialize<T>(json, remote.CrdtConfig.JsonSerializerOptions)!;
     }
 
     [IterationSetup]
@@ -96,27 +104,18 @@ public class DataModelSyncBenchmarks
     {
         local = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
         _ = local.WriteNextChange(local.SetWord(Guid.NewGuid(), "entity1")).Result;
-        //cant share commits between iterations, because EF modifies them
-        var allCommits = remote.DataModel.GetChanges(new SyncState([])).Result.MissingFromClient;
 
-        if (_syncCommitIds is null)
+        if (_toSeed is not null)
         {
-            _commits = allCommits;
+            ((ISyncable)local.DataModel).AddRangeFromSync(Copy(_toSeed)).Wait();
+        }
+        if (_toSync is not null)
+        {
+            //cant share commits between iterations, because EF modifies them
+            _commits = Copy(_toSync).ToArray();
             return;
         }
-
-        var seed = new List<Commit>(allCommits.Length);
-        var toSync = new List<Commit>(_syncCommitIds.Count);
-        foreach (var commit in allCommits)
-        {
-            if (_syncCommitIds.Contains(commit.Id))
-                toSync.Add(commit);
-            else
-                seed.Add(commit);
-        }
-
-        ((ISyncable)local.DataModel).AddRangeFromSync(seed).Wait();
-        _commits = toSync.ToArray();
+        throw new InvalidOperationException("No commits to sync");
     }
 
     [IterationCleanup]

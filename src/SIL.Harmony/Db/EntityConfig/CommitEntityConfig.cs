@@ -1,7 +1,9 @@
+using System.Runtime.Serialization;
 using System.Text.Json;
 using EFCore.ComplexIndexes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SIL.Harmony.Changes;
 
 namespace SIL.Harmony.Db.EntityConfig;
 
@@ -32,11 +34,22 @@ public class CommitEntityConfig : IEntityTypeConfiguration<Commit>
         builder.Property(c => c.Metadata)
             .HasColumnType("jsonb")
             .HasConversion(
-                m => JsonSerializer.Serialize(m, (JsonSerializerOptions?)null),
-                json => JsonSerializer.Deserialize<CommitMetadata>(json, (JsonSerializerOptions?)null) ?? new()
+                m => Serialize(m, null),
+                json => Deserialize(json, null) ?? new()
             );
         builder.HasMany(c => c.ChangeEntities)
             .WithOne()
             .HasForeignKey(c => c.CommitId);
+    }
+
+    public static CommitMetadata Deserialize(string json, JsonSerializerOptions? jsonSerializerOptions)
+    {
+        return JsonSerializer.Deserialize<CommitMetadata>(json, jsonSerializerOptions) ??
+               throw new SerializationException("Could not deserialize CommitMetadata: " + json);
+    }
+
+    public static string Serialize(CommitMetadata commitMetadata, JsonSerializerOptions? jsonSerializerOptions)
+    {
+        return JsonSerializer.Serialize(commitMetadata, jsonSerializerOptions);
     }
 }

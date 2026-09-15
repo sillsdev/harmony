@@ -200,7 +200,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
         Dictionary<Guid, ObjectSnapshot?> snapshotLookup = [];
-        if (entityIds.Count > 1)
+        if (entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint)
         {
             snapshotLookup = await repo.CurrentSnapshots()
                 .Include(s => s.Commit)

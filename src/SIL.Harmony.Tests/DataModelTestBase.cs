@@ -2,6 +2,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
@@ -65,6 +66,15 @@ public class DataModelTestBase : IAsyncLifetime
         currentDate = dateTime;
     }
 
+    /// <summary>
+    /// Creates a repository over this instance's DbContext. Exposed so benchmarks can drive
+    /// <see cref="CrdtRepository"/> methods (e.g. AddSnapshots) directly without going through the sync pipeline.
+    /// </summary>
+    internal CrdtRepository CreateRepository() =>
+        _services.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
+
+    internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
+
     private static int _instanceCount = 0;
     private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0).AddHours(_instanceCount++));
     public DateTimeOffset NextDate() => currentDate = currentDate.AddDays(1);
@@ -89,7 +99,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(_localClientId, before.DateTime.AddHours(-1), change, add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId,
+    public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
         IChange change,
         bool add = true)
@@ -97,7 +107,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(clientId, dateTime, [change], add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId,
+    public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
         IEnumerable<IChange> changes,
         bool add = true)
@@ -122,7 +132,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await DataModel.AddChanges(clientId, changes);
     }
 
-    protected async Task AddCommitsViaSync(IEnumerable<Commit> commits)
+    public async Task AddCommitsViaSync(IEnumerable<Commit> commits)
     {
         await ((ISyncable)DataModel).AddRangeFromSync(commits);
     }
@@ -130,6 +140,11 @@ public class DataModelTestBase : IAsyncLifetime
     public IChange SetWord(Guid entityId, string value)
     {
         return new SetWordTextChange(entityId, value);
+    }
+
+    public IChange SetWordNote(Guid entityId, string note)
+    {
+        return new SetWordNoteChange(entityId, note);
     }
 
     public IChange DeleteWord(Guid entityId)

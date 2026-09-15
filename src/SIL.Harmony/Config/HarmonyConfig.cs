@@ -1,6 +1,8 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Resource;
@@ -8,6 +10,7 @@ using SIL.Harmony.Resource;
 namespace SIL.Harmony.Config;
 
 public delegate ValueTask BeforeSaveObjectDelegate(object obj, ObjectSnapshot snapshot);
+public delegate ValueTask ProjectedEntitiesChangedDelegate(ProjectedEntityBatch batch);
 
 public class HarmonyConfig
 {
@@ -17,10 +20,21 @@ public class HarmonyConfig
     /// </summary>
     public bool EnableProjectedTables { get; set; } = true;
     public BeforeSaveObjectDelegate BeforeSaveObject { get; set; } = (o, snapshot) => ValueTask.CompletedTask;
+    internal static readonly ProjectedEntitiesChangedDelegate DefaultOnProjectedEntitiesChanged =
+        static _ => ValueTask.CompletedTask;
+
+    public ProjectedEntitiesChangedDelegate OnProjectedEntitiesChanged { get; set; } =
+        DefaultOnProjectedEntitiesChanged;
+
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
     public bool AlwaysValidateCommits { get; set; } = true;
+    /// <summary>
+    /// Bounds how far back a replay of an out-of-order commit resumes, in changes. Lower keeps more snapshots (more
+    /// storage, cheaper replay); higher keeps fewer. The only dial in the snapshot checkpoint design.
+    /// </summary>
+    public int MaxChangesBetweenSnapshotCheckpoints { get; set; } = 100;
     /// <summary>
     /// Controls how an unknown <see cref="IChange"/> <c>$type</c> is handled during deserialization.
     /// Defaults to <see cref="UnknownChangeHandling.Throw"/>; set to <see cref="UnknownChangeHandling.Fallback"/>
@@ -35,6 +49,16 @@ public class HarmonyConfig
     private readonly JsonOptionsBuilder _jsonOptionsBuilder = new();
     private readonly Lazy<JsonSerializerOptions> _lazyJsonSerializerOptions;
     private readonly Lazy<ChangeDiscriminatorMaps> _lazyChangeDiscriminatorMaps;
+
+    /// <summary>
+    /// Cache of derived projected-table SQL metadata, used by <see cref="FastProjection"/>. Stored on
+    /// the config so it's shared across repositories and db contexts. Keyed by <see cref="IModel"/>
+    /// as well as CLR type because the cached metadata holds model-specific <c>IProperty</c>
+    /// instances, table/column names, converters, and provider-delimited SQL: a single config can be
+    /// paired with more than one EF model (multiple <see cref="ICrdtDbContext"/> types or providers),
+    /// so keying by CLR type alone could hand one model metadata built from another.
+    /// </summary>
+    internal ConcurrentDictionary<(IModel Model, Type Type), FastProjection.ProjectedTableInfo> ProjectedTableInfoCache { get; } = new();
 
     public HarmonyConfig()
     {

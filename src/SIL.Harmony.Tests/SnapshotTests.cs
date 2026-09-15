@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using SIL.Harmony.Config;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
@@ -39,20 +41,22 @@ public class SnapshotTests : DataModelTestBase
     [Fact]
     public async Task MultipleChangesPreservesSomeIntermediateSnapshots()
     {
+        //a low floor so a short batch still crosses several boundaries and keeps intermediates
+        await using var model = new DataModelTestBase(configure: services =>
+            services.Configure<HarmonyConfig>(config => config.MaxChangesBetweenSnapshotCheckpoints = 4));
         var entityId = Guid.NewGuid();
         var commits = new List<Commit>();
-        for (var i = 0; i < 6; i++)
+        for (var i = 0; i < 20; i++)
         {
-            commits.Add(await WriteChange(_localClientId,
-                new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(i),
-                [SetWord(entityId, $"test {i}"), SetWord(entityId, $"test {i} again")],
+            commits.Add(await model.WriteNextChange(
+                [model.SetWord(entityId, $"test {i}"), model.SetWord(entityId, $"test {i} again")],
                 add: false));
         }
 
-        await AddCommitsViaSync(commits);
+        await model.AddCommitsViaSync(commits);
 
-        var latestSnapshot = await DataModel.GetLatestSnapshotByObjectId(entityId);
-        var snapshots = await DbContext.Snapshots.ToArrayAsync(TestContext.Current.CancellationToken);
+        var latestSnapshot = await model.DataModel.GetLatestSnapshotByObjectId(entityId);
+        var snapshots = await model.DbContext.Snapshots.ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().HaveCountGreaterThan(2);
         snapshots.Should().ContainSingle(s => s.Id == latestSnapshot.Id);
         snapshots.Should().ContainSingle(s => s.IsRoot);

@@ -64,6 +64,11 @@ public class RepositoryTests : IAsyncLifetime
         return new(new Word { Text = "test", Id = entityId }, Commit(commitId, time), false) { };
     }
 
+    private ObjectSnapshot WordSnapshot(Guid entityId, HybridDateTime time, Guid? antonymId = null)
+    {
+        return new(new Word { Text = "test", Id = entityId, AntonymId = antonymId }, Commit(Guid.NewGuid(), time), false);
+    }
+
     private Guid[] OrderedIds(int count)
     {
         return Enumerable.Range(0, count).Select(_ => Guid.NewGuid()).Order().ToArray();
@@ -245,16 +250,16 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_WithNoSnapshots_DoesNothing()
+    public async Task DeleteSnapshotsAfter_WithNoSnapshots_DoesNothing()
     {
         //the empty-repository branch: nothing to delete, must not throw
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(1, 0)));
+        await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 0)));
 
         _crdtDbContext.Snapshots.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_KeepsSnapshotsOlderThanTheCommit()
+    public async Task DeleteSnapshotsAfter_KeepsSnapshotsOlderThanTheCommit()
     {
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
@@ -262,39 +267,39 @@ public class RepositoryTests : IAsyncLifetime
         ]);
 
         //the new commit is newer than every existing snapshot, so none are stale
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(3, 0)));
+        await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(3, 0)));
 
         _crdtDbContext.Snapshots.Should().HaveCount(2);
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_DeletesSnapshotsAfterCommitByTime()
+    public async Task DeleteSnapshotsAfter_DeletesSnapshotsAfterCommitByTime()
     {
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(3, 0)),
         ]);
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(2, 0)));
+        await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(2, 0)));
 
         _crdtDbContext.Snapshots.Include(s => s.Commit).Should().ContainSingle()
             .Which.Commit.HybridDateTime.DateTime.Hour.Should().Be(1);
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_DeletesSnapshotsAfterCommitByCount()
+    public async Task DeleteSnapshotsAfter_DeletesSnapshotsAfterCommitByCount()
     {
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 2)),
         ]);
-        await _repository.DeleteStaleSnapshots(Commit(Guid.NewGuid(), Time(1, 1)));
+        await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 1)));
 
         _crdtDbContext.Snapshots.Include(s => s.Commit).Should().ContainSingle()
             .Which.Commit.HybridDateTime.Counter.Should().Be(0);
     }
 
     [Fact]
-    public async Task DeleteStaleSnapshots_DeletesSnapshotsAfterCommitByCommitId()
+    public async Task DeleteSnapshotsAfter_DeletesSnapshotsAfterCommitByCommitId()
     {
         var time = Time(1, 1);
         var entityId = Guid.NewGuid();
@@ -303,10 +308,30 @@ public class RepositoryTests : IAsyncLifetime
             Snapshot(entityId, ids[0], time),
             Snapshot(entityId, ids[2], time),
         ]);
-        await _repository.DeleteStaleSnapshots(Commit(ids[1], time));
+        await _repository.DeleteSnapshotsAfter(Commit(ids[1], time));
 
         _crdtDbContext.Snapshots.Should().ContainSingle()
             .Which.CommitId.Should().Be(ids[0]);
+    }
+
+    [Fact]
+    public async Task AddSnapshots_ProjectsSameTypeSelfReferencesInDependencyOrder()
+    {
+        // Two words in one projection batch where the first references the second via a self-FK
+        // (Word.AntonymId -> Word.Id). Deliberately order the referencing row FIRST so a naive
+        // dictionary-order upsert inserts it before its referenced row and violates the FK.
+        var referencedId = Guid.NewGuid();
+        var referencingId = Guid.NewGuid();
+        await _repository.AddSnapshots([
+            WordSnapshot(referencingId, Time(1, 0), antonymId: referencedId),
+            WordSnapshot(referencedId, Time(1, 0)),
+        ]);
+
+        var words = await _crdtDbContext.Set<Word>().AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        words.Should().Contain(w => w.Id == referencedId);
+        words.Should().ContainSingle(w => w.Id == referencingId)
+            .Which.AntonymId.Should().Be(referencedId);
     }
 
     [Fact]

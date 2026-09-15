@@ -135,8 +135,15 @@ public static class QueryHelpers
             .ThenByDescending(c => c.Id);
     }
 
-    public static IQueryable<T> WhereAfter<T>(this IQueryable<T> queryable, T after) where T : CommitBase
+    public static IQueryable<T> WhereAfter<T>(this IQueryable<T> queryable, T after, bool inclusive = false) where T : CommitBase
     {
+        if (inclusive)
+        {
+            return queryable.Where(c => after.HybridDateTime.DateTime < c.HybridDateTime.DateTime
+            || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter < c.HybridDateTime.Counter)
+            || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter == c.HybridDateTime.Counter && after.Id < c.Id)
+            || c.Id == after.Id);
+        }
         return queryable.Where(c => after.HybridDateTime.DateTime < c.HybridDateTime.DateTime
         || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter < c.HybridDateTime.Counter)
         || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter == c.HybridDateTime.Counter && after.Id < c.Id));

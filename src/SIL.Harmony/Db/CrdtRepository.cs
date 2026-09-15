@@ -3,6 +3,7 @@ using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -52,17 +53,30 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     private readonly ICrdtDbContext _dbContext;
     private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly ILogger<CrdtRepository> _logger;
+    private readonly FastProjection _fastProjection;
+    private readonly IProjectedEntityInterceptor[] _interceptors;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<HarmonyConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
-        Commit? ignoreChangesAfter = null)
+        FastProjection fastProjection,
+        IEnumerable<IProjectedEntityInterceptor> interceptors)
+        : this(dbContext, MakeCurrentSnapshotsQuery(dbContext), crdtConfig, logger, fastProjection, interceptors)
+    {
+    }
+
+    private CrdtRepository(ICrdtDbContext dbContext,
+        IQueryable<ObjectSnapshot> currentSnapshots,
+        IOptions<HarmonyConfig> crdtConfig,
+        ILogger<CrdtRepository> logger,
+        FastProjection fastProjection,
+        IEnumerable<IProjectedEntityInterceptor> interceptors)
     {
         _crdtConfig = crdtConfig;
-        _dbContext = ignoreChangesAfter is not null ? new ScopedDbContext(dbContext, ignoreChangesAfter) : dbContext;
+        _dbContext = dbContext;
         _logger = logger;
-        //we can't use the scoped db context is it prevents access to the DbSet for the Snapshots,
-        //but since we're using a custom query, we can use it directly and apply the scoped filters manually
-        _currentSnapshotsQueryable = MakeCurrentSnapshotsQuery(dbContext, ignoreChangesAfter);
+        _fastProjection = fastProjection;
+        _interceptors = interceptors as IProjectedEntityInterceptor[] ?? interceptors.ToArray();
+        _currentSnapshotsQueryable = currentSnapshots;
         _lock = Locks.GetOrAdd(DatabaseIdentifier, _ => new AsyncLock());
     }
 
@@ -127,24 +141,65 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return (oldestChange, newCommits);
     }
 
-    public async Task DeleteStaleSnapshots(Commit oldestChange)
+    public async Task<bool> HasSnapshots()
     {
-        //use the oldest commit added to clear any snapshots that are based on a now incomplete history
-        //this is a performance optimization to avoid deleting snapshots where there are none to delete
-        var mostRecentCommit = await Snapshots.MaxAsync(s => (DateTimeOffset?)s.Commit.HybridDateTime.DateTime);
-        if (mostRecentCommit < oldestChange.HybridDateTime.DateTime) return;
-        await Snapshots
-            .WhereAfter(oldestChange)
-            .ExecuteDeleteAsync();
+        return await Snapshots.AnyAsync();
+    }
+
+    public async Task DeleteSnapshotsAfter(Commit commit)
+    {
+        await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();
+    }
+
+    public async Task<Commit?> FindCheckpointBefore(Commit commit)
+    {
+        return await Commits.Where(c => c.IsSnapshotCheckpoint)
+            .WhereBefore(commit, inclusive: false)
+            .DefaultOrderDescending()
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<Commit?> FindCheckpointAtOrBefore(Commit commit)
+    {
+        return await Commits.Where(c => c.IsSnapshotCheckpoint)
+            .WhereBefore(commit, inclusive: true)
+            .DefaultOrderDescending()
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task<Commit?> FindCheckpointAtOrAfter(Commit commit)
+    {
+        return await Commits.Where(c => c.IsSnapshotCheckpoint)
+            .WhereAfter(commit, inclusive: true)
+            .DefaultOrder()
+            .FirstOrDefaultAsync();
+    }
+
+    /// <summary>
+    /// Persists the discovered checkpoint flags onto the batch's commits. <paramref name="isCheckpoint"/> is in the same
+    /// order as <paramref name="batch"/>.
+    /// </summary>
+    public async Task SetCheckpoints(Commit[] batch, bool[] isCheckpoint)
+    {
+        for (var i = 0; i < batch.Length; i++)
+        {
+            batch[i].IsSnapshotCheckpoint = isCheckpoint[i];
+        }
+
+        await _dbContext.SaveChangesAsync();
     }
 
     public async Task DeleteSnapshotsAndProjectedTables()
     {
         if (_crdtConfig.Value.EnableProjectedTables)
         {
-            foreach (var objectType in _crdtConfig.Value.ObjectTypes)
+            //dependents first: ExecuteDelete never sees EF's client side fixup, so only a database level cascade
+            //saves a table deleted before the rows pointing at it
+            var orderedTypes = FastProjection.OrderTypesByDependency(_dbContext.Model, _crdtConfig.Value.ObjectTypes);
+            for (var i = orderedTypes.Count - 1; i >= 0; i--)
             {
-                deleteProjectedTableMethod.MakeGenericMethod(objectType).Invoke(null, [_dbContext]);
+                await (Task)deleteProjectedTableMethod.MakeGenericMethod(orderedTypes[i])
+                    .Invoke(null, [_dbContext])!;
             }
         }
         await Snapshots.ExecuteDeleteAsync();
@@ -152,9 +207,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     private static readonly MethodInfo deleteProjectedTableMethod = new Func<ICrdtDbContext, Task>(DeleteProjectedTable<object>).Method.GetGenericMethodDefinition();
 
-    private static async Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class
+    private static Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class
     {
-        await dbContext.Set<T>().ExecuteDeleteAsync();
+        return dbContext.Set<T>().ExecuteDeleteAsync();
     }
 
     public IQueryable<Commit> CurrentCommits()
@@ -162,8 +217,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return Commits.DefaultOrder();
     }
 
-    private static IQueryable<ObjectSnapshot> MakeCurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? ignoreChangesAfter)
+    private static IQueryable<ObjectSnapshot> MakeCurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? ignoreChangesAfter = null)
     {
+        // null = unscoped
         var ignoreAfterDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
         var ignoreAfterCounter = ignoreChangesAfter?.HybridDateTime.Counter;
         var ignoreAfterCommitId = ignoreChangesAfter?.Id;
@@ -210,18 +266,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return snapshots;
     }
 
-    public async Task<(Dictionary<Guid, ObjectSnapshot> currentSnapshots, SortedSet<Commit> pendingCommits)> GetCurrentSnapshotsAndPendingCommits()
+    public async Task<Dictionary<Guid, ObjectSnapshot>> GetCurrentSnapshots()
     {
-        var snapshots = await CurrentSnapshots().Include(s => s.Commit).ToDictionaryAsync(s => s.EntityId);
-
-        if (snapshots.Count == 0) return (snapshots, []);
-        var lastCommit = snapshots.Values.Select(s => s.Commit).MaxBy(c => c.CompareKey);
-        ArgumentNullException.ThrowIfNull(lastCommit);
-        var newCommits = await CurrentCommits()
-            .Include(c => c.ChangeEntities)
-            .WhereAfter(lastCommit)
-            .ToSortedSetAsync();
-        return (snapshots, newCommits);
+        return await CurrentSnapshots().Include(s => s.Commit).ToDictionaryAsync(s => s.EntityId);
     }
 
     public async Task<Commit?> FindCommitByHash(string hash)
@@ -246,6 +293,14 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .WhereAfter(commit)
             .DefaultOrder()
             .ToArrayAsync();
+    }
+
+    /// <summary>The commits in <c>(afterExclusive, upToInclusive]</c>, oldest first. Null <paramref name="afterExclusive"/> starts at the beginning.</summary>
+    public async Task<SortedSet<Commit>> GetCommitsBetween(Commit? afterExclusive, Commit upToInclusive)
+    {
+        var commits = Commits.Include(c => c.ChangeEntities).WhereBefore(upToInclusive, inclusive: true);
+        if (afterExclusive is not null) commits = commits.WhereAfter(afterExclusive);
+        return await commits.ToSortedSetAsync();
     }
 
     public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)
@@ -300,85 +355,57 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return await _dbContext.Commits.GetChanges<Commit, IChange>(remoteState);
     }
 
-    public async Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
+    public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
-        var latestProjectByEntityId = new Dictionary<Guid, (DateTimeOffset, long, Guid)>();
-        foreach (var grouping in snapshots.GroupBy(s => s.EntityIsDeleted).OrderByDescending(g => g.Key))//execute deletes first
-        {
-            foreach (var snapshot in grouping.DefaultOrderDescending())
-            {
-                _dbContext.Add(snapshot);
-                if (latestProjectByEntityId.TryGetValue(snapshot.EntityId, out var latestProjected))
-                {
-                    // there might be a deleted and un-deleted snapshot for the same entity in the same batch
-                    // in that case there's only a 50% chance that they're in the right order, so we need to explicitly only project the latest one
-                    if (snapshot.Commit.CompareKey.CompareTo(latestProjected) < 0)
-                    {
-                        continue;
-                    }
-                }
-                latestProjectByEntityId[snapshot.EntityId] = snapshot.Commit.CompareKey;
-
-                await ProjectSnapshot(snapshot);
-            }
-
-            try
-            {
-                await _dbContext.SaveChangesAsync();
-            }
-            catch (DbUpdateException e)
-            {
-                var entries = string.Join(Environment.NewLine, e.Entries.Select(entry => entry.ToString()));
-                var message = $"Error saving snapshots (deleted: {grouping.Key}): {e.Message}{Environment.NewLine}{entries}";
-                _logger.LogError(e, message);
-                throw new DbUpdateException(message, e);
-            }
-        }
+        var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();
+        var notify = ShouldNotifyProjectedChanges();
+        return _fastProjection.AddSnapshotsRawAsync(
+            _dbContext,
+            snapshotList,
+            notify ? NotifyProjectedChanges : null);
     }
 
-    private async ValueTask ProjectSnapshot(ObjectSnapshot objectSnapshot)
+    private bool ShouldNotifyProjectedChanges()
     {
-        if (!_crdtConfig.Value.EnableProjectedTables) return;
-
-        //need to check if an entry exists already, even if this is the root commit it may have already been added to the db
-        var existingEntry = await GetEntityEntry(objectSnapshot.Entity.DbObject.GetType(), objectSnapshot.EntityId);
-        if (existingEntry is null && objectSnapshot.EntityIsDeleted) return;
-
-        if (existingEntry is null) // add
-        {
-            // this is a new entity even though it might not be a root snapshot, because we only project the latest snapshot of each entity per sync
-
-            //if we don't make a copy first then the entity will be tracked by the context and be modified
-            //by future changes in the same session
-            var entity = objectSnapshot.Entity.Copy().DbObject;
-
-            var newEntry = _dbContext.Entry(entity);
-            // only mark this single entry as added, rather than the whole graph (this matches the update behaviour below)
-            newEntry.State = EntityState.Added;
-            newEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
-        }
-        else if (objectSnapshot.EntityIsDeleted) // delete
-        {
-            _dbContext.Remove(existingEntry.Entity);
-        }
-        else // update
-        {
-            var entity = objectSnapshot.Entity.DbObject;
-            existingEntry.CurrentValues.SetValues(entity);
-            existingEntry.Property(ObjectSnapshot.ShadowRefName).CurrentValue = objectSnapshot.Id;
-        }
+        if (!_crdtConfig.Value.EnableProjectedTables) return false;
+        if (_interceptors.Length > 0) return true;
+        return !ReferenceEquals(
+            _crdtConfig.Value.OnProjectedEntitiesChanged,
+            HarmonyConfig.DefaultOnProjectedEntitiesChanged);
     }
 
-    private async ValueTask<EntityEntry?> GetEntityEntry(Type entityType, Guid entityId)
+    private async ValueTask NotifyProjectedChanges(IReadOnlyCollection<ObjectSnapshot> latest)
     {
-        if (!_crdtConfig.Value.EnableProjectedTables) return null;
-        var entity = await _dbContext.FindAsync(entityType, entityId);
-        return entity is not null ? _dbContext.Entry(entity) : null;
+        var changes = new List<ProjectedEntityChange>(latest.Count);
+        foreach (var snapshot in latest)
+        {
+            var entity = snapshot.Entity.DbObject;
+            changes.Add(new ProjectedEntityChange
+            {
+                Entity = entity,
+                EntityId = snapshot.EntityId,
+                ClrType = entity.GetType(),
+                Kind = snapshot.EntityIsDeleted ? ProjectedChangeKind.Delete : ProjectedChangeKind.Upsert,
+                Snapshot = snapshot
+            });
+        }
+
+        var batch = new ProjectedEntityBatch { DbContext = _dbContext, Changes = changes };
+        foreach (var interceptor in _interceptors)
+            await interceptor.OnProjectedEntitiesChanged(batch);
+        await _crdtConfig.Value.OnProjectedEntitiesChanged(batch);
     }
 
-    public CrdtRepository GetScopedRepository(Commit excludeChangesAfterCommit)
+    /// <param name="upToInclusive">null scopes to before the first commit, i.e. nothing, which is what a replay resuming from the beginning of history sees</param>
+    public CrdtRepository GetScopedRepository(Commit? upToInclusive)
     {
-        return new CrdtRepository(_dbContext, _crdtConfig, _logger, excludeChangesAfterCommit);
+        var scoped = new ScopedDbContext(_dbContext, upToInclusive);
+        //we can't use the scoped db context as it prevents access to the DbSet for the Snapshots,
+        //but since we're using a custom query, we can use it directly and apply the scoped filters manually
+        var currentSnapshots = upToInclusive is null
+            ? scoped.Snapshots // always empty if null
+            : MakeCurrentSnapshotsQuery(_dbContext, ignoreChangesAfter: upToInclusive);
+        return new CrdtRepository(scoped, currentSnapshots, _crdtConfig, _logger, _fastProjection, _interceptors);
     }
 
     /// <summary>
@@ -485,11 +512,16 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     }
 }
 
-internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) : ICrdtDbContext
+internal class ScopedDbContext(ICrdtDbContext inner, Commit? upToInclusive) : ICrdtDbContext
 {
-    public IQueryable<Commit> Commits => inner.Commits.WhereBefore(ignoreChangesAfter, inclusive: true);
+    //Take(0) rather than an in-memory empty queryable: the consumers use EF's async operators, which need an EF provider
+    public IQueryable<Commit> Commits => upToInclusive is null
+        ? inner.Commits.Take(0)
+        : inner.Commits.WhereBefore(upToInclusive, inclusive: true);
 
-    public IQueryable<ObjectSnapshot> Snapshots => inner.Snapshots.WhereBefore(ignoreChangesAfter, inclusive: true);
+    public IQueryable<ObjectSnapshot> Snapshots => upToInclusive is null
+        ? inner.Snapshots.Take(0)
+        : inner.Snapshots.WhereBefore(upToInclusive, inclusive: true);
 
     public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
@@ -506,6 +538,7 @@ internal class ScopedDbContext(ICrdtDbContext inner, Commit ignoreChangesAfter) 
         throw new NotSupportedException("can not support Set<T> when using scoped db context");
     }
 
+    public IModel Model => inner.Model;
     public DatabaseFacade Database => inner.Database;
     public ChangeTracker ChangeTracker => inner.ChangeTracker;
 

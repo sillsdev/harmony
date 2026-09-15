@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace SIL.Harmony.Db;
 
@@ -11,6 +12,7 @@ public interface ICrdtDbContext : IDisposable, IAsyncDisposable
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
     ValueTask<object?> FindAsync(Type entityType, params object?[]? keyValues);
     DbSet<TEntity> Set<TEntity>() where TEntity : class;
+    IModel Model { get; }
     DatabaseFacade Database { get; }
     ChangeTracker ChangeTracker { get; }
     EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class;

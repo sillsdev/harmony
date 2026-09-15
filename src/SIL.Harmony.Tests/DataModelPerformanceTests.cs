@@ -82,6 +82,7 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         // warmup the code, this causes jit to run and keeps our actual test below consistent
         await dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity 0"));
         var runtimeAddChange1Snapshot = await MeasureTime(() => dataModelTest.WriteNextChange(dataModelTest.SetWord(Guid.NewGuid(), "entity 1")).AsTask());
+        output.WriteLine($"Runtime AddChange with 1 Snapshot: {runtimeAddChange1Snapshot.TotalMilliseconds:N}ms");
 
         await BulkInsertChanges(dataModelTest);
         //fork the database, this creates a new DbContext which does not have a cache of all the snapshots created above
@@ -97,8 +98,45 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         output.WriteLine($"Runtime AddChange with 10,000 Snapshots: {runtimeAddChange10000Snapshots.TotalMilliseconds:N}ms");
         runtimeAddChange10000Snapshots.Should()
             .BeCloseTo(runtimeAddChange1Snapshot, runtimeAddChange1Snapshot * 4);
+        await dataModelTest.DisposeAsync();
+    }
+
+    [Theory]
+    [InlineData(100)]
+    [InlineData(200)]
+    [InlineData(300)]
+    [InlineData(400)]
+    [InlineData(500)]
+    public async Task SimpleAddCountChangesPerformanceTest(int count)
+    {
+        //disable validation because it's slow
+        var dataModelTest = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
+        // warmup the code, this causes jit to run and keeps our actual test below consistent
+        await MeasureTime(() => dataModelTest.WriteNextChange(GetChanges(dataModelTest, count)).AsTask());
+        var runtimeAddChange1Snapshot = await MeasureTime(() => dataModelTest.WriteNextChange(GetChanges(dataModelTest, count)).AsTask());
+        output.WriteLine($"Runtime AddChange with 1 Snapshot: {runtimeAddChange1Snapshot.TotalMilliseconds:N}ms");
+
+        await BulkInsertChanges(dataModelTest);
+        //fork the database, this creates a new DbContext which does not have a cache of all the snapshots created above
+        //that cache causes DetectChanges (used by SaveChanges) to be slower than it should be
+        dataModelTest = dataModelTest.ForkDatabase(false);
+        //warmup the forked context too — it has a fresh ServiceProvider/DbContext/DataModel,
+        //so the first WriteNextChange pays EF Core query-compilation cost that the measurement shouldn't include
+        await MeasureTime(() => dataModelTest.WriteNextChange(GetChanges(dataModelTest, count)).AsTask());
+
+        await StartTrace();
+        var runtimeAddChange10000Snapshots = await MeasureTime(() => dataModelTest.WriteNextChange(GetChanges(dataModelTest, count)).AsTask());
+        StopTrace();
+        output.WriteLine($"Runtime AddChange with 10,000 Snapshots: {runtimeAddChange10000Snapshots.TotalMilliseconds:N}ms");
+        runtimeAddChange10000Snapshots.Should()
+            .BeCloseTo(runtimeAddChange1Snapshot, runtimeAddChange1Snapshot * 4);
         // snapshots.Should().HaveCount(1002);
         await dataModelTest.DisposeAsync();
+    }
+
+    private static IEnumerable<IChange> GetChanges(DataModelTestBase dataModelTest, int count)
+    {
+        return Enumerable.Range(0, count).Select(i => dataModelTest.SetWord(Guid.NewGuid(), $"entity {i}"));
     }
 
     internal static async Task BulkInsertChanges(DataModelTestBase dataModelTest, int count = 10_000)

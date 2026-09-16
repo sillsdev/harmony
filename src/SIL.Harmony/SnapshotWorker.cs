@@ -27,19 +27,21 @@ internal class SnapshotWorker
     /// <param name="CreatedAtIndex">the batch index of the commit the snapshot was made at</param>
     private readonly record struct LatestSnapshot(ObjectSnapshot Snapshot, int CreatedAtIndex);
 
-    private SnapshotWorker(SortedSet<Commit> commits,
-        Dictionary<Guid, ObjectSnapshot> snapshots,
+    /// <param name="snapshotCache">a dictionary of entity id to its latest snapshot, or null when it has none</param>
+    /// <param name="snapshotTableIsEmpty">the snapshot table was emptied and stays that way until this run persists, so snapshot reads are skipped</param>
+    /// <param name="initialSnapshots">state this run starts from; we only read it, so holding the caller's dictionary is safe</param>
+    internal SnapshotWorker(SortedSet<Commit> commits,
         Dictionary<Guid, ObjectSnapshot?> snapshotCache,
         CrdtRepository crdtRepository,
         HarmonyConfig crdtConfig,
-        bool snapshotTableIsEmpty)
+        bool snapshotTableIsEmpty = false,
+        Dictionary<Guid, ObjectSnapshot>? initialSnapshots = null)
     {
         _batchCommits = [.. commits];
         _policy = new SnapshotCheckpointPolicy(
             _batchCommits.Select(c => c.ChangeEntities.Count),
             crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
-        //we only read from it, so holding the caller's dictionary is safe; it writes the results back after we're done
-        _initialSnapshots = snapshots;
+        _initialSnapshots = initialSnapshots ?? [];
         _crdtRepository = crdtRepository;
         _snapshotCache = snapshotCache;
         _crdtConfig = crdtConfig;
@@ -52,25 +54,13 @@ internal class SnapshotWorker
         SortedSet<Commit> commits,
         HarmonyConfig crdtConfig)
     {
-        var worker = new SnapshotWorker(commits, snapshots, [], crdtRepository, crdtConfig, false);
+        var worker = new SnapshotWorker(commits, [], crdtRepository, crdtConfig, initialSnapshots: snapshots);
         await worker.ApplyCommitChanges();
-        //everything the replay touched, including entities it created, which a caller asking for state at a commit wants too
         foreach (var (entityId, latest) in worker._latestSnapshots)
         {
             snapshots[entityId] = latest.Snapshot;
         }
-
         return snapshots;
-    }
-
-    /// <param name="snapshotCache">a dictionary of entity id to its latest snapshot, or null when it has none</param>
-    /// <param name="snapshotTableIsEmpty">the snapshot table was emptied and stays that way until this run persists, so snapshot reads are skipped</param>
-    internal SnapshotWorker(SortedSet<Commit> commits,
-        Dictionary<Guid, ObjectSnapshot?> snapshotCache,
-        CrdtRepository crdtRepository,
-        HarmonyConfig crdtConfig,
-        bool snapshotTableIsEmpty = false) : this(commits, [], snapshotCache, crdtRepository, crdtConfig, snapshotTableIsEmpty)
-    {
     }
 
     public async Task UpdateSnapshots()
@@ -241,7 +231,7 @@ internal class SnapshotWorker
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        AddSnapshot(newSnapshot, context.CommitIndex);
+        AddSnapshot(newSnapshot, context.BatchCommitIndex);
     }
 
     private void AddSnapshot(ObjectSnapshot newSnapshot, int currCommitIndex)

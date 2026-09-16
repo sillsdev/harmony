@@ -8,17 +8,18 @@ internal class ChangeContext : IChangeContext
     private readonly SnapshotWorker _worker;
     private readonly HarmonyConfig _crdtConfig;
 
-    internal ChangeContext(Commit commit, int commitIndex, SnapshotWorker worker, HarmonyConfig crdtConfig)
+    internal ChangeContext(Commit commit, int batchCommitIndex, SnapshotWorker worker, HarmonyConfig crdtConfig)
     {
         _worker = worker;
         _crdtConfig = crdtConfig;
         Commit = commit;
-        CommitIndex = commitIndex;
+        BatchCommitIndex = batchCommitIndex;
     }
 
     CommitBase IChangeContext.Commit => Commit;
     public Commit Commit { get; }
-    public int CommitIndex { get; }
+    /// <summary>the commit's zero-based position in the batch being replayed</summary>
+    public int BatchCommitIndex { get; }
     public async ValueTask<IObjectSnapshot?> GetSnapshot(Guid entityId) => await _worker.GetSnapshot(entityId);
     public IAsyncEnumerable<object> GetObjectsReferencing(Guid entityId, bool includeDeleted = false)
     {

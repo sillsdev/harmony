@@ -64,6 +64,11 @@ public class RepositoryTests : IAsyncLifetime
         return new(new Word { Text = "test", Id = entityId }, Commit(commitId, time), false) { };
     }
 
+    private ObjectSnapshot WordSnapshot(Guid entityId, HybridDateTime time, Guid? antonymId = null)
+    {
+        return new(new Word { Text = "test", Id = entityId, AntonymId = antonymId }, Commit(Guid.NewGuid(), time), false);
+    }
+
     private Guid[] OrderedIds(int count)
     {
         return Enumerable.Range(0, count).Select(_ => Guid.NewGuid()).Order().ToArray();
@@ -309,6 +314,34 @@ public class RepositoryTests : IAsyncLifetime
             .Which.CommitId.Should().Be(ids[0]);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddSnapshots_ProjectsSameTypeSelfReferencesInDependencyOrder(bool reverseOrder = false)
+    {
+        // Two words in one projection batch where the first references the second via a self-FK
+        // (Word.AntonymId -> Word.Id). Deliberately order the referencing row FIRST so a naive
+        // dictionary-order upsert inserts it before its referenced row and violates the FK.
+        var referencedId = Guid.NewGuid();
+        var referencingId = Guid.NewGuid();
+        IEnumerable<ObjectSnapshot> snapshots =
+        [
+            WordSnapshot(referencingId, Time(1, 0), antonymId: referencedId),
+            WordSnapshot(referencedId, Time(1, 0)),
+        ];
+        if (reverseOrder)
+        {
+            snapshots = snapshots.Reverse();
+        }
+        await _repository.AddSnapshots(snapshots);
+
+        var words = await _crdtDbContext.Set<Word>().AsNoTracking()
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        words.Should().Contain(w => w.Id == referencedId);
+        words.Should().ContainSingle(w => w.Id == referencingId)
+            .Which.AntonymId.Should().Be(referencedId);
+    }
+
     [Fact]
     public async Task GetChanges_HandlesExactDateFilters()
     {
@@ -368,7 +401,7 @@ public class RepositoryTests : IAsyncLifetime
     public async Task FilterExistingCommits_WorksWithMoreCommitsThanTheSqliteParameterLimit()
     {
         //lower the connection's variable limit so tripping it doesn't require such a slow test
-        //(currently 32,766 in the currently bundled SQLite) 
+        //(currently 32,766 in the currently bundled SQLite)
         var connection = (SqliteConnection)_crdtDbContext.Database.GetDbConnection();
         const int maxSqlVariables = 500;
         SQLitePCL.raw.sqlite3_limit(connection.Handle, SQLitePCL.raw.SQLITE_LIMIT_VARIABLE_NUMBER, maxSqlVariables);

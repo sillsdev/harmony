@@ -134,6 +134,92 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         await dataModelTest.DisposeAsync();
     }
 
+    /// <summary>
+    /// Asserts that <see cref="HarmonyConfig.PrefetchSnapshotsBreakpoint"/> (currently 220) is a good crossover value:
+    /// the point where bulk-prefetching current snapshots in one query starts beating fetching them one per entity.
+    /// <para>
+    /// The batches edit <em>existing</em> entities, because that is what the breakpoint is tuned for — a batch of
+    /// brand-new entities has no current snapshot to fetch, so prefetching only adds a query that returns nothing and
+    /// never wins. For edits of existing entities the crossover sits right around the configured 220:
+    /// </para>
+    /// <list type="bullet">
+    /// <item>Below the breakpoint (50 edits) forcing prefetch (breakpoint = 0) is ~1.6x slower than the default.</item>
+    /// <item>Above the breakpoint (500 edits) forcing no prefetch (breakpoint = int.MaxValue) is ~1.3x slower.</item>
+    /// </list>
+    /// If either assertion fails the breakpoint has drifted from where the bulk query starts paying off.
+    /// </summary>
+    [Fact(
+#if DEBUG
+        Skip = "Perf test, breakpoint effect only reliable in release builds"
+#endif
+        )]
+    public async Task PrefetchSnapshotsBreakpointIsAGoodChoice()
+    {
+        const int belowBreakpointCount = 50;   // well below default breakpoint (220)
+        const int aboveBreakpointCount = 1000; // well above default breakpoint (220), clear of the noisy crossover
+
+        // Take the best (min) of a few runs per config: a single GC/scheduling pause in the faster config could
+        // otherwise flip the comparison, and the min rejects those transient stalls while keeping the assertion strict.
+        var belowDefault = await BestBatchWrite(belowBreakpointCount, breakpoint: null); // default 220 -> no prefetch
+        var belowPrefetch = await BestBatchWrite(belowBreakpointCount, breakpoint: 0);   // force prefetch
+        output.WriteLine($"Below breakpoint ({belowBreakpointCount}): default {belowDefault.TotalMilliseconds:N}ms vs forced prefetch {belowPrefetch.TotalMilliseconds:N}ms");
+        belowPrefetch.Should().BeGreaterThan(belowDefault,
+            "below the breakpoint, fetching each snapshot with a query per entity should beat one bulk query");
+
+        var aboveDefault = await BestBatchWrite(aboveBreakpointCount, breakpoint: null);        // default 220 -> prefetch
+        var aboveNoPrefetch = await BestBatchWrite(aboveBreakpointCount, breakpoint: int.MaxValue); // force no prefetch
+        output.WriteLine($"Above breakpoint ({aboveBreakpointCount}): default {aboveDefault.TotalMilliseconds:N}ms vs forced no-prefetch {aboveNoPrefetch.TotalMilliseconds:N}ms");
+        aboveNoPrefetch.Should().BeGreaterThan(aboveDefault,
+            "above the breakpoint, one bulk query should beat many queries per entity");
+    }
+
+    /// <summary>Best (minimum) of three <see cref="MeasureBatchWrite"/> runs, editing existing entities.</summary>
+    private static async Task<TimeSpan> BestBatchWrite(int count, int? breakpoint)
+    {
+        var best = TimeSpan.MaxValue;
+        for (var i = 0; i < 3; i++)
+        {
+            var runtime = await MeasureBatchWrite(count, breakpoint, editExisting: true);
+            if (runtime < best) best = runtime;
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// Measures the average time to write a batch of <paramref name="count"/> changes against a database seeded with
+    /// 10,000 snapshots. When <paramref name="breakpoint"/> is provided it overrides
+    /// <see cref="HarmonyConfig.PrefetchSnapshotsBreakpoint"/> so the prefetch path can be forced on or off. When
+    /// <paramref name="editExisting"/> is true the batch edits existing seeded entities (so each has a current snapshot
+    /// to fetch); otherwise it creates brand-new entities.
+    /// </summary>
+    private static async Task<TimeSpan> MeasureBatchWrite(int count, int? breakpoint, bool editExisting = false)
+    {
+        //disable validation because it's slow
+        var dataModelTest = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
+        await BulkInsertChanges(dataModelTest);
+        //fork the database, this creates a new DbContext which does not have a cache of all the snapshots created above
+        //that cache causes DetectChanges (used by SaveChanges) to be slower than it should be
+        dataModelTest = dataModelTest.ForkDatabase(false);
+        //ForkDatabase does not propagate config, so set the breakpoint on the forked (measured) instance directly.
+        //DataModel reads PrefetchSnapshotsBreakpoint fresh on each write, so mutating the singleton config takes effect.
+        if (breakpoint is { } value) dataModelTest.CrdtConfig.PrefetchSnapshotsBreakpoint = value;
+
+        var existingIds = editExisting
+            ? dataModelTest.DbContext.Snapshots.Select(s => s.EntityId).Distinct().Take(count).ToList()
+            : null;
+        Func<IEnumerable<IChange>> makeChanges = existingIds is null
+            ? () => GetChanges(dataModelTest, count)
+            : () => existingIds.Select(id => dataModelTest.SetWord(id, $"edit {Guid.NewGuid()}"));
+
+        //warmup the forked context too — it has a fresh ServiceProvider/DbContext/DataModel,
+        //so the first WriteNextChange pays EF Core query-compilation cost that the measurement shouldn't include
+        await MeasureTime(() => dataModelTest.WriteNextChange(makeChanges()).AsTask());
+
+        var runtime = await MeasureTime(() => dataModelTest.WriteNextChange(makeChanges()).AsTask());
+        await dataModelTest.DisposeAsync();
+        return runtime;
+    }
+
     private static IEnumerable<IChange> GetChanges(DataModelTestBase dataModelTest, int count)
     {
         return Enumerable.Range(0, count).Select(i => dataModelTest.SetWord(Guid.NewGuid(), $"entity {i}"));

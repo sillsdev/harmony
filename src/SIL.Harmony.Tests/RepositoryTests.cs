@@ -393,7 +393,7 @@ public class RepositoryTests : IAsyncLifetime
     public async Task FilterExistingCommits_WorksWithMoreCommitsThanTheSqliteParameterLimit()
     {
         //lower the connection's variable limit so tripping it doesn't require such a slow test
-        //(currently 32,766 in the currently bundled SQLite) 
+        //(currently 32,766 in the currently bundled SQLite)
         var connection = (SqliteConnection)_crdtDbContext.Database.GetDbConnection();
         const int maxSqlVariables = 500;
         SQLitePCL.raw.sqlite3_limit(connection.Handle, SQLitePCL.raw.SQLITE_LIMIT_VARIABLE_NUMBER, maxSqlVariables);

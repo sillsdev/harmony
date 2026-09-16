@@ -175,20 +175,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .FirstOrDefaultAsync();
     }
 
-    /// <summary>
-    /// Persists the discovered checkpoint flags onto the batch's commits. <paramref name="isCheckpoint"/> is in the same
-    /// order as <paramref name="batch"/>.
-    /// </summary>
-    public async Task SetCheckpoints(Commit[] batch, bool[] isCheckpoint)
-    {
-        for (var i = 0; i < batch.Length; i++)
-        {
-            batch[i].IsSnapshotCheckpoint = isCheckpoint[i];
-        }
-
-        await _dbContext.SaveChangesAsync();
-    }
-
     public async Task DeleteSnapshotsAndProjectedTables()
     {
         if (_crdtConfig.Value.EnableProjectedTables)
@@ -355,6 +341,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return await _dbContext.Commits.GetChanges<Commit, IChange>(remoteState);
     }
 
+    /// <summary>
+    /// Saves the snapshots, and with them anything else the change tracker is holding.
+    /// </summary>
     public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
     {
         var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();

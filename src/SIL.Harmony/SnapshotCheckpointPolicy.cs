@@ -1,79 +1,77 @@
-namespace SIL.Harmony;
+﻿namespace SIL.Harmony;
 
 /// <summary>
-/// Decides which snapshots a replay of one batch must keep (the retention floor) and, from the holes the dropped ones
-/// leave, which of the batch's commits are checkpoints (safe to resume from).
+/// Decides which snapshots a replay of one batch must keep, and tracks which of its commits
+/// a later replay can resume from as a result. Has mutable state, one instance per replay.
 /// </summary>
-/// <remarks>
-/// A replay resumes at a commit by seeding every entity from its newest snapshot at or before it, so that snapshot has
-/// to be the entity's state there. Dropping a snapshot leaves a hole from its commit up to the entity's next snapshot;
-/// resuming inside that hole seeds the entity from before an edit nothing is going to re-apply, so the whole hole is
-/// unsafe to resume at.
-///
-/// <see cref="MustKeepSnapshot"/> is the retention floor, applied during the replay: keep a snapshot whenever dropping
-/// it would let a hole span a floor boundary, which guarantees a safe commit at least every <c>maxChanges</c> changes.
-/// <see cref="DiscoverCheckpoints"/> is discovery, applied after: every commit is safe unless a hole covers it, so the floor's
-/// guaranteed commits fall out as a subset and every other commit that came out safe is kept too.
-///
-/// Boundaries count changes, not commits, because replay cost is per change: one commit of 1000 changes costs as much
-/// to replay as 1000 single-change commits. Storage trades against replay cost through <c>maxChanges</c> alone.
-/// </remarks>
 internal sealed class SnapshotCheckpointPolicy
 {
-    private readonly int _maxChanges;
-    // prefix sums of change counts in commit order; _changesUpTo[i] is the changes in the batch's first i commits
-    private readonly long[] _changesUpTo;
+    private readonly int _maxChangesBetweenCheckpoints;
+    // _changesBeforeCommit[commitIndex] is the number of changes in the commits before it, so it starts at 0
+    private readonly long[] _changesBeforeCommit;
+
+    /// <summary>every commit is safe to resume from until a dropped snapshot says otherwise</summary>
+    private readonly bool[] _isCheckpoint;
 
     /// <param name="changesPerCommit">each commit's change count, in the batch's commit order</param>
-    /// <param name="maxChanges">force a safe commit at least this many changes apart</param>
-    internal SnapshotCheckpointPolicy(IEnumerable<int> changesPerCommit, int maxChanges)
+    /// <param name="maxChangesBetweenCheckpoints">force a safe commit at least this many changes apart</param>
+    internal SnapshotCheckpointPolicy(IEnumerable<int> changesPerCommit, int maxChangesBetweenCheckpoints)
     {
-        if (maxChanges < 1) throw new ArgumentOutOfRangeException(nameof(maxChanges));
-        _maxChanges = maxChanges;
-        var changesUpTo = new List<long> { 0 };
+        if (maxChangesBetweenCheckpoints < 1) throw new ArgumentOutOfRangeException(nameof(maxChangesBetweenCheckpoints));
+        _maxChangesBetweenCheckpoints = maxChangesBetweenCheckpoints;
+        var changesBefore = new List<long> { 0 }; // there are 0 changes before the first commit
         var running = 0L;
         foreach (var changes in changesPerCommit)
         {
             running += changes;
-            changesUpTo.Add(running);
+            changesBefore.Add(running);
         }
-        _changesUpTo = [.. changesUpTo];
+        _changesBeforeCommit = [.. changesBefore];
+        _isCheckpoint = new bool[_changesBeforeCommit.Length - 1];
+
+        // we consider every commit a checkpoint until we learn otherwise
+        Array.Fill(_isCheckpoint, true);
     }
 
-    private int CommitCount => _changesUpTo.Length - 1;
-
     /// <summary>
-    /// Whether the pruner must keep the snapshot an entity got at commit <paramref name="from"/>, given that its next
-    /// snapshot in the batch is at commit <paramref name="to"/> (both 1-based positions). Keep it exactly when a floor
-    /// boundary falls in the hole <c>[from, to)</c> that dropping it would open, i.e. when the two positions sit in
-    /// different floor intervals.
+    /// Whether an entity's snapshot at commit <paramref name="snapshotCommitIndex"/> must be kept when its next one is at
+    /// <paramref name="nextSnapshotCommitIndex"/> (batch indexes). Keeping the ones that straddle a boundary is what ensures we have a
+    /// checkpoint AT LEAST every maxChangesBetweenCheckpoints changes.
     /// </summary>
-    internal bool MustKeepSnapshot(int from, int to)
+    internal bool MustKeepSnapshot(int snapshotCommitIndex, int nextSnapshotCommitIndex)
     {
-        return FloorInterval(from) < FloorInterval(to);
+        return CheckpointInterval(snapshotCommitIndex) < CheckpointInterval(nextSnapshotCommitIndex);
     }
 
-    // position is 1-based (ChangeContext.CommitIndex); _changesUpTo[position - 1] is the changes before it. A floor
-    // boundary lies between two positions iff they fall in different intervals of maxChanges.
-    private long FloorInterval(int position) => _changesUpTo[position - 1] / _maxChanges;
-
     /// <summary>
-    /// The checkpoint flag for every commit in the batch, in commit order: assume each is safe to resume from, then
-    /// clear the ones a dropped snapshot's <paramref name="holes"/> cover. Holes are half-open <c>[from, to)</c> ranges
-    /// of 1-based positions.
+    /// Records that a snapshot was dropped at <paramref name="snapshotCommitIndex"/>, and that the next snapshot for that entity is at <paramref name="nextSnapshotCommitIndex"/>.
+    /// So, everything between those two commits is no longer safe to resume from, and we mark them as such.
     /// </summary>
-    internal bool[] DiscoverCheckpoints(IEnumerable<(int From, int ToExclusive)> holes)
+    internal void SnapshotDropped(int snapshotCommitIndex, int nextSnapshotCommitIndex)
     {
-        var isCheckpoint = new bool[CommitCount];
-        Array.Fill(isCheckpoint, true);
-        foreach (var (from, toExclusive) in holes)
+        for (var commitIndex = snapshotCommitIndex; commitIndex < nextSnapshotCommitIndex; commitIndex++)
         {
-            for (var position = from; position < toExclusive; position++)
-            {
-                isCheckpoint[position - 1] = false; // positions are 1-based
-            }
+            _isCheckpoint[commitIndex] = false;
         }
+    }
 
-        return isCheckpoint;
+    // which multiple of maxChanges the commit falls in; two commits straddle a boundary iff these differ
+    private long CheckpointInterval(int commitIndex) => _changesBeforeCommit[commitIndex] / _maxChangesBetweenCheckpoints;
+
+    /// <summary>Whether the batch's commit at <paramref name="commitIndex"/> is safe to resume a replay from.</summary>
+    internal bool IsCheckpoint(int commitIndex) => _isCheckpoint[commitIndex];
+
+    /// <summary>
+    /// Writes the outcome onto <paramref name="batchCommits"/>, which must be the same commits in the same order
+    /// the policy was built from. Only valid once the replay is done: until then we don't know which snapshots get dropped.
+    /// </summary>
+    internal void PopulateCheckpoints(Commit[] batchCommits)
+    {
+        if (batchCommits.Length != _isCheckpoint.Length)
+            throw new ArgumentException("commits must be the batch this policy was built from", nameof(batchCommits));
+        for (var commitIndex = 0; commitIndex < batchCommits.Length; commitIndex++)
+        {
+            batchCommits[commitIndex].IsSnapshotCheckpoint = _isCheckpoint[commitIndex];
+        }
     }
 }

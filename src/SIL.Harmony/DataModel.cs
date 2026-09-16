@@ -200,7 +200,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task ReplayFromCheckpoint(CrdtRepository repo, Commit? checkpoint)
     {
         if (checkpoint?.IsSnapshotCheckpoint == false)
-            throw new ArgumentException("checkpoint must be a snapshot checkpoint or null", nameof(checkpoint));
+            throw new ArgumentException("checkpoint commit must be a snapshot checkpoint or null", nameof(checkpoint));
 
         // A database with no checkpoints replays all of history,
         // which is what we want, because it will trigger creating checkpoints
@@ -209,7 +209,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             //a new project has nothing to drop, and nothing stale in the change tracker either
             if (await repo.HasSnapshots())
             {
-                //replaying all of history against a populated table measured about 3x the cost per commit
+                //Claude: replaying all of history against a populated table measured about 3x the cost per commit
                 //of dropping everything and regenerating
                 await repo.DeleteSnapshotsAndProjectedTables();
                 //the delete goes around the change tracker, so drop what it holds and read the commits back fresh
@@ -415,7 +415,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         var nextCheckpoint = await repo.FindCheckpointAtOrAfter(commit);
         if (nextCheckpoint is not null)
         {
-            var newestByNextCheckpoint = await repo.GetScopedRepository(nextCheckpoint).GetCurrentSnapshotByObjectId(entityId);
+            var nextCheckpointRepo = repo.GetScopedRepository(nextCheckpoint);
+            var newestByNextCheckpoint = await nextCheckpointRepo.GetCurrentSnapshotByObjectId(entityId);
             //no snapshot by the next checkpoint means the entity does not exist at the commit either (roots are never pruned)
             if (newestByNextCheckpoint is null) return null;
             if (newestByNextCheckpoint.Commit.CompareKey.CompareTo(commit.CompareKey) <= 0) return newestByNextCheckpoint;

@@ -138,10 +138,10 @@ public class ModelSnapshotTests : DataModelTestBase
 
         //adding all via sync means there's sparse snapshots
         await AddCommitsViaSync(changes.Concat(addNew));
-        //the edited word is touched at odd batch positions (interleaved with the new words); the floor keeps its snapshot
+        //the edited word is touched at even batch indexes (interleaved with the new words); the floor keeps its snapshot
         //at any such position whose gap to the next spans a boundary, plus its latest, plus the root from the first commit
         var floor = new SnapshotCheckpointPolicy(Enumerable.Repeat(1, changeCount * 2), new HarmonyConfig().MaxChangesBetweenSnapshotCheckpoints);
-        var editPositions = Enumerable.Range(0, changeCount).Select(i => 2 * i + 1).ToArray();
+        var editPositions = Enumerable.Range(0, changeCount).Select(i => 2 * i).ToArray();
         var keptEdits = editPositions.Zip(editPositions.Skip(1), (from, to) => floor.MustKeepSnapshot(from, to)).Count(kept => kept) + 1;
         DbContext.Snapshots.Should().HaveCount(1 + changeCount + keptEdits);
 

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 
@@ -57,9 +57,9 @@ public class LateCommitTests : DataModelTestBase
         await AddCommitsViaSync([create, unrelated, newDefinition, delete, editDefinition]);
         await AssertSnapshotWasPruned(delete, definitionId);
 
-        // the definition resumes from its creation snapshot, and replaying the delete commit does not
-        // cascade again, so the edit lands on a live definition whose word is still deleted.
-        // Projecting that row back in breaks the foreign key to the word.
+        // replay starts after the delete commit, so nothing re-applies the cascade: the definition
+        // resumes from its creation snapshot and the edit lands on a live definition whose word is
+        // still deleted. Projecting that row back in breaks the foreign key to the word.
         await WriteChangeAfter(delete, SetWord(Guid.NewGuid(), "written late"));
 
         (await DataModel.GetLatest<Definition>(definitionId))!.DeletedAt.Should().NotBeNull();

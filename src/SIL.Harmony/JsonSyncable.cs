@@ -133,7 +133,7 @@ public class JsonSyncable : ISyncable
 
     private async Task<DateTimeOffset?> GetHeadTimestampAsync(FileInfo file, CancellationToken cancellationToken)
     {
-        return await ReadAllCommitsAsync(file, cancellationToken).MaxAsync(c => (DateTimeOffset?)c.HybridDateTime.DateTime, cancellationToken);
+        return await ReadAllCommitsAsync(file, cancellationToken).Select(c => (DateTimeOffset?)c.HybridDateTime.DateTime).MaxAsync(null, cancellationToken);
     }
 
     private async Task<HashSet<Guid>> GetExistingCommitIdsAsync(FileInfo file, CancellationToken cancellationToken)

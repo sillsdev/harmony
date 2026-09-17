@@ -31,6 +31,23 @@ public class SyncableTests
             .Be(wordCommit.HybridDateTime.DateTime.ToUnixTimeMilliseconds());
     }
 
+    [Theory]
+    [MemberData(nameof(SyncableBackends))]
+    public async Task GetSyncState_IncludesCommitMarker(ISyncableTestBackend backend)
+    {
+        await using var context = await backend.CreateAsync();
+        var wordCommit = SetWordCommit("x", context.ClientId);
+        await context.Syncable.AddRangeFromSync([wordCommit]);
+
+        var state = await context.Syncable.GetSyncState();
+        var clientState = state.ClientStates.Should().ContainSingle(s => s.ClientId == context.ClientId).Subject;
+        clientState.CommitCount.Should().Be(1);
+        clientState.MaxTimestamp.Should().Be(wordCommit.HybridDateTime.DateTime.ToUnixTimeMilliseconds());
+        clientState.Hash.Should().NotBe(0);
+    }
+
+
+
     private static Commit SetWordCommit(string text, Guid clientId, DateTimeOffset? dateTime = null)
     {
         return CreateCommit(clientId, dateTime ?? DateTimeOffset.Now, SetWord(text));

@@ -1,6 +1,9 @@
+using System.IO.Hashing;
 using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Core;
+
+public record struct SimpleCommit(Guid ClientId, Guid CommitId);
 
 public static class QueryHelpers
 {
@@ -8,9 +11,39 @@ public static class QueryHelpers
     {
         var dict = await commits.AsNoTracking().GroupBy(c => c.ClientId)
             .Select(g => new { ClientId = g.Key, DateTime = g.Max(c => c.HybridDateTime.DateTime) })
-            .AsAsyncEnumerable()//this is so the ticks are calculated server side instead of the db
-            .ToDictionaryAsync(c => c.ClientId, c => c.DateTime.ToUnixTimeMilliseconds());
-        return new SyncState(dict);
+            .AsAsyncEnumerable() //this is so the ticks are calculated server side instead of the db
+            .ToDictionaryAsync(c => c.ClientId,
+                c => new ClientStateBuilder
+                {
+                    ClientId = c.ClientId,
+                    Timestamp = c.DateTime.ToUnixTimeMilliseconds()
+                });
+        var simpleCommits = await commits.AsNoTracking()
+            .OrderBy(c => c.ClientId)
+            .Select(c => new SimpleCommit(c.ClientId, c.Id))
+            .ToArrayAsync();
+
+        return new SyncState(BuildSyncState(simpleCommits, dict));
+    }
+
+    public static ClientState[] BuildSyncState(SimpleCommit[] simpleCommits, Dictionary<Guid, ClientStateBuilder> dict)
+    {
+        //commits should be ordered by client id, so if we can avoid looking up the builder every loop it should be faster.
+        ClientStateBuilder? currentBuilder = null;
+        Span<byte> hash = stackalloc byte[16];
+        foreach (var (clientId, commitId) in simpleCommits)
+        {
+            if (currentBuilder == null || currentBuilder.ClientId != clientId)
+            {
+                currentBuilder = dict.GetValueOrDefault(clientId) ?? (dict[clientId] = new ClientStateBuilder() { ClientId = clientId });
+            }
+            currentBuilder.Count++;
+            if (!commitId.TryWriteBytes(hash))
+                throw new InvalidOperationException("Commit ID is too large to fit in a 16-byte buffer.");
+            currentBuilder.Hash.Append(hash);
+        }
+
+        return dict.Values.Select(b => b.Build()).ToArray();
     }
 
     public static async Task<ChangesResult<TCommit>> GetChanges<TCommit, TChange>(this IQueryable<TCommit> commits,

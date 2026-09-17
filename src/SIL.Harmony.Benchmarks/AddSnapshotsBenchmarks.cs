@@ -1,5 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Engines;
 using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Db;
 using SIL.Harmony.Tests;
@@ -35,6 +36,7 @@ public enum AddSnapshotsWorkload
 // recomputes the snapshot batch so no EF-tracked state leaks across iterations.
 // disable warning about waiting for sync code, benchmarkdotnet does not support async code, and it doesn't deadlock when waiting.
 [SuppressMessage("Usage", "VSTHRD002:Avoid problematic synchronous waits")]
+[SimpleJob(RunStrategy.Monitoring, launchCount: 2, warmupCount: 10, iterationCount: 15)]
 public class AddSnapshotsBenchmarks
 {
     private DataModelTestBase _template = null!;

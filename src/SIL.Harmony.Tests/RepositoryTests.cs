@@ -314,18 +314,26 @@ public class RepositoryTests : IAsyncLifetime
             .Which.CommitId.Should().Be(ids[0]);
     }
 
-    [Fact]
-    public async Task AddSnapshots_ProjectsSameTypeSelfReferencesInDependencyOrder()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task AddSnapshots_ProjectsSameTypeSelfReferencesInDependencyOrder(bool reverseOrder = false)
     {
         // Two words in one projection batch where the first references the second via a self-FK
         // (Word.AntonymId -> Word.Id). Deliberately order the referencing row FIRST so a naive
         // dictionary-order upsert inserts it before its referenced row and violates the FK.
         var referencedId = Guid.NewGuid();
         var referencingId = Guid.NewGuid();
-        await _repository.AddSnapshots([
+        IEnumerable<ObjectSnapshot> snapshots =
+        [
             WordSnapshot(referencingId, Time(1, 0), antonymId: referencedId),
             WordSnapshot(referencedId, Time(1, 0)),
-        ]);
+        ];
+        if (reverseOrder)
+        {
+            snapshots = snapshots.Reverse();
+        }
+        await _repository.AddSnapshots(snapshots);
 
         var words = await _crdtDbContext.Set<Word>().AsNoTracking()
             .ToArrayAsync(TestContext.Current.CancellationToken);

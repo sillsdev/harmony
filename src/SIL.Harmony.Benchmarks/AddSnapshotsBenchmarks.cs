@@ -30,7 +30,7 @@ public enum AddSnapshotsWorkload
     CreateDeleteModify,
 }
 
-// Isolates CrdtRepository.AddSnapshots (the slow, non-FAST path) from the rest of the sync pipeline.
+// Isolates CrdtRepository.AddSnapshots from the rest of the sync pipeline.
 // Expensive DB seeding happens once in GlobalSetup; each iteration gets a clean copy via ForkDatabase() and
 // recomputes the snapshot batch so no EF-tracked state leaks across iterations.
 // disable warning about waiting for sync code, benchmarkdotnet does not support async code, and it doesn't deadlock when waiting.
@@ -44,10 +44,7 @@ public class AddSnapshotsBenchmarks
     private CrdtRepository _repository = null!;
     private ObjectSnapshot[] _snapshotsToAdd = null!;
 
-    [Params(
-        1000
-        // ,        10_000
-        )]
+    [Params(1000, 10_000)]
     public int ChangeCount { get; set; }
 
     [ParamsAllValues]

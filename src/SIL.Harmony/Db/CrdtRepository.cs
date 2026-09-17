@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -209,22 +210,22 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         var ignoreAfterDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
         var ignoreAfterCounter = ignoreChangesAfter?.HybridDateTime.Counter;
         var ignoreAfterCommitId = ignoreChangesAfter?.Id;
+        // Newest snapshot per entity in a single grouped pass (SQLite only, not valid on Postgres).
+        // Scanning via IX_Snapshots_EntityId arrives pre-grouped and max() streams, so nothing sorts.
+        // With exactly one max(), SQLite returns the bare "s".* columns from the row that produced it
+        // (https://sqlite.org/lang_select.html#bareagg). The commit order (DateTime, Counter, Id) is
+        // packed into one sortable text key (Counter zero-padded to cover the long range); the trailing
+        // max(...) column is unmapped and ignored by EF.
         return dbContext.Set<ObjectSnapshot>().FromSql(
             $"""
-             WITH LatestSnapshots AS (SELECT first_value(s1.Id)
-                 OVER (
-                 PARTITION BY "s1"."EntityId"
-                 ORDER BY "c"."DateTime" DESC, "c"."Counter" DESC, "c"."Id" DESC
-                 ) AS "LatestSnapshotId"
-                                      FROM "Snapshots" AS "s1"
-                                               INNER JOIN "Commits" AS "c" ON "s1"."CommitId" = "c"."Id"
-                  WHERE {ignoreAfterDate} IS NULL
-                     OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
-                         ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId}))
-             SELECT *
+             SELECT "s".*,
+                    max("c"."DateTime" || '|' || printf('%020d', "c"."Counter") || '|' || "c"."Id")
              FROM "Snapshots" AS "s"
-                      INNER JOIN LatestSnapshots AS "ls" ON "s"."Id" = "ls"."LatestSnapshotId"
-             GROUP BY s.EntityId
+                      INNER JOIN "Commits" AS "c" ON "s"."CommitId" = "c"."Id"
+             WHERE {ignoreAfterDate} IS NULL
+                OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
+                    ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId})
+             GROUP BY "s"."EntityId"
              """).AsNoTracking();
     }
 

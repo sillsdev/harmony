@@ -227,14 +227,12 @@ public class DataModel : ISyncable, IAsyncDisposable
     private async Task ApplyCommits(CrdtRepository repo, SortedSet<Commit> commitsToApply, bool snapshotTableIsEmpty = false)
     {
         Dictionary<Guid, ObjectSnapshot?> snapshotLookup = [];
+        var entityIds = commitsToApply
+            .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
+            .ToHashSet();
         //an empty table can only yield a null per entity, so tell the worker that instead of loading it
-        if (!snapshotTableIsEmpty && commitsToApply.Count > 10)
+        if (!snapshotTableIsEmpty && entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint)
         {
-            // Bulk-load relevant snapshots to minimize DB queries
-            var entityIds = commitsToApply
-                .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
-                .ToHashSet();
-
             //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
             snapshotLookup = await repo.CurrentSnapshots()
                 .Include(s => s.Commit)
@@ -275,7 +273,10 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task RegenerateSnapshots()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
+        await using var transaction = await repo.BeginTransactionAsync();
         await ReplayFromCheckpoint(repo, null);
+        await transaction.CommitAsync();
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)

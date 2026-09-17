@@ -23,6 +23,8 @@ public class HarmonyConfig
     internal static readonly ProjectedEntitiesChangedDelegate DefaultOnProjectedEntitiesChanged =
         static _ => ValueTask.CompletedTask;
 
+    public int PrefetchSnapshotsBreakpoint { get; set; } = 220; //not exactly sure the right number, but 200 is slower with the query, in release builds
+
     public ProjectedEntitiesChangedDelegate OnProjectedEntitiesChanged { get; set; } =
         DefaultOnProjectedEntitiesChanged;
 

@@ -89,6 +89,23 @@ public class ProjectedEntityInterceptorTests
     }
 
     [Fact]
+    public async Task Two_Updates_in_same_AddSnapshots_notifies_only_once()
+    {
+        var interceptor = new RecordingInterceptor();
+        var fixture = CreateWithInterceptor(interceptor);
+        var id = Guid.NewGuid();
+
+        await fixture.WriteNextChange(
+        [
+            new NewWordChange(id, "a"),
+            new SetWordTextChange(id, "b"),
+        ]);
+
+        interceptor.Invocations.Should().ContainSingle();
+        interceptor.Invocations[0].Should().BeEquivalentTo([(id, ProjectedChangeKind.Upsert, "b")]);
+    }
+
+    [Fact]
     public async Task Create_then_delete_in_same_AddSnapshots_notifies_delete_only()
     {
         var interceptor = new RecordingInterceptor();
@@ -152,7 +169,7 @@ public class ProjectedEntityInterceptorTests
         var fixture = new DataModelTestBase(configure: services =>
         {
             services.AddScoped<IProjectedEntityInterceptor>(_ =>
-                new OrderRecordingInterceptor(order, interceptor));
+                new OrderRecordingInterceptor(order, interceptor, "di"));
             services.Configure<HarmonyConfig>(config =>
             {
                 config.OnProjectedEntitiesChanged = batch =>
@@ -210,11 +227,12 @@ public class ProjectedEntityInterceptorTests
 
     private sealed class OrderRecordingInterceptor(
         List<string> order,
-        RecordingInterceptor inner) : IProjectedEntityInterceptor
+        RecordingInterceptor inner,
+        string name) : IProjectedEntityInterceptor
     {
         public ValueTask OnProjectedEntitiesChanged(ProjectedEntityBatch batch)
         {
-            order.Add("di");
+            order.Add(name);
             return inner.OnProjectedEntitiesChanged(batch);
         }
     }

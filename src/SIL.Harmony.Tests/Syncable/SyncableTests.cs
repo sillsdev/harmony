@@ -33,19 +33,61 @@ public class SyncableTests
 
     [Theory]
     [MemberData(nameof(SyncableBackends))]
-    public async Task GetSyncState_IncludesCommitMarker(ISyncableTestBackend backend)
+    public async Task GetSyncState_IncludesCommitHash(ISyncableTestBackend backend)
     {
         await using var context = await backend.CreateAsync();
-        var wordCommit = SetWordCommit("x", context.ClientId);
-        await context.Syncable.AddRangeFromSync([wordCommit]);
+        var wordCommit1 = SetWordCommit("x", context.ClientId, DateTimeOffset.Now.Subtract(TimeSpan.FromMinutes(1)));
+        var wordCommit2 = SetWordCommit("x", context.ClientId, DateTimeOffset.Now.Add(TimeSpan.FromMinutes(1)));
+        await context.Syncable.AddRangeFromSync([wordCommit1, wordCommit2]);
 
         var state = await context.Syncable.GetSyncState();
         var clientState = state.ClientStates.Should().ContainSingle(s => s.ClientId == context.ClientId).Subject;
-        clientState.CommitCount.Should().Be(1);
-        clientState.MaxTimestamp.Should().Be(wordCommit.HybridDateTime.DateTime.ToUnixTimeMilliseconds());
+        clientState.CommitCount.Should().Be(2);
+        clientState.MaxTimestamp.Should().Be(wordCommit2.HybridDateTime.DateTime.ToUnixTimeMilliseconds());
         clientState.Hash.Should().NotBe(0);
     }
 
+    [Theory]
+    [MemberData(nameof(SyncableBackends))]
+    public async Task GetSyncState_MatchesGetChangesSyncState(ISyncableTestBackend backend)
+    {
+        await using var context = await backend.CreateAsync();
+        //we need 2 commits because the commit hash is order dependent
+        var wordCommit1 = SetWordCommit("x", context.ClientId, DateTimeOffset.Now.Subtract(TimeSpan.FromMinutes(1)));
+        var wordCommit2 = SetWordCommit("x", context.ClientId, DateTimeOffset.Now.Add(TimeSpan.FromMinutes(1)));
+        await context.Syncable.AddRangeFromSync([wordCommit1, wordCommit2]);
+
+        var fromSyncState = await context.Syncable.GetSyncState();
+        (await context.Syncable.GetChanges(fromSyncState)).ServerSyncState.Should().BeEquivalentTo(fromSyncState);
+    }
+
+    [Theory]
+    [MemberData(nameof(SyncableTestHelpers.BackendPairData), MemberType = typeof(SyncableTestHelpers))]
+    public async Task GetSyncState_ValuesAlwaysMatch(ISyncableTestBackend localBackend, ISyncableTestBackend remoteBackend)
+    {
+        await using var local = await localBackend.CreateAsync();
+        await using var remote = await remoteBackend.CreateAsync();
+        var commits = new List<Commit>(100);
+        for (int i = 0; i < 100; i++)
+        {
+            var clientId = (i % 3) switch
+            {
+                1 => local.ClientId,
+                2 => remote.ClientId,
+                _ => Guid.NewGuid(),
+            };
+            var wordCommit = SetWordCommit("word-" + i, clientId);
+            commits.Add(wordCommit);
+        }
+        await local.Syncable.AddRangeFromSync(commits);
+        //push all commits to remote, can't reuse the commits list because they're attached to the local backend
+        await remote.Syncable.AddRangeFromSync((await local.Syncable.GetChanges(new SyncState([], []))).MissingFromClient);
+
+
+        var localState = await local.Syncable.GetSyncState();
+        var remoteState = await remote.Syncable.GetSyncState();
+        localState.Should().BeEquivalentTo(remoteState);
+    }
 
 
     private static Commit SetWordCommit(string text, Guid clientId, DateTimeOffset? dateTime = null)
@@ -178,7 +220,9 @@ public class SyncableTests
         var client1Entity2 = await local.ReadModel.GetBySnapshotId<Word>(client1Snapshot.Snapshots[entity2Id].Id);
         client1Entity2.Text.Should().Be("entity2");
 
-        (await local.Syncable.GetSyncState()).Should().BeEquivalentTo(await remote.Syncable.GetSyncState());
+        SyncState remoteState = await remote.Syncable.GetSyncState();
+        SyncState localState = await local.Syncable.GetSyncState();
+        localState.Should().BeEquivalentTo(remoteState);
     }
 
     [Theory]
@@ -209,6 +253,10 @@ public class SyncableTests
         client2Entity!.Text.Should().Be("entity1.1");
         var client1Entity = await local.ReadModel.GetLatest<Word>(entity1Id);
         client1Entity!.Text.Should().Be("entity1.1");
+
+        SyncState remoteState = await remote.Syncable.GetSyncState();
+        SyncState localState = await local.Syncable.GetSyncState();
+        localState.Should().BeEquivalentTo(remoteState);
     }
 
     [Theory]

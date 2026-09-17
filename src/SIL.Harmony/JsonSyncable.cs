@@ -57,7 +57,7 @@ public class JsonSyncable : ISyncable
                 ClientId = ClientIdForFile(file)
             };
             var hash = new byte[16];
-            await foreach (var commit in ReadAllCommitsAsync(file, ct))
+            await foreach (var commit in ReadAllCommitsAsync(file, ct).OrderBy(c => c.ClientId).ThenBy(c => c.Id))
             {
                 UpdateClientState(clientStateBuilder, commit, ref hash);
             }
@@ -87,7 +87,7 @@ public class JsonSyncable : ISyncable
                 ClientId = ClientIdForFile(file)
             };
             var hash = new byte[16];
-            await foreach (var commit in ReadAllCommitsAsync(file, ct))
+            await foreach (var commit in ReadAllCommitsAsync(file, ct).OrderBy(c => c.ClientId).ThenBy(c => c.Id))
             {
                 UpdateClientState(clientStateBuilder, commit, ref hash);
                 allCommits.Add(commit);

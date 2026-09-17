@@ -19,7 +19,7 @@ public static class QueryHelpers
                     Timestamp = c.DateTime.ToUnixTimeMilliseconds()
                 });
         var simpleCommits = await commits.AsNoTracking()
-            .OrderBy(c => c.ClientId)
+            .OrderBy(c => c.ClientId).ThenBy(c => c.Id)
             .Select(c => new SimpleCommit(c.ClientId, c.Id))
             .ToArrayAsync();
 

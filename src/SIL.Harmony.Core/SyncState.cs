@@ -25,8 +25,8 @@ public record SyncState(Dictionary<Guid, long> ClientHeads, ClientState[]? Clien
             var jsonObject = JsonSerializer.Deserialize<JsonObject>(ref reader, options);
             if (jsonObject == null)
                 return null;
-            var clientHeads = jsonObject["ClientHeads"]?.Deserialize<Dictionary<Guid, long>>(options);
-            var clientStates = jsonObject["ClientStates"]?.Deserialize<ClientState[]>(options);
+            var clientHeads = jsonObject[options.PropertyNamingPolicy?.ConvertName("ClientHeads") ?? "ClientHeads"]?.Deserialize<Dictionary<Guid, long>>(options);
+            var clientStates = jsonObject[options.PropertyNamingPolicy?.ConvertName("ClientStates") ?? "ClientStates"]?.Deserialize<ClientState[]>(options);
             return (clientHeads, clientStates) switch
             {
                 (null, null) => null,
@@ -39,9 +39,9 @@ public record SyncState(Dictionary<Guid, long> ClientHeads, ClientState[]? Clien
         public override void Write(Utf8JsonWriter writer, SyncState value, JsonSerializerOptions options)
         {
             writer.WriteStartObject();
-            writer.WritePropertyName("ClientHeads");
+            writer.WritePropertyName(options.PropertyNamingPolicy?.ConvertName("ClientHeads") ?? "ClientHeads");
             JsonSerializer.Serialize(writer, value.ClientHeads, options);
-            writer.WritePropertyName("ClientStates");
+            writer.WritePropertyName(options.PropertyNamingPolicy?.ConvertName("ClientStates") ?? "ClientStates");
             JsonSerializer.Serialize(writer, value.ClientStates, options);
             writer.WriteEndObject();
         }

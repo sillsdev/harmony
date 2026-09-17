@@ -62,30 +62,62 @@ public static class QueryHelpers
     {
         commits = commits.AsNoTracking();
         if (includeChangeEntities) commits = commits.Include(c => c.ChangeEntities);
-        foreach (var (clientId, localTimestamp) in localState.ClientHeads)
+        foreach (var localClientState in localState.ClientStates)
         {
-            long? remoteTimestamp = remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp)
-                ? otherTimestamp
-                : null;
-            var clientCommits = commits.Where(c => c.ClientId == clientId);
-            if (remoteTimestamp is null)
+            var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId);
+            var remoteClientState = remoteState.GetClientState(localClientState.ClientId);
+            if (SendCommitsAfterTimestamp(localClientState, remoteClientState) is { } afterTimestamp)
+            {
+                await foreach (var commit in clientCommits
+                                   .Where(c => c.HybridDateTime.DateTime > afterTimestamp)
+                                   .DefaultOrder()
+                                   .AsAsyncEnumerable())
+                {
+                    if (commit.DateTime.ToUnixTimeMilliseconds() > afterTimestamp.ToUnixTimeMilliseconds())
+                        yield return commit;
+                }
+                continue;
+            }
+
+            if (ShouldSendAllCommits(localClientState, remoteClientState))
             {
                 await foreach (var commit in clientCommits.DefaultOrder().AsAsyncEnumerable())
                     yield return commit;
             }
-            else if (localTimestamp > remoteTimestamp)
-            {
-                var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(remoteTimestamp.Value);
-                await foreach (var commit in clientCommits
-                                   .Where(c => c.HybridDateTime.DateTime > otherDt)
-                                   .DefaultOrder()
-                                   .AsAsyncEnumerable())
-                {
-                    if (commit.DateTime.ToUnixTimeMilliseconds() > remoteTimestamp)
-                        yield return commit;
-                }
-            }
         }
+    }
+
+    private static DateTimeOffset? SendCommitsAfterTimestamp(ClientState localClientState, ClientState? remoteClientState)
+    {
+        if (remoteClientState is null)
+            return null;
+        if (localClientState.MaxTimestamp > remoteClientState.MaxTimestamp)
+            return DateTimeOffset.FromUnixTimeMilliseconds(remoteClientState.MaxTimestamp);
+        return null;
+    }
+
+    private static bool ShouldSendAllCommits(ClientState localClientState, ClientState? remoteClientState)
+    {
+        //remote does not have this client, so push everything
+        if (remoteClientState is null)
+        {
+            return true;
+        }
+        //local and remote agree on this client, nothing to sync
+        if (localClientState.Hash == remoteClientState.Hash)
+        {
+            return false;
+        }
+
+        //the local client is missing commits from the remote, don't send anything.
+        //this could be a false positive, but we'll catch those on the next sync.
+        if (localClientState.CommitCount < remoteClientState.CommitCount)
+        {
+            return false;
+        }
+
+        //the hashes don't match and we have more or the same commit counts than remote, so just send everything
+        return true;
     }
 
     public static SortedSet<T> ToSortedSet<T>(this IEnumerable<T> queryable) where T : CommitBase
@@ -108,13 +140,11 @@ public static class QueryHelpers
         SyncState localState,
         SyncState remoteState) where TCommit : CommitBase<TChange>
     {
-        foreach (var (clientId, localTimestamp) in localState.ClientHeads)
+        foreach (var localClientState in localState.ClientStates)
         {
-            long? remoteTimestamp = remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp)
-                ? otherTimestamp
-                : null;
+            ClientState? remoteClientState = remoteState.GetClientState(localClientState.ClientId);
             foreach (var commit in GetMissingCommitsForClient(
-                         commits.Where(c => c.ClientId == clientId), localTimestamp, remoteTimestamp))
+                         commits.Where(c => c.ClientId == localClientState.ClientId), localClientState, remoteClientState))
             {
                 yield return commit;
             }
@@ -123,24 +153,25 @@ public static class QueryHelpers
 
     private static IEnumerable<TCommit> GetMissingCommitsForClient<TCommit>(
         IEnumerable<TCommit> clientCommits,
-        long localTimestamp,
-        long? remoteTimestamp) where TCommit : CommitBase
+        ClientState localClientState,
+        ClientState? remoteClientState) where TCommit : CommitBase
     {
-        if (remoteTimestamp is null)
+        if (SendCommitsAfterTimestamp(localClientState, remoteClientState) is { } afterTimestamp)
+        {
+            foreach (var commit in clientCommits
+                         .Where(c => c.HybridDateTime.DateTime > afterTimestamp)
+                         .DefaultOrder())
+            {
+                if (commit.DateTime.ToUnixTimeMilliseconds() > afterTimestamp.ToUnixTimeMilliseconds())
+                    yield return commit;
+            }
+            yield break;
+        }
+
+        if (ShouldSendAllCommits(localClientState, remoteClientState))
         {
             foreach (var commit in clientCommits.DefaultOrder())
                 yield return commit;
-        }
-        else if (localTimestamp > remoteTimestamp)
-        {
-            var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(remoteTimestamp.Value);
-            foreach (var commit in clientCommits
-                         .Where(c => c.HybridDateTime.DateTime > otherDt)
-                         .DefaultOrder())
-            {
-                if (commit.DateTime.ToUnixTimeMilliseconds() > remoteTimestamp)
-                    yield return commit;
-            }
         }
     }
 

@@ -99,7 +99,7 @@ public class SyncableTests
         var commit = SetWordCommit("entity1", context.ClientId);
         await context.Syncable.AddRangeFromSync([commit]);
 
-        var (missing, _) = await context.Syncable.GetChanges(new SyncState([]));
+        var (missing, _) = await context.Syncable.GetChanges(new SyncState([], []));
         missing.Should().ContainSingle(c => c.Id == commit.Id);
     }
 
@@ -133,7 +133,7 @@ public class SyncableTests
         var stateAfter = await context.Syncable.GetSyncState();
 
         stateAfter.Should().BeEquivalentTo(stateBefore);
-        var changes = await context.Syncable.GetChanges(new SyncState([]));
+        var changes = await context.Syncable.GetChanges(new SyncState([], []));
         changes.MissingFromClient.Should().HaveCount(1);
     }
 

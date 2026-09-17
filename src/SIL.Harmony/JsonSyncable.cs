@@ -59,35 +59,43 @@ public class JsonSyncable : ISyncable
             var hash = new byte[16];
             await foreach (var commit in ReadAllCommitsAsync(file, ct))
             {
-                clientStateBuilder.Count++;
-                clientStateBuilder.Timestamp = Math.Max(clientStateBuilder.Timestamp,
-                    commit.HybridDateTime.DateTime.ToUnixTimeMilliseconds());
-                commit.Id.TryWriteBytes(hash);
-                clientStateBuilder.Hash.Append(hash);
+                UpdateClientState(clientStateBuilder, commit, ref hash);
             }
             heads.Add(clientStateBuilder.Build());
         });
         return new SyncState(heads.ToArray());
     }
 
+    private static void UpdateClientState(ClientStateBuilder clientStateBuilder, Commit commit, ref byte[] hash)
+    {
+        clientStateBuilder.Count++;
+        clientStateBuilder.Timestamp = Math.Max(clientStateBuilder.Timestamp,
+            commit.HybridDateTime.DateTime.ToUnixTimeMilliseconds());
+        commit.Id.TryWriteBytes(hash);
+        clientStateBuilder.Hash.Append(hash);
+    }
+
     public async Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads)
     {
-        var heads = new ConcurrentDictionary<Guid, long>();
+        var heads = new ConcurrentBag<ClientState>();
         var allCommits = new ConcurrentBag<Commit>();
         var files = AllClientFiles().ToArray();
         await Parallel.ForEachAsync(files, async (file, ct) =>
         {
-            DateTimeOffset? latest = null;
+            var clientStateBuilder = new ClientStateBuilder()
+            {
+                ClientId = ClientIdForFile(file)
+            };
+            var hash = new byte[16];
             await foreach (var commit in ReadAllCommitsAsync(file, ct))
             {
-                if (latest is null || commit.HybridDateTime.DateTime > latest)
-                    latest = commit.HybridDateTime.DateTime;
+                UpdateClientState(clientStateBuilder, commit, ref hash);
                 allCommits.Add(commit);
             }
-            if (latest is not null)
-                heads[ClientIdForFile(file)] = latest.Value.ToUnixTimeMilliseconds();
+
+            heads.Add(clientStateBuilder.Build());
         });
-        var localState = new SyncState(new Dictionary<Guid, long>(heads));
+        var localState = new SyncState(heads.ToArray());
         var missing = allCommits.GetMissingCommits<Commit, IChange>(localState, otherHeads).ToArray();
         return new ChangesResult<Commit>(missing, localState);
     }

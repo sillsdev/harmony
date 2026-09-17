@@ -132,7 +132,7 @@ public class SyncableTests
         await context.Syncable.AddRangeFromSync([commit]);
         var stateAfter = await context.Syncable.GetSyncState();
 
-        stateAfter.ClientHeads.Should().BeEquivalentTo(stateBefore.ClientHeads);
+        stateAfter.Should().BeEquivalentTo(stateBefore);
         var changes = await context.Syncable.GetChanges(new SyncState([]));
         changes.MissingFromClient.Should().HaveCount(1);
     }
@@ -177,6 +177,8 @@ public class SyncableTests
         client2Entity1.Text.Should().Be("entity1");
         var client1Entity2 = await local.ReadModel.GetBySnapshotId<Word>(client1Snapshot.Snapshots[entity2Id].Id);
         client1Entity2.Text.Should().Be("entity2");
+
+        (await local.Syncable.GetSyncState()).Should().BeEquivalentTo(await remote.Syncable.GetSyncState());
     }
 
     [Theory]

@@ -12,8 +12,8 @@ public class SyncStateTests
 
         var dict = new Dictionary<Guid, ClientStateBuilder>()
         {
-            [clientId1] = new ClientStateBuilder() { ClientId = clientId1, Timestamp = 5},
-            [clientId2] = new ClientStateBuilder() { ClientId = clientId2, Timestamp = 10},
+            [clientId1] = new ClientStateBuilder() { ClientId = clientId1, Timestamp = 5 },
+            [clientId2] = new ClientStateBuilder() { ClientId = clientId2, Timestamp = 10 },
         };
 
         var clientStates = QueryHelpers.BuildSyncState(Enumerable.Range(1, 10_000)

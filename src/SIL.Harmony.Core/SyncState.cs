@@ -18,7 +18,7 @@ public record SyncState(Dictionary<Guid, long> ClientHeads, ClientState[]? Clien
     public ClientState[] ClientStates { get; } = ClientStates ?? [];
     public ClientState? GetClientState(Guid clientId) => ClientStates?.FirstOrDefault(cs => cs.ClientId == clientId);
 
-    public class SyncStateConverter: JsonConverter<SyncState>
+    public class SyncStateConverter : JsonConverter<SyncState>
     {
         public override SyncState? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {

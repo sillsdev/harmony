@@ -49,14 +49,25 @@ public class JsonSyncable : ISyncable
 
     public async Task<SyncState> GetSyncState()
     {
-        var heads = new ConcurrentDictionary<Guid, long>();
+        var heads = new ConcurrentBag<ClientState>();
         await Parallel.ForEachAsync(AllClientFiles(), async (file, ct) =>
         {
-            var ts = await GetHeadTimestampAsync(file, ct);
-            if (ts is not null)
-                heads[ClientIdForFile(file)] = ts.Value.ToUnixTimeMilliseconds();
+            var clientStateBuilder = new ClientStateBuilder()
+            {
+                ClientId = ClientIdForFile(file)
+            };
+            var hash = new byte[16];
+            await foreach (var commit in ReadAllCommitsAsync(file, ct))
+            {
+                clientStateBuilder.Count++;
+                clientStateBuilder.Timestamp = Math.Max(clientStateBuilder.Timestamp,
+                    commit.HybridDateTime.DateTime.ToUnixTimeMilliseconds());
+                commit.Id.TryWriteBytes(hash);
+                clientStateBuilder.Hash.Append(hash);
+            }
+            heads.Add(clientStateBuilder.Build());
         });
-        return new SyncState(new Dictionary<Guid, long>(heads));
+        return new SyncState(heads.ToArray());
     }
 
     public async Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads)

@@ -116,20 +116,16 @@ public class AddSnapshotsBenchmarks
             .ToArray()
             .ToSortedSet();
 
-        // Prepopulate the snapshot lookup the same way DataModel.UpdateSnapshots does: existing snapshots (untracked)
-        // plus null for entities without one, so SnapshotWorker doesn't issue a per-entity query while computing.
+        // Preload the baseline the same way DataModel does, so SnapshotWorker doesn't issue a per-entity query while computing.
         var entityIds = measuredCommits
             .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
             .ToHashSet();
-        var snapshotLookup = _repository.CurrentSnapshots()
-            .Include(s => s.Commit)
-            .Where(s => EF.Parameter(entityIds).Contains(s.EntityId))
-            .ToDictionary(s => s.EntityId, s => (ObjectSnapshot?)s);
-        foreach (var entityId in entityIds)
-            snapshotLookup.TryAdd(entityId, null);
+        var checkpoint = _repository.FindCheckpointBefore(measuredCommits.First()).GetAwaiter().GetResult();
+        var baseline = _repository.SnapshotsAsOf(checkpoint);
+        baseline.Preload(entityIds).GetAwaiter().GetResult();
 
-        var worker = new SnapshotWorker(measuredCommits, snapshotLookup, _repository, _local.CrdtConfig);
-        _snapshotsToAdd = worker.ComputeSnapshotsToPersist().GetAwaiter().GetResult().ToArray();
+        var worker = new SnapshotWorker(measuredCommits, baseline, _local.CrdtConfig);
+        _snapshotsToAdd = worker.ComputeSnapshotsAndMarkCheckpoints().GetAwaiter().GetResult().ToArray();
     }
 
     [Benchmark]

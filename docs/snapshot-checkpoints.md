@@ -177,7 +177,7 @@ Two independent halves, sharing only the holes:
   it would let a hole span a floor boundary, guaranteeing a safe commit at least every `MaxChangesBetweenSnapshotCheckpoints`
   changes (`HarmonyConfig`, default 100). Changes, not commits, because replay cost is per change: one commit of 1000
   changes costs as much to replay as 1000 single-change ones. This is the only dial, and it decides retention only.
-- **Discovery** (`SnapshotCheckpointPolicy.DiscoverCheckpoints`, called from `SnapshotWorker.UpdateSnapshots`). After the
+- **Discovery** (`SnapshotCheckpointPolicy.PopulateCheckpoints`, called from `SnapshotWorker.ComputeSnapshotsAndMarkCheckpoints`). After the
   replay, a commit is flagged iff no entity's dropped-snapshot hole covers it, a single sweep over the holes the worker
   recorded. This finds *every* safe commit, not only the grid's; the floor boundaries come out safe by construction, so
   the flagged set always contains them.
@@ -190,6 +190,9 @@ a late commit before it ever got any.
 
 `DataModel.ResumeFromCheckpoint` is the resume primitive the point-in-time read paths share (`GetSnapshotsAtCommit`,
 `GetSnapshotAtCommit`); the late-commit write path in `UpdateSnapshots` resolves its own resume point the same way.
+Every replay applies its commits on top of `CrdtRepository.SnapshotsAsOf(checkpoint)`, a read-only view of the
+snapshot table as it stood at that checkpoint (empty when there is none). It only accepts a `Checkpoint`, which only the
+repository's checkpoint lookups can create, so a replay can't be seeded from a non-checkpoint commit by mistake.
 `FindNewestCheckpoint` reads the flags; the lookup is a partial index over the ordering tuple
 filtered on the flag (a leading bool column can't seek, so it filters on the flag and orders by the tuple).
 

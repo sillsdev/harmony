@@ -56,9 +56,4 @@ public static class DbSetExtensions
                                     || (c.Commit.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
                                         c.Commit.HybridDateTime.Counter == before.HybridDateTime.Counter && c.CommitId < before.Id));
     }
-
-    public static IQueryable<T> AsTracking<T>(this IQueryable<T> queryable, bool tracking = true) where T : class
-    {
-        return queryable.AsTracking(tracking ? QueryTrackingBehavior.TrackAll : QueryTrackingBehavior.NoTracking);
-    }
 }

@@ -2,9 +2,6 @@ using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Reflection;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.ChangeTracking;
-using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -61,24 +58,29 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         ILogger<CrdtRepository> logger,
         FastProjection fastProjection,
         IEnumerable<IProjectedEntityInterceptor> interceptors)
-        : this(dbContext, MakeCurrentSnapshotsQuery(dbContext), crdtConfig, logger, fastProjection, interceptors)
-    {
-    }
-
-    private CrdtRepository(ICrdtDbContext dbContext,
-        IQueryable<ObjectSnapshot> currentSnapshots,
-        IOptions<HarmonyConfig> crdtConfig,
-        ILogger<CrdtRepository> logger,
-        FastProjection fastProjection,
-        IEnumerable<IProjectedEntityInterceptor> interceptors)
     {
         _crdtConfig = crdtConfig;
         _dbContext = dbContext;
         _logger = logger;
         _fastProjection = fastProjection;
         _interceptors = interceptors as IProjectedEntityInterceptor[] ?? interceptors.ToArray();
-        _currentSnapshotsQueryable = currentSnapshots;
         _lock = Locks.GetOrAdd(DatabaseIdentifier, _ => new AsyncLock());
+    }
+
+    /// <summary>
+    /// A commit at which every entity's newest snapshot is its complete state, so the snapshots as of it are a sound
+    /// base to replay from. Only the checkpoint lookups create one, and it is only as fresh as the query behind it.
+    /// </summary>
+    public sealed class Checkpoint
+    {
+        private Checkpoint(Commit commit)
+        {
+            Commit = commit;
+        }
+
+        public Commit Commit { get; }
+
+        internal static Checkpoint? From(Commit? commit) => commit is null ? null : new Checkpoint(commit);
     }
 
     public AwaitableDisposable<IDisposable> Lock()
@@ -152,28 +154,34 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();
     }
 
-    public async Task<Commit?> FindCheckpointBefore(Commit commit)
+    public async Task<Checkpoint?> FindCheckpointBefore(Commit commit)
     {
-        return await Commits.Where(c => c.IsSnapshotCheckpoint)
+        return Checkpoint.From(await Commits.Where(c => c.IsSnapshotCheckpoint)
             .WhereBefore(commit, inclusive: false)
             .DefaultOrderDescending()
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync());
     }
 
-    public async Task<Commit?> FindCheckpointAtOrBefore(Commit commit)
+    public async Task<Checkpoint?> FindCheckpointAtOrBefore(Commit commit)
     {
-        return await Commits.Where(c => c.IsSnapshotCheckpoint)
+        return Checkpoint.From(await Commits.Where(c => c.IsSnapshotCheckpoint)
             .WhereBefore(commit, inclusive: true)
             .DefaultOrderDescending()
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync());
     }
 
-    public async Task<Commit?> FindCheckpointAtOrAfter(Commit commit)
+    public async Task<Checkpoint?> FindCheckpointAtOrAfter(Commit commit)
     {
-        return await Commits.Where(c => c.IsSnapshotCheckpoint)
+        return Checkpoint.From(await Commits.Where(c => c.IsSnapshotCheckpoint)
             .WhereAfter(commit, inclusive: true)
             .DefaultOrder()
-            .FirstOrDefaultAsync();
+            .FirstOrDefaultAsync());
+    }
+
+    /// <param name="checkpoint">null is the state before the first commit, i.e. no snapshots at all</param>
+    public ISnapshotView SnapshotsAsOf(Checkpoint? checkpoint)
+    {
+        return checkpoint is null ? EmptySnapshotView.Instance : new DbSnapshotView(_dbContext, checkpoint.Commit);
     }
 
     public async Task DeleteSnapshotsAndProjectedTables()
@@ -204,35 +212,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return Commits.DefaultOrder();
     }
 
-    private static IQueryable<ObjectSnapshot> MakeCurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? ignoreChangesAfter = null)
-    {
-        // null = unscoped
-        var ignoreAfterDate = ignoreChangesAfter?.HybridDateTime.DateTime.UtcDateTime;
-        var ignoreAfterCounter = ignoreChangesAfter?.HybridDateTime.Counter;
-        var ignoreAfterCommitId = ignoreChangesAfter?.Id;
-        // Newest snapshot per entity in a single grouped pass (SQLite only, not valid on Postgres).
-        // Scanning via IX_Snapshots_EntityId arrives pre-grouped and max() streams, so nothing sorts.
-        // With exactly one max(), SQLite returns the bare "s".* columns from the row that produced it
-        // (https://sqlite.org/lang_select.html#bareagg). The commit order (DateTime, Counter, Id) is
-        // packed into one sortable text key (Counter zero-padded to cover the long range); the trailing
-        // max(...) column is unmapped and ignored by EF.
-        return dbContext.Set<ObjectSnapshot>().FromSql(
-            $"""
-             SELECT "s".*,
-                    max("c"."DateTime" || '|' || printf('%020d', "c"."Counter") || '|' || "c"."Id")
-             FROM "Snapshots" AS "s"
-                      INNER JOIN "Commits" AS "c" ON "s"."CommitId" = "c"."Id"
-             WHERE {ignoreAfterDate} IS NULL
-                OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
-                    ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId})
-             GROUP BY "s"."EntityId"
-             """).AsNoTracking();
-    }
-
-    private readonly IQueryable<ObjectSnapshot> _currentSnapshotsQueryable;
     public IQueryable<ObjectSnapshot> CurrentSnapshots()
     {
-        return _currentSnapshotsQueryable;
+        return DbSnapshotView.CurrentSnapshotsQuery(_dbContext, upToInclusive: null);
     }
 
     public IAsyncEnumerable<SimpleSnapshot> CurrenSimpleSnapshots(bool includeDeleted = false)
@@ -253,11 +235,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return snapshots;
     }
 
-    public async Task<Dictionary<Guid, ObjectSnapshot>> GetCurrentSnapshots()
-    {
-        return await CurrentSnapshots().Include(s => s.Commit).ToDictionaryAsync(s => s.EntityId);
-    }
-
     public async Task<Commit?> FindCommitByHash(string hash)
     {
         return await Commits.SingleOrDefaultAsync(c => c.Hash == hash);
@@ -272,36 +249,29 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .FirstOrDefaultAsync();
     }
 
-    public async Task<Commit[]> GetCommitsAfter(Commit? commit)
+    public Task<SortedSet<Commit>> GetCommitsAfter(Checkpoint? checkpoint)
     {
-        var dbContextCommits = Commits.Include(c => c.ChangeEntities);
-        if (commit is null) return await dbContextCommits.DefaultOrder().ToArrayAsync();
-        return await dbContextCommits
-            .WhereAfter(commit)
-            .DefaultOrder()
-            .ToArrayAsync();
+        return GetCommitsBetween(checkpoint?.Commit, upToInclusive: null);
     }
 
-    /// <summary>The commits in <c>(afterExclusive, upToInclusive]</c>, oldest first. Null <paramref name="afterExclusive"/> starts at the beginning.</summary>
-    public async Task<SortedSet<Commit>> GetCommitsBetween(Commit? afterExclusive, Commit upToInclusive)
+    /// <summary>The commits in <c>(afterExclusive, upToInclusive]</c>. Null <paramref name="afterExclusive"/> starts at the beginning.</summary>
+    public Task<SortedSet<Commit>> GetCommitsBetween(Checkpoint? afterExclusive, Commit upToInclusive)
     {
-        var commits = Commits.Include(c => c.ChangeEntities).WhereBefore(upToInclusive, inclusive: true);
+        return GetCommitsBetween(afterExclusive?.Commit, upToInclusive);
+    }
+
+    /// <summary>The commits in <c>(afterExclusive, upToInclusive]</c>; a null bound is open.</summary>
+    private async Task<SortedSet<Commit>> GetCommitsBetween(Commit? afterExclusive, Commit? upToInclusive)
+    {
+        IQueryable<Commit> commits = Commits.Include(c => c.ChangeEntities);
         if (afterExclusive is not null) commits = commits.WhereAfter(afterExclusive);
+        if (upToInclusive is not null) commits = commits.WhereBefore(upToInclusive, inclusive: true);
         return await commits.ToSortedSetAsync();
     }
 
-    public async Task<ObjectSnapshot?> FindSnapshot(Guid id, bool tracking = false)
+    public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId)
     {
         return await Snapshots
-            .AsTracking(tracking)
-            .Include(s => s.Commit)
-            .SingleOrDefaultAsync(s => s.Id == id);
-    }
-
-    public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId, bool tracking = false)
-    {
-        return await Snapshots
-            .AsTracking(tracking)
             .Include(s => s.Commit)
             .DefaultOrder()
             .LastOrDefaultAsync(s => s.EntityId == objectId);
@@ -386,18 +356,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await _crdtConfig.Value.OnProjectedEntitiesChanged(batch);
     }
 
-    /// <param name="upToInclusive">null scopes to before the first commit, i.e. nothing, which is what a replay resuming from the beginning of history sees</param>
-    public CrdtRepository GetScopedRepository(Commit? upToInclusive)
-    {
-        var scoped = new ScopedDbContext(_dbContext, upToInclusive);
-        //we can't use the scoped db context as it prevents access to the DbSet for the Snapshots,
-        //but since we're using a custom query, we can use it directly and apply the scoped filters manually
-        var currentSnapshots = upToInclusive is null
-            ? scoped.Snapshots // always empty if null
-            : MakeCurrentSnapshotsQuery(_dbContext, ignoreChangesAfter: upToInclusive);
-        return new CrdtRepository(scoped, currentSnapshots, _crdtConfig, _logger, _fastProjection, _interceptors);
-    }
-
     /// <summary>
     /// Adds a commit to the database. If the new commit was authored before any commits that
     /// are already in the database, then history will be rewritten by updating those commit hashes.
@@ -428,7 +386,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         var oldestAddedCommit = newCommits.MinBy(c => c.CompareKey)
             ?? throw new ArgumentException("Couldn't find oldest commit", nameof(newCommits));
         var parentCommit = await FindPreviousCommit(oldestAddedCommit);
-        var existingCommitsToUpdate = await GetCommitsAfter(parentCommit);
+        var existingCommitsToUpdate = await GetCommitsBetween(afterExclusive: parentCommit, upToInclusive: null);
         var commitsToApply = existingCommitsToUpdate
             .UnionBy(newCommits, c => c.Id)
             .ToSortedSet();
@@ -499,71 +457,5 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await _dbContext.DisposeAsync();
-    }
-}
-
-internal class ScopedDbContext(ICrdtDbContext inner, Commit? upToInclusive) : ICrdtDbContext
-{
-    //Take(0) rather than an in-memory empty queryable: the consumers use EF's async operators, which need an EF provider
-    public IQueryable<Commit> Commits => upToInclusive is null
-        ? inner.Commits.Take(0)
-        : inner.Commits.WhereBefore(upToInclusive, inclusive: true);
-
-    public IQueryable<ObjectSnapshot> Snapshots => upToInclusive is null
-        ? inner.Snapshots.Take(0)
-        : inner.Snapshots.WhereBefore(upToInclusive, inclusive: true);
-
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        return inner.SaveChangesAsync(cancellationToken);
-    }
-
-    public ValueTask<object?> FindAsync(Type entityType, params object?[]? keyValues)
-    {
-        throw new NotSupportedException("can not support FindAsync when using scoped db context");
-    }
-
-    public DbSet<TEntity> Set<TEntity>() where TEntity : class
-    {
-        throw new NotSupportedException("can not support Set<T> when using scoped db context");
-    }
-
-    public IModel Model => inner.Model;
-    public DatabaseFacade Database => inner.Database;
-    public ChangeTracker ChangeTracker => inner.ChangeTracker;
-
-    public EntityEntry<TEntity> Entry<TEntity>(TEntity entity) where TEntity : class
-    {
-        return inner.Entry(entity);
-    }
-
-    public EntityEntry Entry(object entity)
-    {
-        return inner.Entry(entity);
-    }
-
-    public EntityEntry Add(object entity)
-    {
-        return inner.Add(entity);
-    }
-
-    public void AddRange(IEnumerable<object> entities)
-    {
-        inner.AddRange(entities);
-    }
-
-    public EntityEntry Remove(object entity)
-    {
-        return inner.Remove(entity);
-    }
-
-    public void Dispose()
-    {
-        inner.Dispose();
-    }
-
-    public ValueTask DisposeAsync()
-    {
-        return inner.DisposeAsync();
     }
 }

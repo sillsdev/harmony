@@ -201,7 +201,7 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ScopedRepo_CurrentSnapshots_FiltersByCounter()
+    public async Task SnapshotsAsOf_FiltersByCounter()
     {
         var entityId = Guid.NewGuid();
         //not sorting as we want to order based on the hybrid date time counter
@@ -209,6 +209,7 @@ public class RepositoryTests : IAsyncLifetime
         var snapshot1 = Snapshot(entityId, commitIds[0], Time(1, 0));
         var snapshot2 = Snapshot(entityId, commitIds[1], Time(2, 0));
         var snapshot3 = Snapshot(entityId, commitIds[2], Time(2, 1));
+        snapshot2.Commit.IsSnapshotCheckpoint = true;
         await _repository.AddSnapshots([
             snapshot3,
             snapshot1,
@@ -219,14 +220,14 @@ public class RepositoryTests : IAsyncLifetime
         var commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[2]);
 
-        snapshots = await _repository.GetScopedRepository(snapshot2.Commit).CurrentSnapshots().Include(s => s.Commit)
-            .ToArrayAsync(TestContext.Current.CancellationToken);
+        var checkpoint = await _repository.FindCheckpointAtOrBefore(snapshot2.Commit);
+        snapshots = [.. (await _repository.SnapshotsAsOf(checkpoint).All()).Values];
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
     }
 
     [Fact]
-    public async Task ScopedRepo_CurrentSnapshots_FiltersByCommitId()
+    public async Task SnapshotsAsOf_FiltersByCommitId()
     {
         var entityId = Guid.NewGuid();
         Guid[] commitIds = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
@@ -234,6 +235,7 @@ public class RepositoryTests : IAsyncLifetime
         var snapshot1 = Snapshot(entityId, commitIds[0], Time(1, 0));
         var snapshot2 = Snapshot(entityId, commitIds[1], Time(2, 0));
         var snapshot3 = Snapshot(entityId, commitIds[2], Time(2, 0));
+        snapshot2.Commit.IsSnapshotCheckpoint = true;
         await _repository.AddSnapshots([
             snapshot3,
             snapshot1,
@@ -244,7 +246,8 @@ public class RepositoryTests : IAsyncLifetime
         var commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[2]);
 
-        snapshots = await _repository.GetScopedRepository(snapshot2.Commit).CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
+        var checkpoint = await _repository.FindCheckpointAtOrBefore(snapshot2.Commit);
+        snapshots = [.. (await _repository.SnapshotsAsOf(checkpoint).All()).Values];
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
     }

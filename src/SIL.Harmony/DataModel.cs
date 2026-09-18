@@ -218,8 +218,9 @@ public class DataModel : ISyncable, IAsyncDisposable
             await repo.DeleteSnapshotsAfter(checkpoint.Commit);
         }
 
+        //the checkpoint-less branch above left the table empty, so there's nothing to query
+        var baseline = checkpoint is null ? EmptySnapshotView.Instance : repo.CurrentSnapshotView();
         var commitsToApply = await repo.GetCommitsAfter(checkpoint);
-        var baseline = repo.CurrentSnapshotView();
         await PreloadTouched(baseline, commitsToApply);
         var worker = new SnapshotWorker(commitsToApply, baseline, _crdtConfig.Value);
         var newSnapshots = await worker.ComputeSnapshotsAndMarkCheckpoints();

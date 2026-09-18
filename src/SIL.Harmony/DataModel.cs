@@ -200,10 +200,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         // which is what we want, because it will trigger creating checkpoints
         if (checkpoint is null)
         {
-            //Claude: replaying all of history against a populated table measured about 3x the cost per commit
-            //of dropping everything and regenerating; a new project has nothing to drop
-            if (await repo.HasSnapshots())
-                await repo.DeleteSnapshotsAndProjectedTables();
+            await repo.DeleteSnapshotsAndProjectedTables();
         }
         else
         {

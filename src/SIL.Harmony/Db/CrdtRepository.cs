@@ -151,11 +151,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return (oldestChange, newCommits);
     }
 
-    public async Task<bool> HasSnapshots()
-    {
-        return await Snapshots.AnyAsync();
-    }
-
     public async Task DeleteSnapshotsAfter(Commit commit)
     {
         await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();

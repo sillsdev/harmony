@@ -71,7 +71,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     /// A commit at which every entity's newest snapshot is its complete state, so the snapshots as of it are a sound
     /// base to replay from. Only the checkpoint lookups create one, and it is only as fresh as the query behind it.
     /// </summary>
-    internal sealed class Checkpoint
+    internal sealed record Checkpoint
     {
         private Checkpoint(Commit commit)
         {
@@ -196,9 +196,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             //dependents first: ExecuteDelete never sees EF's client side fixup, so only a database level cascade
             //saves a table deleted before the rows pointing at it
             var orderedTypes = FastProjection.OrderTypesByDependency(_dbContext.Model, _crdtConfig.Value.ObjectTypes);
-            for (var i = orderedTypes.Count - 1; i >= 0; i--)
+            foreach (var objectType in orderedTypes)
             {
-                await (Task)deleteProjectedTableMethod.MakeGenericMethod(orderedTypes[i])
+                await (Task)deleteProjectedTableMethod.MakeGenericMethod(objectType)
                     .Invoke(null, [_dbContext])!;
             }
         }
@@ -207,9 +207,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     private static readonly MethodInfo deleteProjectedTableMethod = new Func<ICrdtDbContext, Task>(DeleteProjectedTable<object>).Method.GetGenericMethodDefinition();
 
-    private static Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class
+    private static async Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class
     {
-        return dbContext.Set<T>().ExecuteDeleteAsync();
+        await dbContext.Set<T>().ExecuteDeleteAsync();
     }
 
     public IQueryable<Commit> CurrentCommits()

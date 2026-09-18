@@ -23,8 +23,7 @@ internal class ChangeContext : IChangeContext
     public async ValueTask<IObjectSnapshot?> GetSnapshot(Guid entityId) => await _snapshots.GetAsync(entityId);
     public IAsyncEnumerable<object> GetObjectsReferencing(Guid entityId, bool includeDeleted = false)
     {
-        return _snapshots.Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId))
-            .Select(s => s.Entity.DbObject);
+        return _snapshots.WhereReferences(entityId, includeDeleted).Select(s => s.Entity.DbObject);
     }
 
     public IAsyncEnumerable<T> GetObjectsOfType<T>(string jsonTypeName, bool includeDeleted = false) where T : class

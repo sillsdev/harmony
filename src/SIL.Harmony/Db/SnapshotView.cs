@@ -1,4 +1,4 @@
-﻿using System.Linq.Expressions;
+using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Db;
@@ -14,6 +14,16 @@ internal interface ISnapshotView
     Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync();
     /// <summary>fetches these entities in one query so later <see cref="GetAsync"/> calls don't each hit the database</summary>
     Task PreloadAsync(IReadOnlyCollection<Guid> entityIds);
+}
+
+internal static class SnapshotViewExtensions
+{
+    public static IAsyncEnumerable<ObjectSnapshot> WhereReferences(this ISnapshotView snapshots,
+        Guid entityId,
+        bool includeDeleted)
+    {
+        return snapshots.Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
+    }
 }
 
 /// <summary>the view before the first commit</summary>
@@ -72,7 +82,9 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
             yield break;
         }
 
-        await foreach (var snapshot in _currentSnapshots.Where(predicate).AsAsyncEnumerable())
+        //Include so a match has its Commit loaded either way; the cached branch above always does
+        await foreach (var snapshot in _currentSnapshots.Where(predicate)
+            .Include(s => s.Commit).AsAsyncEnumerable())
         {
             yield return snapshot;
         }

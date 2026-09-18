@@ -117,7 +117,7 @@ internal class SnapshotWorker : ISnapshotView
     {
         // Including deleted shouldn't be necessary, because change objects are responsible for not adding references to deleted entities.
         // But maybe it's a good fallback.
-        var toRemoveRefFrom = await GetSnapshotsReferencing(deletedEntityId, true)
+        var toRemoveRefFrom = await this.WhereReferences(deletedEntityId, includeDeleted: true)
             .ToArrayAsync();
 
         var commit = context.Commit;
@@ -147,11 +147,6 @@ internal class SnapshotWorker : ISnapshotView
         }
 
         return await _baseline.GetAsync(entityId);
-    }
-
-    private IAsyncEnumerable<ObjectSnapshot> GetSnapshotsReferencing(Guid entityId, bool includeDeleted = false)
-    {
-        return Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
     }
 
     public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression)
@@ -197,12 +192,10 @@ internal class SnapshotWorker : ISnapshotView
 
     private void AddSnapshot(ObjectSnapshot newSnapshot, int currCommitIndex)
     {
-        var prevSnapshot = _latestSnapshots.GetValueOrDefault(newSnapshot.EntityId);
+        var hasPrevious = _latestSnapshots.TryGetValue(newSnapshot.EntityId, out var prevSnapshot);
         _latestSnapshots[newSnapshot.EntityId] = new LatestSnapshot(newSnapshot, currCommitIndex);
 
-        // now evaluate what dropping this previous snapshot means
-
-        if (prevSnapshot == default)
+        if (!hasPrevious)
         {
             // we're not dropping anything
             return;

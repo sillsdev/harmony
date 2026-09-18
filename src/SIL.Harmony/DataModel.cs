@@ -241,7 +241,10 @@ public class DataModel : ISyncable, IAsyncDisposable
         using var locked = await repo.Lock();
         repo.ClearChangeTracker();
         await using var transaction = await repo.BeginTransactionAsync();
-        await Replay(repo, await repo.WholeHistory());
+        var wholeHistory = await repo.WholeHistory();
+        //Replay does nothing without commits, which would leave snapshots with no history behind them in place
+        if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
+        else await Replay(repo, wholeHistory);
         await transaction.CommitAsync();
     }
 

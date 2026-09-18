@@ -156,9 +156,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();
     }
 
+    private IQueryable<Commit> Checkpoints => Commits.Where(c => c.IsSnapshotCheckpoint);
+
     public async Task<Checkpoint?> FindCheckpointBefore(Commit commit)
     {
-        return Checkpoint.From(await Commits.Where(c => c.IsSnapshotCheckpoint)
+        return Checkpoint.From(await Checkpoints
             .WhereBefore(commit, inclusive: false)
             .DefaultOrderDescending()
             .FirstOrDefaultAsync());
@@ -166,7 +168,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task<Checkpoint?> FindCheckpointAtOrBefore(Commit commit)
     {
-        return Checkpoint.From(await Commits.Where(c => c.IsSnapshotCheckpoint)
+        return Checkpoint.From(await Checkpoints
             .WhereBefore(commit, inclusive: true)
             .DefaultOrderDescending()
             .FirstOrDefaultAsync());
@@ -174,7 +176,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task<Checkpoint?> FindCheckpointAtOrAfter(Commit commit)
     {
-        return Checkpoint.From(await Commits.Where(c => c.IsSnapshotCheckpoint)
+        return Checkpoint.From(await Checkpoints
             .WhereAfter(commit, inclusive: true)
             .DefaultOrder()
             .FirstOrDefaultAsync());
@@ -196,8 +198,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         if (_crdtConfig.Value.EnableProjectedTables)
         {
             //dependents first: ExecuteDelete never sees EF's client side fixup, so only a database level cascade
-            //saves a table deleted before the rows pointing at it
+            //saves a table deleted before the rows pointing at it. The insert order is principals first, so reverse it
             var orderedTypes = FastProjection.OrderTypesByDependency(_dbContext.Model, _crdtConfig.Value.ObjectTypes);
+            orderedTypes.Reverse();
             foreach (var objectType in orderedTypes)
             {
                 await (Task)deleteProjectedTableMethod.MakeGenericMethod(objectType)

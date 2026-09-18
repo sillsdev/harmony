@@ -1,4 +1,4 @@
-﻿namespace SIL.Harmony;
+namespace SIL.Harmony;
 
 /// <summary>
 /// Decides which snapshots a replay of one batch must keep, and tracks which of its commits
@@ -7,7 +7,7 @@
 internal sealed class SnapshotCheckpointPolicy
 {
     private readonly int _maxChangesBetweenCheckpoints;
-    // _changesBeforeCommit[commitIndex] is the number of changes in the commits before it, so it starts at 0
+    // running totals, so [0] is 0 and there is one more entry than there are commits
     private readonly long[] _changesBeforeCommit;
 
     /// <summary>every commit is safe to resume from until a dropped snapshot says otherwise</summary>

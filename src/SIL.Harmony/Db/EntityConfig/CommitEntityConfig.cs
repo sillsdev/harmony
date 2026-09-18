@@ -22,15 +22,11 @@ public class CommitEntityConfig : IEntityTypeConfiguration<Commit>
                     .HasColumnName("DateTime");
                 hybridEntity.Property(h => h.Counter).HasColumnName("Counter");
             });
-        // Supports Harmony's DefaultOrder (ASC) directly and DefaultOrderDescending via reverse scan.
-        // EF Core 10 cannot express indexes mixing ComplexProperty members + scalars (efcore#11336, targeted for 11).
-        // We use EFCore.ComplexIndexes instead. Both Harmony sorts are uniform-direction, so a single
-        // ASC index covers both — SQLite and Postgres reverse-scan it for the descending case.
+        // Both Harmony sorts are uniform-direction, so this ASC index serves DefaultOrderDescending via reverse scan.
         builder.HasComplexCompositeIndex(
             c => new { c.HybridDateTime.DateTime, c.HybridDateTime.Counter, c.Id },
             indexName: "IX_Commits_DateTime_Counter_Id");
-        // finding the newest checkpoint before a commit is on the hot path of every out of order commit.
-        // partial + ordering-only: a leading bool column can't seek, so filter on it and order by the tuple instead
+        // Ordering-only: a leading bool column can't seek, so filter on it instead.
         builder.HasComplexCompositeIndex(
             c => new { c.HybridDateTime.DateTime, c.HybridDateTime.Counter, c.Id },
             index =>

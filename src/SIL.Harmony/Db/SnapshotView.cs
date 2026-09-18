@@ -1,11 +1,10 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Db;
 
 /// <summary>
-/// The snapshot table as it stood right after a commit: each entity's newest snapshot at or before it.
-/// Read only. A view remembers what it has been asked, so repeating a read is free.
+/// Read only access to each entity's newest snapshot at a point in time
 /// </summary>
 internal interface ISnapshotView
 {

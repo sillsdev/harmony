@@ -83,6 +83,13 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         internal static Checkpoint? From(Commit? commit) => commit is null ? null : new Checkpoint(commit);
     }
 
+    /// <summary>
+    /// Everything a replay needs: the state it resumes from and the commits to apply on top of it.
+    /// Only this class builds one, so the resume point and the commits can never disagree.
+    /// </summary>
+    /// <param name="ResumeFrom">null is the state before the first commit, so <paramref name="Commits"/> is all of history</param>
+    internal readonly record struct ReplayWindow(Checkpoint? ResumeFrom, SortedSet<Commit> Commits);
+
     public AwaitableDisposable<IDisposable> Lock()
     {
         return _lock.LockAsync();
@@ -254,7 +261,13 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .FirstOrDefaultAsync();
     }
 
-    public Task<SortedSet<Commit>> GetCommitsAfter(Checkpoint? checkpoint)
+    /// <summary>The window that rebuilds every snapshot: all of history, resuming from nothing.</summary>
+    public async Task<ReplayWindow> WholeHistory()
+    {
+        return new ReplayWindow(null, await GetCommitsAfter(null));
+    }
+
+    private Task<SortedSet<Commit>> GetCommitsAfter(Checkpoint? checkpoint)
     {
         return GetCommitsBetween(checkpoint?.Commit, upToInclusive: null);
     }
@@ -361,47 +374,32 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await _crdtConfig.Value.OnProjectedEntitiesChanged(batch);
     }
 
-    /// <summary>
-    /// Adds a commit to the database. If the new commit was authored before any commits that
-    /// are already in the database, then history will be rewritten by updating those commit hashes.
-    /// </summary>
-    /// <returns>All added and updated commits.</returns>
-    public async Task<SortedSet<Commit>> AddCommit(Commit commit)
-    {
-        var updatedCommits = await AddNewCommits([commit]);
-        await _dbContext.SaveChangesAsync();
-        return updatedCommits;
-    }
+    /// <inheritdoc cref="AddCommits"/>
+    public Task<ReplayWindow> AddCommit(Commit commit) => AddCommits([commit]);
 
     /// <summary>
     /// Adds commits to the database. If any of the new commits were authored before any commits that
     /// are already in the database, then history will be rewritten by updating those commit hashes.
     /// </summary>
-    /// <returns>All added and updated commits.</returns>
-    public async Task<SortedSet<Commit>> AddCommits(IEnumerable<Commit> commits)
+    /// <returns>what the caller must replay to bring the snapshots back in line</returns>
+    public async Task<ReplayWindow> AddCommits(IEnumerable<Commit> commits)
     {
-        var updatedCommits = await AddNewCommits(commits);
-        await _dbContext.SaveChangesAsync();
-        return updatedCommits;
-    }
-
-    private async Task<SortedSet<Commit>> AddNewCommits(IEnumerable<Commit> newCommits)
-    {
-        if (newCommits is null || !newCommits.Any()) return [];
-        var oldestAddedCommit = newCommits.MinBy(c => c.CompareKey)
-            ?? throw new ArgumentException("Couldn't find oldest commit", nameof(newCommits));
-        var parentCommit = await FindPreviousCommit(oldestAddedCommit);
-        var existingCommitsToUpdate = await GetCommitsBetween(afterExclusive: parentCommit, upToInclusive: null);
-        var commitsToApply = existingCommitsToUpdate
-            .UnionBy(newCommits, c => c.Id)
-            .ToSortedSet();
-        //we're inserting commits in the past/rewriting history, so we need to update the previous commit hashes
-        UpdateCommitHashes(commitsToApply, parentCommit);
+        var newCommits = commits as IReadOnlyCollection<Commit> ?? commits.ToArray();
+        if (newCommits.Count == 0) return new ReplayWindow(null, []);
+        //resolving the resume point before loading is what keeps this to one query: the window always reaches
+        //back past the oldest added commit, so it covers the commits needing a rehash too
+        var resumeFrom = await FindCheckpointBefore(newCommits.MinBy(c => c.CompareKey)!);
+        var commitsToApply = (await GetCommitsAfter(resumeFrom)).UnionBy(newCommits, c => c.Id).ToSortedSet();
+        //a commit inserted in the past invalidates every hash after it. The window starts right after the resume
+        //point, so re-linking all of it covers that; commits before the insert rehash to the value they already
+        //hold, which costs a hash and no update
+        UpdateCommitHashes(commitsToApply, resumeFrom?.Commit);
         _dbContext.AddRange(newCommits);
-        return commitsToApply;
+        await _dbContext.SaveChangesAsync();
+        return new ReplayWindow(resumeFrom, commitsToApply);
     }
 
-    private void UpdateCommitHashes(SortedSet<Commit> commits, Commit? parentCommit = null)
+    private void UpdateCommitHashes(SortedSet<Commit> commits, Commit? parentCommit)
     {
         var previousCommitHash = parentCommit?.Hash ?? CommitBase.NullParentHash;
         foreach (var commit in commits)

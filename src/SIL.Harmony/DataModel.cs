@@ -73,8 +73,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         repo.ClearChangeTracker();
 
         await using var transaction = await repo.BeginTransactionAsync();
-        var updatedCommits = await repo.AddCommits(commits);
-        await UpdateSnapshots(repo, updatedCommits);
+        var replayWindow = await repo.AddCommits(commits);
+        await Replay(repo, replayWindow);
         await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
@@ -110,8 +110,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         repo.ClearChangeTracker();
 
         await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
-        var updatedCommits = await repo.AddCommit(commit);
-        await UpdateSnapshots(repo, updatedCommits);
+        var replayWindow = await repo.AddCommit(commit);
+        await Replay(repo, replayWindow);
 
         if (AlwaysValidate) await ValidateCommits(repo);
 
@@ -149,8 +149,8 @@ public class DataModel : ISyncable, IAsyncDisposable
             if (oldestChange is null || newCommits is []) return;
 
             await using var transaction = await repo.BeginTransactionAsync();
-            var updatedCommits = await repo.AddCommits(newCommits);
-            await UpdateSnapshots(repo, updatedCommits);
+            var replayWindow = await repo.AddCommits(newCommits);
+            await Replay(repo, replayWindow);
             await ValidateCommits(repo);
             await transaction.CommitAsync();
         }
@@ -187,31 +187,23 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply)
-    {
-        if (commitsToApply.Count == 0) return;
-        await ReplayFromCheckpoint(repo, await repo.FindCheckpointBefore(commitsToApply.First()));
-    }
-
     /// <summary>
-    /// Rebuilds every snapshot after <paramref name="checkpoint"/> by replaying the commits that follow it.
-    /// A null checkpoint rebuilds all of history.
+    /// Rebuilds every snapshot the window covers by replaying its commits onto the state it resumes from.
+    /// A window resuming from nothing rebuilds all of history.
     /// </summary>
-    private async Task ReplayFromCheckpoint(CrdtRepository repo, CrdtRepository.Checkpoint? checkpoint)
+    private async Task Replay(CrdtRepository repo, CrdtRepository.ReplayWindow window)
     {
+        var (checkpoint, commitsToApply) = window;
+        if (commitsToApply.Count == 0) return;
+
         // A database with no checkpoints replays all of history,
         // which is what we want, because it will trigger creating checkpoints
         if (checkpoint is null)
         {
-            //a new project has nothing to drop, and nothing stale in the change tracker either
+            //Claude: replaying all of history against a populated table measured about 3x the cost per commit
+            //of dropping everything and regenerating; a new project has nothing to drop
             if (await repo.HasSnapshots())
-            {
-                //Claude: replaying all of history against a populated table measured about 3x the cost per commit
-                //of dropping everything and regenerating
                 await repo.DeleteSnapshotsAndProjectedTables();
-                //the delete goes around the change tracker, so drop what it holds and read the commits back fresh
-                repo.ClearChangeTracker();
-            }
         }
         else
         {
@@ -220,7 +212,6 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         //the checkpoint-less branch above left the table empty, so there's nothing to query
         var baseline = checkpoint is null ? EmptySnapshotView.Instance : repo.CurrentSnapshotView();
-        var commitsToApply = await repo.GetCommitsAfter(checkpoint);
         await PreloadTouched(baseline, commitsToApply);
         var worker = new SnapshotWorker(commitsToApply, baseline, _crdtConfig.Value);
         var newSnapshots = await worker.ComputeSnapshotsAndMarkCheckpoints();
@@ -251,8 +242,9 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         using var locked = await repo.Lock();
+        repo.ClearChangeTracker();
         await using var transaction = await repo.BeginTransactionAsync();
-        await ReplayFromCheckpoint(repo, null);
+        await Replay(repo, await repo.WholeHistory());
         await transaction.CommitAsync();
     }
 

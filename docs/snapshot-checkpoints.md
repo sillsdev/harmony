@@ -182,19 +182,27 @@ Two independent halves, sharing only the holes:
   recorded. This finds *every* safe commit, not only the grid's; the floor boundaries come out safe by construction, so
   the flagged set always contains them.
 
-`UpdateSnapshots` has no fast path: every write resolves the newest checkpoint before the batch and resumes there.
-On a healthy database that is the head commit (every batch leaves its last commit flagged), so an ordinary append
-deletes nothing and replays only the commits it added, the same work the old "no snapshots after this" shortcut did. The
-shortcut was dropped because it skipped the checkpoint lookup entirely, which left a database with no flags waiting for
-a late commit before it ever got any.
+The write path has no fast path: `CrdtRepository.AddCommits` resolves the newest checkpoint before the batch and
+returns a `ReplayWindow`, that checkpoint plus every commit after it including the new ones. Resolving the resume point
+before loading anything is what keeps it to one commit query: the window is what the replay needs and a superset of the
+commits whose hashes the insert rewrites. On a healthy database the checkpoint is the head commit (every batch leaves
+its last commit flagged), so an ordinary append deletes nothing and replays only the commits it added, the same work the
+old "no snapshots after this" shortcut did. The shortcut was dropped because it skipped the checkpoint lookup entirely,
+which left a database with no flags waiting for a late commit before it ever got any.
+
+**The change tracker is cleared on entry and never mid-replay.** Every path that writes clears it before it loads
+anything, and nothing clears it again. The replay needs the commits it loaded to stay tracked, because that is how
+`IsSnapshotCheckpoint` reaches the database. The `ExecuteDelete`s in the middle cannot invalidate them: commits are
+never deleted, and every snapshot read is `AsNoTracking`, so a row deleted under a tracked snapshot can never come
+back out of a query. An earlier version cleared the tracker after dropping the tables, which is what forced the
+commits to be loaded a second time.
 
 `DataModel.ResumeFromCheckpoint` is the resume primitive the point-in-time read paths share (`GetSnapshotsAtCommit`,
-`GetSnapshotAtCommit`); the late-commit write path in `UpdateSnapshots` resolves its own resume point the same way.
-Every replay applies its commits on top of `CrdtRepository.SnapshotsAsOf(checkpoint)`, a read-only view of the
-snapshot table as it stood at that checkpoint (empty when there is none). It only accepts a `Checkpoint`, which only the
-repository's checkpoint lookups can create, so a replay can't be seeded from a non-checkpoint commit by mistake.
-`FindNewestCheckpoint` reads the flags; the lookup is a partial index over the ordering tuple
-filtered on the flag (a leading bool column can't seek, so it filters on the flag and orders by the tuple).
+`GetSnapshotAtCommit`). Every replay applies its commits on top of `CrdtRepository.SnapshotViewAsOf(checkpoint)`, a
+read-only view of the snapshot table as it stood at that checkpoint (empty when there is none). It only accepts a
+`Checkpoint`, which only the repository's checkpoint lookups can create, so a replay can't be seeded from a
+non-checkpoint commit by mistake. `FindCheckpointBefore` reads the flags; the lookup is a partial index over the
+ordering tuple filtered on the flag (a leading bool column can't seek, so it filters on the flag and orders by the tuple).
 
 Why this shape rather than the earlier "decision, not record":
 

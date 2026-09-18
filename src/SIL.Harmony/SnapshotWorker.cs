@@ -66,7 +66,7 @@ internal class SnapshotWorker : ISnapshotView
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
                 IObjectBase entity;
-                var prevSnapshot = await Get(commitChange.EntityId);
+                var prevSnapshot = await GetAsync(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, commitIndex, this, _crdtConfig);
 
                 if (prevSnapshot is null)
@@ -139,14 +139,14 @@ internal class SnapshotWorker : ISnapshotView
         }
     }
 
-    public async ValueTask<ObjectSnapshot?> Get(Guid entityId)
+    public async ValueTask<ObjectSnapshot?> GetAsync(Guid entityId)
     {
         if (_latestSnapshots.TryGetValue(entityId, out var latest))
         {
             return latest.Snapshot;
         }
 
-        return await _baseline.Get(entityId);
+        return await _baseline.GetAsync(entityId);
     }
 
     private IAsyncEnumerable<ObjectSnapshot> GetSnapshotsReferencing(Guid entityId, bool includeDeleted = false)
@@ -171,9 +171,9 @@ internal class SnapshotWorker : ISnapshotView
         }
     }
 
-    public async Task<Dictionary<Guid, ObjectSnapshot>> All()
+    public async Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync()
     {
-        var all = await _baseline.All();
+        var all = await _baseline.GetAllAsync();
         foreach (var (entityId, latest) in _latestSnapshots)
         {
             all[entityId] = latest.Snapshot;
@@ -182,7 +182,7 @@ internal class SnapshotWorker : ISnapshotView
         return all;
     }
 
-    public Task Preload(IReadOnlyCollection<Guid> entityIds) => _baseline.Preload(entityIds);
+    public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => _baseline.PreloadAsync(entityIds);
 
     private async Task GenerateSnapshotForEntity(IObjectBase entity, ObjectSnapshot? prevSnapshot, ChangeContext context)
     {

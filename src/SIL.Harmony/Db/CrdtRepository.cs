@@ -71,7 +71,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     /// A commit at which every entity's newest snapshot is its complete state, so the snapshots as of it are a sound
     /// base to replay from. Only the checkpoint lookups create one, and it is only as fresh as the query behind it.
     /// </summary>
-    public sealed class Checkpoint
+    internal sealed class Checkpoint
     {
         private Checkpoint(Commit commit)
         {
@@ -179,9 +179,14 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     }
 
     /// <param name="checkpoint">null is the state before the first commit, i.e. no snapshots at all</param>
-    public ISnapshotView SnapshotsAsOf(Checkpoint? checkpoint)
+    public ISnapshotView SnapshotViewAsOf(Checkpoint? checkpoint)
     {
         return checkpoint is null ? EmptySnapshotView.Instance : new DbSnapshotView(_dbContext, checkpoint.Commit);
+    }
+
+    public ISnapshotView CurrentSnapshotView()
+    {
+        return new DbSnapshotView(_dbContext, null);
     }
 
     public async Task DeleteSnapshotsAndProjectedTables()

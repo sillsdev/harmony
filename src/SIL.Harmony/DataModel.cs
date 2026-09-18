@@ -219,7 +219,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
 
         var commitsToApply = await repo.GetCommitsAfter(checkpoint);
-        var baseline = repo.SnapshotsAsOf(checkpoint);
+        var baseline = repo.CurrentSnapshotView();
         await PreloadTouched(baseline, commitsToApply);
         var worker = new SnapshotWorker(commitsToApply, baseline, _crdtConfig.Value);
         var newSnapshots = await worker.ComputeSnapshotsAndMarkCheckpoints();
@@ -315,8 +315,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         //loading everything up front makes every lookup during the replay a cache hit
-        await baseline.All();
-        return await (await SnapshotWorker.Replay(baseline, commitsToReplay, _crdtConfig.Value)).All();
+        await baseline.GetAllAsync();
+        return await (await SnapshotWorker.Replay(baseline, commitsToReplay, _crdtConfig.Value)).GetAllAsync();
     }
 
     /// <summary>
@@ -329,14 +329,14 @@ public class DataModel : ISyncable, IAsyncDisposable
     {
         var checkpoint = await repo.FindCheckpointAtOrBefore(commit);
         var commitsToReplay = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: commit);
-        return (repo.SnapshotsAsOf(checkpoint), commitsToReplay);
+        return (repo.SnapshotViewAsOf(checkpoint), commitsToReplay);
     }
 
     /// <summary>one query for every entity the commits touch beats a lookup per entity only for large batches</summary>
     private async Task PreloadTouched(ISnapshotView baseline, IEnumerable<Commit> commits)
     {
         var entityIds = commits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId)).ToHashSet();
-        if (entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint) await baseline.Preload(entityIds);
+        if (entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint) await baseline.PreloadAsync(entityIds);
     }
 
     public async Task<T> GetAtTime<T>(DateTimeOffset time, Guid entityId)
@@ -398,7 +398,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         var nextCheckpoint = await repo.FindCheckpointAtOrAfter(commit);
         if (nextCheckpoint is not null)
         {
-            var newestByNextCheckpoint = await repo.SnapshotsAsOf(nextCheckpoint).Get(entityId);
+            var newestByNextCheckpoint = await repo.SnapshotViewAsOf(nextCheckpoint).GetAsync(entityId);
             //no snapshot by the next checkpoint means the entity does not exist at the commit either (roots are never pruned)
             if (newestByNextCheckpoint is null) return null;
             if (newestByNextCheckpoint.Commit.CompareKey.CompareTo(commit.CompareKey) <= 0) return newestByNextCheckpoint;
@@ -407,7 +407,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         //we don't have a persisted snapshot in the correct state, so rebuild it
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         await PreloadTouched(baseline, commitsToReplay);
-        return await (await SnapshotWorker.Replay(baseline, commitsToReplay, _crdtConfig.Value)).Get(entityId);
+        return await (await SnapshotWorker.Replay(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
     }
 
     public async Task<SyncState> GetSyncState()

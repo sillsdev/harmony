@@ -9,12 +9,12 @@ namespace SIL.Harmony.Db;
 /// </summary>
 internal interface ISnapshotView
 {
-    ValueTask<ObjectSnapshot?> Get(Guid entityId);
+    ValueTask<ObjectSnapshot?> GetAsync(Guid entityId);
     IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate);
     /// <summary>every entity's snapshot by entity id; the caller owns the dictionary</summary>
-    Task<Dictionary<Guid, ObjectSnapshot>> All();
-    /// <summary>fetches these entities in one query so later <see cref="Get"/> calls don't each hit the database</summary>
-    Task Preload(IReadOnlyCollection<Guid> entityIds);
+    Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync();
+    /// <summary>fetches these entities in one query so later <see cref="GetAsync"/> calls don't each hit the database</summary>
+    Task PreloadAsync(IReadOnlyCollection<Guid> entityIds);
 }
 
 /// <summary>the view before the first commit</summary>
@@ -26,30 +26,33 @@ internal sealed class EmptySnapshotView : ISnapshotView
     {
     }
 
-    public ValueTask<ObjectSnapshot?> Get(Guid entityId) => ValueTask.FromResult<ObjectSnapshot?>(null);
+    public ValueTask<ObjectSnapshot?> GetAsync(Guid entityId) => ValueTask.FromResult<ObjectSnapshot?>(null);
 
     public IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate) =>
         AsyncEnumerable.Empty<ObjectSnapshot>();
 
-    public Task<Dictionary<Guid, ObjectSnapshot>> All() => Task.FromResult(new Dictionary<Guid, ObjectSnapshot>());
+    public Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync() => Task.FromResult(new Dictionary<Guid, ObjectSnapshot>());
 
-    public Task Preload(IReadOnlyCollection<Guid> entityIds) => Task.CompletedTask;
+    public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => Task.CompletedTask;
 }
 
-internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit upToInclusive) : ISnapshotView
+/// <param name="upToInclusive">null means the current table</param>
+internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclusive) : ISnapshotView
 {
     private readonly IQueryable<ObjectSnapshot> _currentSnapshots = CurrentSnapshotsQuery(dbContext, upToInclusive);
     /// <summary>a null value is an entity known to have no snapshot</summary>
     private readonly Dictionary<Guid, ObjectSnapshot?> _cache = [];
-    /// <summary>set once <see cref="All"/> has run: from then on anything missing from <see cref="_cache"/> does not exist</summary>
+    /// <summary>set once <see cref="GetAllAsync"/> has run: from then on anything missing from <see cref="_cache"/> does not exist</summary>
     private bool _complete;
 
-    public async ValueTask<ObjectSnapshot?> Get(Guid entityId)
+    public async ValueTask<ObjectSnapshot?> GetAsync(Guid entityId)
     {
         if (_cache.TryGetValue(entityId, out var snapshot)) return snapshot;
         if (_complete) return null;
-        snapshot = await dbContext.Snapshots.AsNoTracking()
-            .WhereBefore(upToInclusive, inclusive: true)
+        var query = dbContext.Snapshots.AsNoTracking();
+        if (upToInclusive is not null)
+            query = query.WhereBefore(upToInclusive, inclusive: true);
+        snapshot = await query
             .Include(s => s.Commit)
             .DefaultOrder()
             .LastOrDefaultAsync(s => s.EntityId == entityId);
@@ -76,7 +79,7 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit upToInclus
         }
     }
 
-    public async Task<Dictionary<Guid, ObjectSnapshot>> All()
+    public async Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync()
     {
         if (!_complete)
         {
@@ -92,7 +95,7 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit upToInclus
         return _cache.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value!);
     }
 
-    public async Task Preload(IReadOnlyCollection<Guid> entityIds)
+    public async Task PreloadAsync(IReadOnlyCollection<Guid> entityIds)
     {
         if (_complete) return;
         //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
@@ -106,7 +109,6 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit upToInclus
         }
     }
 
-    /// <param name="upToInclusive">null means the current table</param>
     internal static IQueryable<ObjectSnapshot> CurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? upToInclusive)
     {
         var ignoreAfterDate = upToInclusive?.HybridDateTime.DateTime.UtcDateTime;

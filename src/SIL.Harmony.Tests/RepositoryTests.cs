@@ -201,7 +201,7 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task SnapshotsAsOf_FiltersByCounter()
+    public async Task SnapshotViewAsOf_FiltersByCounter()
     {
         var entityId = Guid.NewGuid();
         //not sorting as we want to order based on the hybrid date time counter
@@ -221,13 +221,13 @@ public class RepositoryTests : IAsyncLifetime
         commit.Id.Should().Be(commitIds[2]);
 
         var checkpoint = await _repository.FindCheckpointAtOrBefore(snapshot2.Commit);
-        snapshots = [.. (await _repository.SnapshotsAsOf(checkpoint).All()).Values];
+        snapshots = [.. (await _repository.SnapshotViewAsOf(checkpoint).GetAllAsync()).Values];
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
     }
 
     [Fact]
-    public async Task SnapshotsAsOf_FiltersByCommitId()
+    public async Task SnapshotViewAsOf_FiltersByCommitId()
     {
         var entityId = Guid.NewGuid();
         Guid[] commitIds = [Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid()];
@@ -247,7 +247,7 @@ public class RepositoryTests : IAsyncLifetime
         commit.Id.Should().Be(commitIds[2]);
 
         var checkpoint = await _repository.FindCheckpointAtOrBefore(snapshot2.Commit);
-        snapshots = [.. (await _repository.SnapshotsAsOf(checkpoint).All()).Values];
+        snapshots = [.. (await _repository.SnapshotViewAsOf(checkpoint).GetAllAsync()).Values];
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
     }

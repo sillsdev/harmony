@@ -121,8 +121,8 @@ public class AddSnapshotsBenchmarks
             .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
             .ToHashSet();
         var checkpoint = _repository.FindCheckpointBefore(measuredCommits.First()).GetAwaiter().GetResult();
-        var baseline = _repository.SnapshotsAsOf(checkpoint);
-        baseline.Preload(entityIds).GetAwaiter().GetResult();
+        var baseline = _repository.SnapshotViewAsOf(checkpoint);
+        baseline.PreloadAsync(entityIds).GetAwaiter().GetResult();
 
         var worker = new SnapshotWorker(measuredCommits, baseline, _local.CrdtConfig);
         _snapshotsToAdd = worker.ComputeSnapshotsAndMarkCheckpoints().GetAwaiter().GetResult().ToArray();

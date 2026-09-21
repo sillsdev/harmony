@@ -1,18 +1,9 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
 
-/// <summary>
-/// The smallest shape of the late commit bug, on a single client.
-/// Adding several commits at once only keeps a snapshot for every other one, so an entity ends up
-/// with a commit that has no snapshot. A commit dated between that commit and the next one that
-/// does have a snapshot then makes the replay start after its own parent (the commit with no
-/// snapshot), while snapshots are only deleted from the late commit onwards. The entity resumes
-/// from the older snapshot it still has, and everything between that snapshot and the late
-/// commit's parent is applied by nobody.
-/// </summary>
 public class LateCommitTests : DataModelTestBase
 {
     private async Task AssertSnapshotWasPruned(Commit commit, Guid entityId)
@@ -36,7 +27,7 @@ public class LateCommitTests : DataModelTestBase
 
         await WriteChangeAfter(setNote, SetWord(Guid.NewGuid(), "written late"));
 
-        // the rename snapshot is gone and the word resumed from create, so nothing re-applied the note
+        // the replay drops the rename snapshot and resumes the word from create, so it has to re-apply the note itself
         var word = await DataModel.GetLatest<Word>(wordId);
         word!.Text.Should().Be("renamed word");
         word.Note.Should().Be("a note");
@@ -57,9 +48,9 @@ public class LateCommitTests : DataModelTestBase
         await AddCommitsViaSync([create, unrelated, newDefinition, delete, editDefinition]);
         await AssertSnapshotWasPruned(delete, definitionId);
 
-        // replay starts after the delete commit, so nothing re-applies the cascade: the definition
-        // resumes from its creation snapshot and the edit lands on a live definition whose word is
-        // still deleted. Projecting that row back in breaks the foreign key to the word.
+        // the definition resumes from its creation snapshot, so the replay has to re-run the cascade. Miss it and the
+        // edit lands on a live definition whose word is still deleted, and projecting that row back in breaks its
+        // foreign key to the word.
         await WriteChangeAfter(delete, SetWord(Guid.NewGuid(), "written late"));
 
         (await DataModel.GetLatest<Definition>(definitionId))!.DeletedAt.Should().NotBeNull();

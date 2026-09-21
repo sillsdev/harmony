@@ -4,16 +4,19 @@ using Microsoft.EntityFrameworkCore;
 namespace SIL.Harmony.Db;
 
 /// <summary>
-/// Read only access to each entity's newest snapshot at a point in time
+/// Read only access to each entity's newest snapshot at a point in time.
+/// A view remembers what it has been asked, so repeating a read is free.
 /// </summary>
 internal interface ISnapshotView
 {
     ValueTask<ObjectSnapshot?> GetAsync(Guid entityId);
     IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate);
-    /// <summary>every entity's snapshot by entity id; the caller owns the dictionary</summary>
-    Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync();
+    /// <summary>every entity's snapshot; enumerating it preloads the whole view</summary>
+    IAsyncEnumerable<ObjectSnapshot> All();
     /// <summary>fetches these entities in one query so later <see cref="GetAsync"/> calls don't each hit the database</summary>
     Task PreloadAsync(IReadOnlyCollection<Guid> entityIds);
+    /// <summary>fetches every entity in one query, so every later read is a cache hit</summary>
+    Task PreloadAllAsync();
 }
 
 internal static class SnapshotViewExtensions
@@ -40,9 +43,11 @@ internal sealed class EmptySnapshotView : ISnapshotView
     public IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate) =>
         AsyncEnumerable.Empty<ObjectSnapshot>();
 
-    public Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync() => Task.FromResult(new Dictionary<Guid, ObjectSnapshot>());
+    public IAsyncEnumerable<ObjectSnapshot> All() => AsyncEnumerable.Empty<ObjectSnapshot>();
 
     public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => Task.CompletedTask;
+
+    public Task PreloadAllAsync() => Task.CompletedTask;
 }
 
 /// <param name="upToInclusive">null means the current table</param>
@@ -51,7 +56,7 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
     private readonly IQueryable<ObjectSnapshot> _currentSnapshots = CurrentSnapshotsQuery(dbContext, upToInclusive);
     /// <summary>a null value is an entity known to have no snapshot</summary>
     private readonly Dictionary<Guid, ObjectSnapshot?> _cache = [];
-    /// <summary>set once <see cref="GetAllAsync"/> has run: from then on anything missing from <see cref="_cache"/> does not exist</summary>
+    /// <summary>set once <see cref="PreloadAllAsync"/> has run: from then on anything missing from <see cref="_cache"/> does not exist</summary>
     private bool _complete;
 
     public async ValueTask<ObjectSnapshot?> GetAsync(Guid entityId)
@@ -90,20 +95,24 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
         }
     }
 
-    public async Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync()
+    public async IAsyncEnumerable<ObjectSnapshot> All()
     {
-        if (!_complete)
+        await PreloadAllAsync();
+        foreach (var snapshot in _cache.Values)
         {
-            _cache.Clear();
-            await foreach (var snapshot in _currentSnapshots.Include(s => s.Commit).AsAsyncEnumerable())
-            {
-                _cache[snapshot.EntityId] = snapshot;
-            }
+            if (snapshot is not null) yield return snapshot;
+        }
+    }
 
-            _complete = true;
+    public async Task PreloadAllAsync()
+    {
+        if (_complete) return;
+        await foreach (var snapshot in _currentSnapshots.Include(s => s.Commit).AsAsyncEnumerable())
+        {
+            _cache[snapshot.EntityId] = snapshot;
         }
 
-        return _cache.Where(kv => kv.Value is not null).ToDictionary(kv => kv.Key, kv => kv.Value!);
+        _complete = true;
     }
 
     public async Task PreloadAsync(IReadOnlyCollection<Guid> entityIds)
@@ -131,10 +140,12 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
         // (https://sqlite.org/lang_select.html#bareagg). The commit order (DateTime, Counter, Id) is
         // packed into one sortable text key (Counter zero-padded to cover the long range); the trailing
         // max(...) column is unmapped and ignored by EF.
+        // The separator has to sort below '.' and every digit: SQLite trims trailing zeros off the datetime, so
+        // "00:00:00" vs "00:00:00.5" is decided by the separator, and '|' (0x7C) ranked the earlier commit first.
         return dbContext.Set<ObjectSnapshot>().FromSql(
             $"""
              SELECT "s".*,
-                    max("c"."DateTime" || '|' || printf('%020d', "c"."Counter") || '|' || "c"."Id")
+                    max("c"."DateTime" || '!' || printf('%020d', "c"."Counter") || '!' || "c"."Id")
              FROM "Snapshots" AS "s"
                       INNER JOIN "Commits" AS "c" ON "s"."CommitId" = "c"."Id"
              WHERE {ignoreAfterDate} IS NULL

@@ -87,7 +87,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     /// Everything a replay needs: the state it resumes from and the commits to apply on top of it.
     /// Only this class builds one, so the resume point and the commits can never disagree.
     /// </summary>
-    /// <param name="ResumeFrom">null is the state before the first commit, so <paramref name="Commits"/> is all of history</param>
+    /// <param name="ResumeFrom">null is the state before the first commit, so <paramref name="Commits"/> is every commit there is</param>
+    /// <param name="Commits">empty means there is nothing to replay, whatever <paramref name="ResumeFrom"/> says</param>
     internal readonly record struct ReplayWindow(Checkpoint? ResumeFrom, SortedSet<Commit> Commits);
 
     public AwaitableDisposable<IDisposable> Lock()
@@ -119,6 +120,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     private IQueryable<ObjectSnapshot> Snapshots => _dbContext.Snapshots.AsNoTracking();
 
+    /// <summary>tracking on purpose: rewritten hashes and checkpoint flags are persisted by mutating the commits it loaded</summary>
     private IQueryable<Commit> Commits => _dbContext.Commits;
 
     public Task<IDbContextTransaction> BeginTransactionAsync()
@@ -329,10 +331,15 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Saves the snapshots, and with them anything else the change tracker is holding.
+    /// Saves the snapshots and, with them, which commits a later replay can resume from.
     /// </summary>
-    public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots)
+    public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots, IReadOnlyList<CheckpointFlag> checkpointFlags)
     {
+        //the commits are tracked, so this rides along on the save below
+        foreach (var (commit, isCheckpoint) in checkpointFlags)
+        {
+            commit.IsSnapshotCheckpoint = isCheckpoint;
+        }
         var snapshotList = snapshots as IReadOnlyCollection<ObjectSnapshot> ?? snapshots.ToArray();
         var notify = ShouldNotifyProjectedChanges();
         return _fastProjection.AddSnapshotsRawAsync(

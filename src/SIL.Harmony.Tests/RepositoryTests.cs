@@ -156,7 +156,7 @@ public class RepositoryTests : IAsyncLifetime
     [Fact]
     public async Task CurrentSnapshots_Works()
     {
-        await _repository.AddSnapshots([Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0))]);
+        await _repository.AddSnapshots([Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0))], []);
         var snapshots = await _repository.CurrentSnapshots().ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().ContainSingle();
     }
@@ -169,7 +169,7 @@ public class RepositoryTests : IAsyncLifetime
         await _repository.AddSnapshots([
             Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
             Snapshot(entityId, Guid.NewGuid(), expectedTime),
-        ]);
+        ], []);
         var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Should().BeEquivalentTo(expectedTime);
     }
@@ -181,7 +181,7 @@ public class RepositoryTests : IAsyncLifetime
         await _repository.AddSnapshots([
             Snapshot(entityId, Guid.NewGuid(), Time(1, 0)),
             Snapshot(entityId, Guid.NewGuid(), Time(1, 1)),
-        ]);
+        ], []);
         var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().ContainSingle().Which.Commit.HybridDateTime.Counter.Should().Be(1);
     }
@@ -195,9 +195,25 @@ public class RepositoryTests : IAsyncLifetime
         await _repository.AddSnapshots([
             Snapshot(entityId, ids[0], time),
             Snapshot(entityId, ids[1], time),
-        ]);
+        ], []);
         var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         snapshots.Should().ContainSingle().Which.Commit.Id.Should().Be(ids[1]);
+    }
+
+    [Fact]
+    public async Task CurrentSnapshots_SortsByTimeWhenOneTimestampIsAPrefixOfTheOther()
+    {
+        //SQLite trims trailing zeros off the stored datetime, so ".1" and ".15" are different lengths
+        var entityId = Guid.NewGuid();
+        var newerCommitId = Guid.NewGuid();
+        await _repository.AddSnapshots([
+            Snapshot(entityId, Guid.NewGuid(), new HybridDateTime(new DateTimeOffset(2000, 1, 1, 0, 0, 0, 100, TimeSpan.Zero), 0)),
+            Snapshot(entityId, newerCommitId, new HybridDateTime(new DateTimeOffset(2000, 1, 1, 0, 0, 0, 150, TimeSpan.Zero), 0)),
+        ], []);
+
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
+        snapshots.Should().ContainSingle().Which.Commit.Id.Should().Be(newerCommitId);
+        (await _repository.GetCurrentSnapshotByObjectId(entityId))!.CommitId.Should().Be(newerCommitId);
     }
 
     [Fact]
@@ -214,14 +230,14 @@ public class RepositoryTests : IAsyncLifetime
             snapshot3,
             snapshot1,
             snapshot2,
-        ]);
+        ], []);
 
         var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         var commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[2]);
 
         var checkpoint = await _repository.FindCheckpointAtOrBefore(snapshot2.Commit);
-        snapshots = [.. (await _repository.SnapshotViewAsOf(checkpoint).GetAllAsync()).Values];
+        snapshots = await _repository.SnapshotViewAsOf(checkpoint).All().ToArrayAsync(TestContext.Current.CancellationToken);
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
     }
@@ -240,16 +256,48 @@ public class RepositoryTests : IAsyncLifetime
             snapshot3,
             snapshot1,
             snapshot2,
-        ]);
+        ], []);
 
         var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
         var commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[2]);
 
         var checkpoint = await _repository.FindCheckpointAtOrBefore(snapshot2.Commit);
-        snapshots = [.. (await _repository.SnapshotViewAsOf(checkpoint).GetAllAsync()).Values];
+        snapshots = await _repository.SnapshotViewAsOf(checkpoint).All().ToArrayAsync(TestContext.Current.CancellationToken);
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
+    }
+
+    [Fact]
+    public async Task DeleteSnapshotsAfter_LeavesExactlyWhatTheCheckpointFilteredViewWouldHaveReturned()
+    {
+        //a replay seeds from the live table rather than a checkpoint-filtered view, so it is only correct while the
+        //delete removes exactly the snapshots that view would have filtered out. Nothing else pins the two together.
+        var rewound = Guid.NewGuid();
+        var atCheckpoint = Guid.NewGuid();
+        var checkpointCommitId = Guid.NewGuid();
+        var checkpointSnapshot = Snapshot(atCheckpoint, checkpointCommitId, Time(2, 0));
+        checkpointSnapshot.Commit.IsSnapshotCheckpoint = true;
+        await _repository.AddSnapshots([
+            Snapshot(rewound, Guid.NewGuid(), Time(1, 0)),
+            checkpointSnapshot,
+            Snapshot(rewound, Guid.NewGuid(), Time(3, 0)),
+            //only ever exists after the checkpoint, so the delete has to drop it entirely
+            Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(3, 0)),
+        ], []);
+        var checkpoint = await _repository.FindCheckpointAtOrBefore(checkpointSnapshot.Commit);
+        var expected = await _repository.SnapshotViewAsOf(checkpoint).All().ToDictionaryAsync(s => s.EntityId, cancellationToken: TestContext.Current.CancellationToken);
+        expected.Keys.Should().BeEquivalentTo([rewound, atCheckpoint]);
+
+        await _repository.DeleteSnapshotsAfter(checkpointSnapshot.Commit);
+
+        var baseline = await _repository.CurrentSnapshotView().All().ToDictionaryAsync(s => s.EntityId, cancellationToken: TestContext.Current.CancellationToken);
+        baseline.Should().ContainKeys(expected.Keys);
+        baseline.Keys.Should().BeEquivalentTo(expected.Keys);
+        foreach (var (entityId, snapshot) in expected)
+        {
+            baseline[entityId].CommitId.Should().Be(snapshot.CommitId, $"entity {entityId} must resume from the same snapshot");
+        }
     }
 
     [Fact]
@@ -267,7 +315,7 @@ public class RepositoryTests : IAsyncLifetime
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(2, 0)),
-        ]);
+        ], []);
 
         //the new commit is newer than every existing snapshot, so none are stale
         await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(3, 0)));
@@ -281,7 +329,7 @@ public class RepositoryTests : IAsyncLifetime
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(3, 0)),
-        ]);
+        ], []);
         await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(2, 0)));
 
         _crdtDbContext.Snapshots.Include(s => s.Commit).Should().ContainSingle()
@@ -294,7 +342,7 @@ public class RepositoryTests : IAsyncLifetime
         await _repository.AddSnapshots([
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 0)),
             Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(1, 2)),
-        ]);
+        ], []);
         await _repository.DeleteSnapshotsAfter(Commit(Guid.NewGuid(), Time(1, 1)));
 
         _crdtDbContext.Snapshots.Include(s => s.Commit).Should().ContainSingle()
@@ -310,7 +358,7 @@ public class RepositoryTests : IAsyncLifetime
         await _repository.AddSnapshots([
             Snapshot(entityId, ids[0], time),
             Snapshot(entityId, ids[2], time),
-        ]);
+        ], []);
         await _repository.DeleteSnapshotsAfter(Commit(ids[1], time));
 
         _crdtDbContext.Snapshots.Should().ContainSingle()
@@ -336,7 +384,7 @@ public class RepositoryTests : IAsyncLifetime
         {
             snapshots = snapshots.Reverse();
         }
-        await _repository.AddSnapshots(snapshots);
+        await _repository.AddSnapshots(snapshots, []);
 
         var words = await _crdtDbContext.Set<Word>().AsNoTracking()
             .ToArrayAsync(TestContext.Current.CancellationToken);

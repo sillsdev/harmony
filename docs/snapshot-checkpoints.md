@@ -145,8 +145,8 @@ that changes inside the range is replayed alongside the subject so reads land at
 Both the staleness and the position error go away. It does not need a checkpoint at which the
 subject itself was touched; any checkpoint works.
 
-This also means `UpdateSnapshots` and `GetSnapshotAtCommit` share one primitive: "resume from the
-newest checkpoint at or before P".
+This also means the write path (`CrdtRepository.AddCommits` feeding `DataModel.Replay`) and
+`GetSnapshotAtCommit` share one primitive: "resume from the newest checkpoint at or before P".
 
 **Do not filter commits inside that range** without tracking read sets. Skipping commits that do not
 touch the subject reintroduces exactly the neighbour-read bug: a neighbour that changed inside the
@@ -177,7 +177,7 @@ Two independent halves, sharing only the holes:
   it would let a hole span a floor boundary, guaranteeing a safe commit at least every `MaxChangesBetweenSnapshotCheckpoints`
   changes (`HarmonyConfig`, default 100). Changes, not commits, because replay cost is per change: one commit of 1000
   changes costs as much to replay as 1000 single-change ones. This is the only dial, and it decides retention only.
-- **Discovery** (`SnapshotCheckpointPolicy.PopulateCheckpoints`, called from `SnapshotWorker.ComputeSnapshotsAndMarkCheckpoints`). After the
+- **Discovery** (`SnapshotCheckpointPolicy.CheckpointFlags`, called from `SnapshotWorker.ComputeSnapshotsAndCheckpoints`). After the
   replay, a commit is flagged iff no entity's dropped-snapshot hole covers it, a single sweep over the holes the worker
   recorded. This finds *every* safe commit, not only the grid's; the floor boundaries come out safe by construction, so
   the flagged set always contains them.
@@ -198,10 +198,13 @@ back out of a query. An earlier version cleared the tracker after dropping the t
 commits to be loaded a second time.
 
 `DataModel.ResumeFromCheckpoint` is the resume primitive the point-in-time read paths share (`GetSnapshotsAtCommit`,
-`GetSnapshotAtCommit`). Every replay applies its commits on top of `CrdtRepository.SnapshotViewAsOf(checkpoint)`, a
-read-only view of the snapshot table as it stood at that checkpoint (empty when there is none). It only accepts a
-`Checkpoint`, which only the repository's checkpoint lookups can create, so a replay can't be seeded from a
-non-checkpoint commit by mistake. `FindCheckpointBefore` reads the flags; the lookup is a partial index over the
+`GetSnapshotAtCommit`). Those two replay on top of `CrdtRepository.SnapshotViewAsOf(checkpoint)`, a read-only view of
+the snapshot table as it stood at that checkpoint (empty when there is none). It only accepts a `Checkpoint`, which
+only the repository's checkpoint lookups can create, so a read can't be seeded from a non-checkpoint commit by
+mistake. The write path gives that guarantee up: `DataModel.Replay` deletes the snapshots after the checkpoint first
+and then reads the table back with `CurrentSnapshotView()`, which needs no filter and no `Checkpoint`. Same rows,
+cheaper query, but the seed is now correct because of the statement above it rather than by construction, so keep the
+delete and the view together. `FindCheckpointBefore` reads the flags; the lookup is a partial index over the
 ordering tuple filtered on the flag (a leading bool column can't seek, so it filters on the flag and orders by the tuple).
 
 Why this shape rather than the earlier "decision, not record":

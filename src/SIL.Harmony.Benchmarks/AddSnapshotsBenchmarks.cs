@@ -43,6 +43,7 @@ public class AddSnapshotsBenchmarks
     private DataModelTestBase _local = null!;
     private CrdtRepository _repository = null!;
     private ObjectSnapshot[] _snapshotsToAdd = null!;
+    private CheckpointFlag[] _checkpointFlags = null!;
 
     [Params(1000, 10_000)]
     public int ChangeCount { get; set; }
@@ -96,7 +97,7 @@ public class AddSnapshotsBenchmarks
             ((ISyncable)_template.DataModel).AddRangeFromSync(seed).Wait();
 
         // The measured commits are present in the database but their snapshots are NOT yet persisted; that's the
-        // work AddSnapshots performs. Adding only the commits mirrors the state right before UpdateSnapshots runs.
+        // work AddSnapshots performs. Adding only the commits mirrors the state right before the replay runs.
         var repository = _template.CreateRepository();
         repository.AddCommits(measured).GetAwaiter().GetResult();
         _measuredCommitIds = measured.Select(c => c.Id).ToHashSet();
@@ -116,7 +117,8 @@ public class AddSnapshotsBenchmarks
             .ToArray()
             .ToSortedSet();
 
-        // Preload the baseline the same way DataModel does, so SnapshotWorker doesn't issue a per-entity query while computing.
+        // Preload unconditionally so SnapshotWorker never issues a per-entity query while computing. DataModel only
+        // preloads above PrefetchSnapshotsBreakpoint, so below it this measures less baseline I/O than a real write.
         var entityIds = measuredCommits
             .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
             .ToHashSet();
@@ -125,13 +127,15 @@ public class AddSnapshotsBenchmarks
         baseline.PreloadAsync(entityIds).GetAwaiter().GetResult();
 
         var worker = new SnapshotWorker(measuredCommits, baseline, _local.CrdtConfig);
-        _snapshotsToAdd = worker.ComputeSnapshotsAndMarkCheckpoints().GetAwaiter().GetResult().ToArray();
+        var (snapshots, checkpointFlags) = worker.ComputeSnapshotsAndCheckpoints().GetAwaiter().GetResult();
+        _snapshotsToAdd = snapshots.ToArray();
+        _checkpointFlags = checkpointFlags;
     }
 
     [Benchmark]
     public void AddSnapshots()
     {
-        _repository.AddSnapshots(_snapshotsToAdd).Wait();
+        _repository.AddSnapshots(_snapshotsToAdd, _checkpointFlags).Wait();
     }
 
     [IterationCleanup]
@@ -142,6 +146,7 @@ public class AddSnapshotsBenchmarks
         _repository = null!;
         _local = null!;
         _snapshotsToAdd = null!;
+        _checkpointFlags = null!;
     }
 
     [GlobalCleanup]

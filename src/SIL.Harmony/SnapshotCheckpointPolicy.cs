@@ -62,16 +62,21 @@ internal sealed class SnapshotCheckpointPolicy
     internal bool IsCheckpoint(int commitIndex) => _isCheckpoint[commitIndex];
 
     /// <summary>
-    /// Writes the outcome onto <paramref name="batchCommits"/>, which must be the same commits in the same order
-    /// the policy was built from. Only valid once the replay is done: until then we don't know which snapshots get dropped.
+    /// Pairs each of <paramref name="batchCommits"/> (the same commits in the same order the policy was built from)
+    /// with the outcome. Only valid once the replay is done: until then we don't know which snapshots get dropped.
     /// </summary>
-    internal void PopulateCheckpoints(Commit[] batchCommits)
+    internal CheckpointFlag[] CheckpointFlags(Commit[] batchCommits)
     {
         if (batchCommits.Length != _isCheckpoint.Length)
             throw new ArgumentException("commits must be the batch this policy was built from", nameof(batchCommits));
+        var flags = new CheckpointFlag[batchCommits.Length];
         for (var commitIndex = 0; commitIndex < batchCommits.Length; commitIndex++)
         {
-            batchCommits[commitIndex].IsSnapshotCheckpoint = _isCheckpoint[commitIndex];
+            flags[commitIndex] = new CheckpointFlag(batchCommits[commitIndex], _isCheckpoint[commitIndex]);
         }
+        return flags;
     }
 }
+
+/// <param name="IsCheckpoint">whether a replay can resume from <paramref name="Commit"/></param>
+internal readonly record struct CheckpointFlag(Commit Commit, bool IsCheckpoint);

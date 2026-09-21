@@ -196,23 +196,26 @@ public class DataModel : ISyncable, IAsyncDisposable
         var (checkpoint, commitsToApply) = window;
         if (commitsToApply.Count == 0) return;
 
+        ISnapshotView baseline;
         // A database with no checkpoints replays all of history,
         // which is what we want, because it will trigger creating checkpoints
         if (checkpoint is null)
         {
             await repo.DeleteSnapshotsAndProjectedTables();
+            //the delete left the table empty, so there's nothing to query
+            baseline = EmptySnapshotView.Instance;
         }
         else
         {
             await repo.DeleteSnapshotsAfter(checkpoint.Commit);
+            //the current table is the state at the checkpoint, because the delete above just made it so
+            baseline = repo.CurrentSnapshotView();
         }
 
-        //the checkpoint-less branch above left the table empty, so there's nothing to query
-        var baseline = checkpoint is null ? EmptySnapshotView.Instance : repo.CurrentSnapshotView();
         await PreloadTouched(baseline, commitsToApply);
         var worker = new SnapshotWorker(commitsToApply, baseline, _crdtConfig.Value);
-        var newSnapshots = await worker.ComputeSnapshotsAndMarkCheckpoints();
-        await repo.AddSnapshots(newSnapshots);
+        var (newSnapshots, checkpoints) = await worker.ComputeSnapshotsAndCheckpoints();
+        await repo.AddSnapshots(newSnapshots, checkpoints);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -308,8 +311,10 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         //loading everything up front makes every lookup during the replay a cache hit
-        await baseline.GetAllAsync();
-        return await (await SnapshotWorker.Replay(baseline, commitsToReplay, _crdtConfig.Value)).GetAllAsync();
+        await baseline.PreloadAllAsync();
+        return await (await SnapshotWorker.Replay(baseline, commitsToReplay, _crdtConfig.Value))
+            .All()
+            .ToDictionaryAsync(s => s.EntityId);
     }
 
     /// <summary>

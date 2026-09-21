@@ -48,14 +48,14 @@ internal class SnapshotWorker : ISnapshotView
     }
 
     /// <summary>
-    /// The snapshots to persist. Also sets <see cref="Commit.IsSnapshotCheckpoint"/> on the batch commits;
-    /// persisting both is the caller's job.
+    /// The snapshots to persist, and which of the batch commits a later replay can resume from.
+    /// Persisting both is the caller's job.
     /// </summary>
-    internal async Task<IReadOnlyList<ObjectSnapshot>> ComputeSnapshotsAndMarkCheckpoints()
+    internal async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeSnapshotsAndCheckpoints()
     {
         await ApplyCommitChanges();
-        _policy.PopulateCheckpoints(_batchCommits);
-        return [.. _retainedIntermediateSnapshots, .. _latestSnapshots.Values.Select(l => l.Snapshot)];
+        IReadOnlyList<ObjectSnapshot> snapshots = [.. _retainedIntermediateSnapshots, .. _latestSnapshots.Values.Select(l => l.Snapshot)];
+        return (snapshots, _policy.CheckpointFlags(_batchCommits));
     }
 
     private async ValueTask ApplyCommitChanges()
@@ -139,46 +139,6 @@ internal class SnapshotWorker : ISnapshotView
         }
     }
 
-    public async ValueTask<ObjectSnapshot?> GetAsync(Guid entityId)
-    {
-        if (_latestSnapshots.TryGetValue(entityId, out var latest))
-        {
-            return latest.Snapshot;
-        }
-
-        return await _baseline.GetAsync(entityId);
-    }
-
-    public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression)
-    {
-        var predicate = predicateExpression.Compile();
-
-        // this run's snapshots first, so we don't return an out of date copy of an entity we've already updated
-        foreach (var latest in _latestSnapshots.Values.Where(l => predicate(l.Snapshot)))
-        {
-            yield return latest.Snapshot;
-        }
-
-        await foreach (var snapshot in _baseline.Where(predicateExpression))
-        {
-            if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
-            yield return snapshot;
-        }
-    }
-
-    public async Task<Dictionary<Guid, ObjectSnapshot>> GetAllAsync()
-    {
-        var all = await _baseline.GetAllAsync();
-        foreach (var (entityId, latest) in _latestSnapshots)
-        {
-            all[entityId] = latest.Snapshot;
-        }
-
-        return all;
-    }
-
-    public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => _baseline.PreloadAsync(entityIds);
-
     private async Task GenerateSnapshotForEntity(IObjectBase entity, ObjectSnapshot? prevSnapshot, ChangeContext context)
     {
         //when both snapshots are for the same commit we don't want to keep the previous, therefore the new snapshot should be root
@@ -215,4 +175,49 @@ internal class SnapshotWorker : ISnapshotView
         else
             _policy.SnapshotDropped(prevSnapshot.CreatedAtIndex, currCommitIndex);
     }
+
+    public async ValueTask<ObjectSnapshot?> GetAsync(Guid entityId)
+    {
+        if (_latestSnapshots.TryGetValue(entityId, out var latest))
+        {
+            return latest.Snapshot;
+        }
+
+        return await _baseline.GetAsync(entityId);
+    }
+
+    public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression)
+    {
+        var predicate = predicateExpression.Compile();
+
+        // this run's snapshots first, so we don't return an out of date copy of an entity we've already updated
+        foreach (var latest in _latestSnapshots.Values.Where(l => predicate(l.Snapshot)))
+        {
+            yield return latest.Snapshot;
+        }
+
+        await foreach (var snapshot in _baseline.Where(predicateExpression))
+        {
+            if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
+            yield return snapshot;
+        }
+    }
+
+    public async IAsyncEnumerable<ObjectSnapshot> All()
+    {
+        foreach (var latest in _latestSnapshots.Values)
+        {
+            yield return latest.Snapshot;
+        }
+
+        await foreach (var snapshot in _baseline.All())
+        {
+            if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
+            yield return snapshot;
+        }
+    }
+
+    public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => _baseline.PreloadAsync(entityIds);
+
+    public Task PreloadAllAsync() => _baseline.PreloadAllAsync();
 }

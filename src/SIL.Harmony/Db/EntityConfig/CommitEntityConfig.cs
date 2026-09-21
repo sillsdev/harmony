@@ -22,6 +22,8 @@ public class CommitEntityConfig : IEntityTypeConfiguration<Commit>
                     .HasColumnName("DateTime");
                 hybridEntity.Property(h => h.Counter).HasColumnName("Counter");
             });
+        // EF Core 10 cannot express indexes mixing ComplexProperty members + scalars (efcore#11336, targeted
+        // for 11), hence EFCore.ComplexIndexes for both of these.
         // Both Harmony sorts are uniform-direction, so this ASC index serves DefaultOrderDescending via reverse scan.
         builder.HasComplexCompositeIndex(
             c => new { c.HybridDateTime.DateTime, c.HybridDateTime.Counter, c.Id },

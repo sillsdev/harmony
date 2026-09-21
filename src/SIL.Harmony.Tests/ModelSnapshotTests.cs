@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using SIL.Harmony.Config;
 using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
@@ -121,29 +120,25 @@ public class ModelSnapshotTests : DataModelTestBase
     }
 
     [Theory]
-    [InlineData(10)]
-    [InlineData(100)]
-    // [InlineData(1_000)]
-    public async Task CanGetSnapshotFromEarlier(int changeCount)
+    [InlineData(10, 12)] // 1 (root) + 10 (new words) + 1 (latest edit)
+    [InlineData(100, 103)] // 1 (root) + 100 (new words) + 1 (latest edit) + 1 intermediate kept by policy
+    public async Task CanGetSnapshotFromEarlier(int changeCount, int expectedSnapshots)
     {
         var entityId = Guid.NewGuid();
-        await WriteNextChange(SetWord(entityId, "first"));
+        await WriteNextChange(SetWord(entityId, "first")); // 1
         var changes = new List<Commit>(changeCount);
         var addNew = new List<Commit>(changeCount);
         for (var i = 0; i < changeCount; i++)
         {
+            // + # of checkpoint policy intervals (edits to an existing entity)
             changes.Add(await WriteNextChange(SetWord(entityId, $"change {i}"), false).AsTask());
+            // + changeCount (new entities)
             addNew.Add(await WriteNextChange(SetWord(Guid.NewGuid(), $"add {i}"), false).AsTask());
         }
 
         //adding all via sync means there's sparse snapshots
         await AddCommitsViaSync(changes.Concat(addNew));
-        //the edited word is touched at even batch indexes (interleaved with the new words); the floor keeps its snapshot
-        //at any such position whose gap to the next spans a boundary, plus its latest, plus the root from the first commit
-        var floor = new SnapshotCheckpointPolicy(Enumerable.Repeat(1, changeCount * 2), new HarmonyConfig().MaxChangesBetweenSnapshotCheckpoints);
-        var editPositions = Enumerable.Range(0, changeCount).Select(i => 2 * i).ToArray();
-        var keptEdits = editPositions.Zip(editPositions.Skip(1), (from, to) => floor.MustKeepSnapshot(from, to)).Count(kept => kept) + 1;
-        DbContext.Snapshots.Should().HaveCount(1 + changeCount + keptEdits);
+        DbContext.Snapshots.Should().HaveCount(expectedSnapshots);
 
         for (int i = 0; i < changeCount; i++)
         {

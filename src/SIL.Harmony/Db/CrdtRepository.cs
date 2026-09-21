@@ -181,10 +181,12 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         // (https://sqlite.org/lang_select.html#bareagg). The commit order (DateTime, Counter, Id) is
         // packed into one sortable text key (Counter zero-padded to cover the long range); the trailing
         // max(...) column is unmapped and ignored by EF.
+        // The separator must sort below '.' and every digit: EF Core's mapping drops trailing zeros from the
+        // datetime, so "00:00:00" vs "00:00:00.5" is decided by the separator, and '|' picked the earlier commit.
         return dbContext.Set<ObjectSnapshot>().FromSql(
             $"""
              SELECT "s".*,
-                    max("c"."DateTime" || '|' || printf('%020d', "c"."Counter") || '|' || "c"."Id")
+                    max("c"."DateTime" || '!' || printf('%020d', "c"."Counter") || '!' || "c"."Id")
              FROM "Snapshots" AS "s"
                       INNER JOIN "Commits" AS "c" ON "s"."CommitId" = "c"."Id"
              WHERE {ignoreAfterDate} IS NULL

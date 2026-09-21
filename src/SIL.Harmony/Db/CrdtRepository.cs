@@ -261,12 +261,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .FirstOrDefaultAsync();
     }
 
-    /// <summary>The window that rebuilds every snapshot: all of history, resuming from nothing.</summary>
-    public async Task<ReplayWindow> WholeHistory()
-    {
-        return new ReplayWindow(null, await GetCommitsAfter(null));
-    }
-
     private Task<SortedSet<Commit>> GetCommitsAfter(Checkpoint? checkpoint)
     {
         return GetCommitsBetween(checkpoint?.Commit, upToInclusive: null);
@@ -379,6 +373,12 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await _crdtConfig.Value.OnProjectedEntitiesChanged(batch);
     }
 
+    /// <summary>The window that rebuilds every snapshot: all of history, resuming from nothing.</summary>
+    public async Task<ReplayWindow> WholeHistory()
+    {
+        return new ReplayWindow(null, await GetCommitsAfter(null));
+    }
+
     /// <inheritdoc cref="AddCommits"/>
     public Task<ReplayWindow> AddCommit(Commit commit) => AddCommits([commit]);
 
@@ -395,9 +395,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         //back past the oldest added commit, so it covers the commits needing a rehash too
         var resumeFrom = await FindCheckpointBefore(newCommits.MinBy(c => c.CompareKey)!);
         var commitsToApply = (await GetCommitsAfter(resumeFrom)).UnionBy(newCommits, c => c.Id).ToSortedSet();
-        //a commit inserted in the past invalidates every hash after it. The window starts right after the resume
-        //point, so re-linking all of it covers that; commits before the insert rehash to the value they already
-        //hold, which costs a hash and no update
+        //we're inserting commits in the past/rewriting history, so we need to update the previous commit hashes
+        //(We unnecessarily rehash any non-new commits that come after the resume checkpoint. That's ok)
         UpdateCommitHashes(commitsToApply, resumeFrom?.Commit);
         _dbContext.AddRange(newCommits);
         await _dbContext.SaveChangesAsync();

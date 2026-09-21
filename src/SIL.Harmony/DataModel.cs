@@ -74,7 +74,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         await using var transaction = await repo.BeginTransactionAsync();
         var replayWindow = await repo.AddCommits(commits);
-        await Replay(repo, replayWindow);
+        await UpdateSnapshots(repo, replayWindow);
         await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
@@ -111,7 +111,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
         var replayWindow = await repo.AddCommit(commit);
-        await Replay(repo, replayWindow);
+        await UpdateSnapshots(repo, replayWindow);
 
         if (AlwaysValidate) await ValidateCommits(repo);
 
@@ -150,7 +150,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
             await using var transaction = await repo.BeginTransactionAsync();
             var replayWindow = await repo.AddCommits(newCommits);
-            await Replay(repo, replayWindow);
+            await UpdateSnapshots(repo, replayWindow);
             await ValidateCommits(repo);
             await transaction.CommitAsync();
         }
@@ -191,7 +191,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// Rebuilds every snapshot the window covers by replaying its commits onto the state it resumes from.
     /// A window resuming from nothing rebuilds all of history.
     /// </summary>
-    private async Task Replay(CrdtRepository repo, CrdtRepository.ReplayWindow window)
+    private async Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
     {
         var (checkpoint, commitsToApply) = window;
         if (commitsToApply.Count == 0) return;
@@ -247,7 +247,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         var wholeHistory = await repo.WholeHistory();
         //Replay does nothing without commits, which would leave snapshots with no history behind them in place
         if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
-        else await Replay(repo, wholeHistory);
+        else await UpdateSnapshots(repo, wholeHistory);
         await transaction.CommitAsync();
     }
 
@@ -312,8 +312,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         //loading everything up front makes every lookup during the replay a cache hit
         await baseline.PreloadAllAsync();
-        return await (await SnapshotWorker.Replay(baseline, commitsToReplay, _crdtConfig.Value))
-            .All()
+        var updatedSnapshotView = await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value);
+        return await updatedSnapshotView.All()
             .ToDictionaryAsync(s => s.EntityId);
     }
 
@@ -405,7 +405,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         //we don't have a persisted snapshot in the correct state, so rebuild it
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         await PreloadTouched(baseline, commitsToReplay);
-        return await (await SnapshotWorker.Replay(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
+        return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
     }
 
     public async Task<SyncState> GetSyncState()

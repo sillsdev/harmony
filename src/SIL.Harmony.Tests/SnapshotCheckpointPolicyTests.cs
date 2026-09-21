@@ -1,29 +1,33 @@
-namespace SIL.Harmony.Tests;
+﻿namespace SIL.Harmony.Tests;
 
 public class SnapshotCheckpointPolicyTests
 {
-    // one change per commit makes the floor reduce to the old grid: keep iff a multiple of maxChanges falls in the gap
     private static SnapshotCheckpointPolicy SingleChangeCommits(int commitCount, int maxChanges) =>
         new(Enumerable.Repeat(1, commitCount), maxChanges);
 
     [Theory]
-    [InlineData(0, 2, false)] // gap [0,2) spans no floor boundary
-    [InlineData(0, 4, true)]  // boundary before commit 4
-    [InlineData(3, 4, true)]  // that boundary is the gap's own end
+    // maxChanges: 4 means that boundaries land at/before multiples of 4 (4, 8, 12 etc.)
+    [InlineData(0, 2, false)]
+    [InlineData(0, 4, true)]
+    [InlineData(3, 4, true)]
     [InlineData(4, 7, false)]
-    [InlineData(4, 8, true)]  // boundary before commit 8
-    public void KeepsASnapshotOnlyWhenAFloorBoundaryFallsInTheGap(int from, int to, bool mustKeep)
+    [InlineData(4, 8, true)]
+    public void KeepsASnapshotOnlyWhenACheckpointBoundaryFallsInTheGap(
+        int snapshotCommitIndex, // the index of the snapshot we're deciding whether we need to keep
+        int newSnapshotCommitIndex, // the index of a snapshot that was just generated and may or may not supersede the snapshot before it
+        bool mustKeep)
     {
-        SingleChangeCommits(20, maxChanges: 4).MustKeepSnapshot(from, to).Should().Be(mustKeep);
+        SingleChangeCommits(20, maxChanges: 4)
+            .MustKeepSnapshot(snapshotCommitIndex, newSnapshotCommitIndex).Should().Be(mustKeep);
     }
 
     [Fact]
-    public void ABigCommitIsAFloorBoundaryOfItsOwn()
+    public void ABigCommitIsACheckpointBoundaryOfItsOwn()
     {
-        // commit 1 alone carries a whole floor interval of changes, so the snapshot before commit 2 must be kept
+        // commit 1 alone carries a whole checkpoint interval of changes, so the snapshot before commit 2 must be kept
         var policy = new SnapshotCheckpointPolicy([1, 5, 1, 1, 1], maxChangesBetweenCheckpoints: 4);
         policy.MustKeepSnapshot(0, 1).Should().BeFalse("the first commit is one change, no boundary yet");
-        policy.MustKeepSnapshot(1, 2).Should().BeTrue("the second commit's five changes cross a boundary");
+        policy.MustKeepSnapshot(1, 2).Should().BeTrue("the second commit's five changes cross a boundary, so we'd keep its snapshots");
     }
 
     [Fact]
@@ -35,7 +39,7 @@ public class SnapshotCheckpointPolicyTests
     }
 
     [Fact]
-    public void KeepsEverySnapshotWhenTheFloorIsEveryChange()
+    public void KeepsEverySnapshotWhenEveryChangeIsACheckpoint()
     {
         // maxChanges 1 forces a boundary at every commit, so no snapshot is ever droppable
         var everyCommit = SingleChangeCommits(5, maxChanges: 1);
@@ -75,9 +79,11 @@ public class SnapshotCheckpointPolicyTests
     }
 
     [Fact]
-    public void ADropReachingTheLastCommitClearsUpToButNotIncludingIt()
+    public void TheLastCommitStaysACheckpointWhenADropRunsRightUpToIt()
     {
-        //a gap's end is always a re-touch, so it can never be the last commit; the last one stays safe
-        CheckpointsAfterDropping(5, (2, 4)).Should().Equal(true, true, false, false, true);
+        //the end commit holds the entity's next snapshot, so it stays safe — including at the end of the batch
+        const int commitCount = 5;
+        const int lastCommitIndex = commitCount - 1;
+        CheckpointsAfterDropping(commitCount, (0, lastCommitIndex)).Should().Equal(false, false, false, false, true);
     }
 }

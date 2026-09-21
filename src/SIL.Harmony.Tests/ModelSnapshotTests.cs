@@ -88,7 +88,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var firstCommit = await WriteNextChange(SetWord(entityId, "first"));
         var secondCommit = await WriteNextChange(SetWord(entityId, "second"));
         var thirdCommit = await WriteNextChange(SetWord(entityId, "third"));
-        //ensures that SnapshotWorker.Replay will be called when getting the snapshots
+        //ensures that SnapshotWorker.ReplayCommits will be called when getting the snapshots
         await ClearNonRootSnapshots();
         var firstWord = await DataModel.GetAtTime<Word>(firstCommit.DateTime.AddMinutes(5), entityId);
         firstWord.Should().NotBeNull();
@@ -108,9 +108,6 @@ public class ModelSnapshotTests : DataModelTestBase
         thirdWord.Text.Should().Be("third");
     }
 
-    /// <summary>
-    /// leaves each entity nothing but its root snapshot, so reading state at a commit has to replay history to get there
-    /// </summary>
     private async Task ClearNonRootSnapshots()
     {
         //the flags go first: a checkpoint claims that the snapshots at or before it hold the state a replay resumes from
@@ -120,24 +117,30 @@ public class ModelSnapshotTests : DataModelTestBase
     }
 
     [Theory]
-    [InlineData(10, 12)] // 1 (root) + 10 (new words) + 1 (latest edit)
-    [InlineData(100, 103)] // 1 (root) + 100 (new words) + 1 (latest edit) + 1 intermediate kept by policy
-    public async Task CanGetSnapshotFromEarlier(int changeCount, int expectedSnapshots)
+    [InlineData(10)]
+    [InlineData(100)]
+    [InlineData(1_000)]
+    public async Task CanGetSnapshotFromEarlier(int changeCount)
     {
         var entityId = Guid.NewGuid();
-        await WriteNextChange(SetWord(entityId, "first")); // 1
+        await WriteNextChange(SetWord(entityId, "first"));
         var changes = new List<Commit>(changeCount);
         var addNew = new List<Commit>(changeCount);
         for (var i = 0; i < changeCount; i++)
         {
-            // + # of checkpoint policy intervals (edits to an existing entity)
             changes.Add(await WriteNextChange(SetWord(entityId, $"change {i}"), false).AsTask());
-            // + changeCount (new entities)
             addNew.Add(await WriteNextChange(SetWord(Guid.NewGuid(), $"add {i}"), false).AsTask());
         }
 
         //adding all via sync means there's sparse snapshots
-        await AddCommitsViaSync(changes.Concat(addNew));
+        Commit[] allCommits = [..changes, ..addNew];
+        await AddCommitsViaSync(allCommits);
+
+        var submittedChangeCount = allCommits.Sum(c => c.ChangeEntities.Count);
+        var expectedSnapshots =
+            1 // root snapshot
+            + Math.Max(1, submittedChangeCount / HarmonyConfig.MaxChangesBetweenSnapshotCheckpoints) // edits to that entity
+            + changeCount; // new entities
         DbContext.Snapshots.Should().HaveCount(expectedSnapshots);
 
         for (int i = 0; i < changeCount; i++)

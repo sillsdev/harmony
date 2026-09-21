@@ -3,10 +3,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Db;
 
-/// <summary>
-/// Read only access to each entity's newest snapshot at a point in time.
-/// A view remembers what it has been asked, so repeating a read is free.
-/// </summary>
 internal interface ISnapshotView
 {
     ValueTask<ObjectSnapshot?> GetAsync(Guid entityId);
@@ -87,7 +83,6 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
             yield break;
         }
 
-        //Include so a match has its Commit loaded either way; the cached branch above always does
         await foreach (var snapshot in _currentSnapshots.Where(predicate)
             .Include(s => s.Commit).AsAsyncEnumerable())
         {

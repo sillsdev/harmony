@@ -16,7 +16,7 @@ namespace SIL.Harmony.Tests;
 public class SnapshotCheckpointTests() : DataModelTestBase(configure: services =>
     services.Configure<HarmonyConfig>(config => config.MaxChangesBetweenSnapshotCheckpoints = TestMaxChanges))
 {
-    // a low floor so short test batches still cross several boundaries; the plans below are one change per commit
+    // a low max so short test batches still cross several checkpoint boundaries; the plans below are one change per commit
     private const int TestMaxChanges = 8;
 
     private sealed record PlannedChange(DateTimeOffset Date, IChange Change);
@@ -204,10 +204,10 @@ public class SnapshotCheckpointTests() : DataModelTestBase(configure: services =
     }
 
     [Fact]
-    public async Task ConsecutiveCheckpointsAreNeverMoreThanTheFloorApart()
+    public async Task ConsecutiveCheckpointsAreNeverMoreThanMaxChangesApart()
     {
-        //one word edited every commit: every intermediate snapshot the floor doesn't keep becomes a hole, so the only
-        //safe commits are the floor boundaries themselves, the worst case for how far apart checkpoints can be
+        //one word edited every commit: every intermediate snapshot the policy doesn't keep becomes a hole, so the only
+        //safe commits are the checkpoint boundaries themselves, the worst case for how far apart checkpoints can be
         var wordId = Guid.NewGuid();
         var plan = Enumerable.Range(0, 24)
             .Select(i => new PlannedChange(new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(i + 1),
@@ -217,13 +217,13 @@ public class SnapshotCheckpointTests() : DataModelTestBase(configure: services =
         var checkpointIndexes = await CheckpointIndexes(commits);
 
         checkpointIndexes.Should().Contain(commits.Length - 1, "the last commit is always safe to resume from");
-        checkpointIndexes[0].Should().BeLessThan(TestMaxChanges, "the first resume point is within a floor interval of the start");
+        checkpointIndexes[0].Should().BeLessThan(TestMaxChanges, "the first resume point is within a checkpoint interval of the start");
         checkpointIndexes.Zip(checkpointIndexes.Skip(1), (a, b) => b - a)
-            .Should().OnlyContain(gap => gap <= TestMaxChanges, "no late commit ever has to replay more than a floor interval");
+            .Should().OnlyContain(gap => gap <= TestMaxChanges, "no late commit ever has to replay more than a checkpoint interval");
     }
 
     [Fact]
-    public async Task DiscoveryFlagsEverySafeCommitNotJustTheFloor()
+    public async Task DiscoveryFlagsEverySafeCommitNotJustTheCheckpointBoundaries()
     {
         //every commit creates a distinct word and never touches it again, so nothing is ever dropped and every commit is safe
         var plan = Enumerable.Range(0, 24)

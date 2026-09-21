@@ -21,6 +21,7 @@ public class DataModelTestBase : IAsyncLifetime
     public readonly DataModel DataModel;
     public readonly SampleDbContext DbContext;
     protected readonly MockTimeProvider MockTimeProvider = new();
+    protected readonly HarmonyConfig HarmonyConfig;
 
     public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true,
         Action<IServiceCollection>? configure = null, bool performanceTest = false) : this(saveToDisk
@@ -44,6 +45,7 @@ public class DataModelTestBase : IAsyncLifetime
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider));
         configure?.Invoke(serviceCollection);
         _services = serviceCollection.BuildServiceProvider();
+        HarmonyConfig = _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
         DbContext = _services.GetRequiredService<SampleDbContext>();
         DbContext.Database.OpenConnection();
         DbContext.Database.EnsureCreated();

@@ -42,7 +42,7 @@ public class SnapshotTests : DataModelTestBase
     [Fact]
     public async Task MultipleChangesPreservesSomeIntermediateSnapshots()
     {
-        //a low floor so a short batch still crosses several boundaries and keeps intermediates
+        //a low max so a short batch still crosses several checkpoint boundaries and keeps intermediates
         await using var model = new DataModelTestBase(configure: services =>
             services.Configure<HarmonyConfig>(config => config.MaxChangesBetweenSnapshotCheckpoints = 4));
         var entityId = Guid.NewGuid();

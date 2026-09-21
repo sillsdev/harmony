@@ -7,7 +7,7 @@ namespace SIL.Harmony;
 
 /// <summary>
 /// Applies a batch of commits on top of a base state (the snapshots as of a checkpoint) and produces the snapshots
-/// that result. Once <see cref="Replay"/> returns it is the <see cref="ISnapshotView"/> as of the last commit; before
+/// that result. Once <see cref="ReplayCommits"/> returns it is the <see cref="ISnapshotView"/> as of the last commit; before
 /// that its reads show mid-batch state. Has mutable state, don't reuse.
 /// </summary>
 internal class SnapshotWorker : ISnapshotView
@@ -39,7 +39,7 @@ internal class SnapshotWorker : ISnapshotView
     /// The snapshots as of the last of <paramref name="commits"/>, applied on top of <paramref name="baseline"/>
     /// without persisting anything.
     /// </summary>
-    internal static async Task<ISnapshotView> Replay(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
+    internal static async Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
         if (commits.Count == 0) return baseline;
         var worker = new SnapshotWorker(commits, baseline, crdtConfig);

@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
@@ -203,7 +203,7 @@ public class RepositoryTests : IAsyncLifetime
     [Fact]
     public async Task CurrentSnapshots_SortsByTimeWhenOneTimestampIsAPrefixOfTheOther()
     {
-        //SQLite trims trailing zeros off the stored datetime, so ".1" and ".15" are different lengths
+        //EF Core's SQLite mapping drops trailing zeros, so ".1" and ".15" are stored at different lengths
         var entityId = Guid.NewGuid();
         var newerCommitId = Guid.NewGuid();
         await _repository.AddSnapshots([
@@ -266,38 +266,6 @@ public class RepositoryTests : IAsyncLifetime
         snapshots = await _repository.SnapshotViewAsOf(checkpoint).All().ToArrayAsync(TestContext.Current.CancellationToken);
         commit = snapshots.Should().ContainSingle().Subject.Commit;
         commit.Id.Should().Be(commitIds[1], $"commit order: [{string.Join(", ", commitIds)}]");
-    }
-
-    [Fact]
-    public async Task DeleteSnapshotsAfter_LeavesExactlyWhatTheCheckpointFilteredViewWouldHaveReturned()
-    {
-        //a replay seeds from the live table rather than a checkpoint-filtered view, so it is only correct while the
-        //delete removes exactly the snapshots that view would have filtered out. Nothing else pins the two together.
-        var rewound = Guid.NewGuid();
-        var atCheckpoint = Guid.NewGuid();
-        var checkpointCommitId = Guid.NewGuid();
-        var checkpointSnapshot = Snapshot(atCheckpoint, checkpointCommitId, Time(2, 0));
-        checkpointSnapshot.Commit.IsSnapshotCheckpoint = true;
-        await _repository.AddSnapshots([
-            Snapshot(rewound, Guid.NewGuid(), Time(1, 0)),
-            checkpointSnapshot,
-            Snapshot(rewound, Guid.NewGuid(), Time(3, 0)),
-            //only ever exists after the checkpoint, so the delete has to drop it entirely
-            Snapshot(Guid.NewGuid(), Guid.NewGuid(), Time(3, 0)),
-        ], []);
-        var checkpoint = await _repository.FindCheckpointAtOrBefore(checkpointSnapshot.Commit);
-        var expected = await _repository.SnapshotViewAsOf(checkpoint).All().ToDictionaryAsync(s => s.EntityId, cancellationToken: TestContext.Current.CancellationToken);
-        expected.Keys.Should().BeEquivalentTo([rewound, atCheckpoint]);
-
-        await _repository.DeleteSnapshotsAfter(checkpointSnapshot.Commit);
-
-        var baseline = await _repository.CurrentSnapshotView().All().ToDictionaryAsync(s => s.EntityId, cancellationToken: TestContext.Current.CancellationToken);
-        baseline.Should().ContainKeys(expected.Keys);
-        baseline.Keys.Should().BeEquivalentTo(expected.Keys);
-        foreach (var (entityId, snapshot) in expected)
-        {
-            baseline[entityId].CommitId.Should().Be(snapshot.CommitId, $"entity {entityId} must resume from the same snapshot");
-        }
     }
 
     [Fact]

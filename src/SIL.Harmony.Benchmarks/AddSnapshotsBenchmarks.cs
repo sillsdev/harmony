@@ -97,7 +97,7 @@ public class AddSnapshotsBenchmarks
             ((ISyncable)_template.DataModel).AddRangeFromSync(seed).Wait();
 
         // The measured commits are present in the database but their snapshots are NOT yet persisted; that's the
-        // work AddSnapshots performs. Adding only the commits mirrors the state right before the replay runs.
+        // work AddSnapshots performs. Adding only the commits mirrors the state right before UpdateSnapshots runs.
         var repository = _template.CreateRepository();
         repository.AddCommits(measured).GetAwaiter().GetResult();
         _measuredCommitIds = measured.Select(c => c.Id).ToHashSet();
@@ -117,8 +117,8 @@ public class AddSnapshotsBenchmarks
             .ToArray()
             .ToSortedSet();
 
-        // Preload unconditionally so SnapshotWorker never issues a per-entity query while computing. DataModel only
-        // preloads above PrefetchSnapshotsBreakpoint, so below it this measures less baseline I/O than a real write.
+        // Preload the baseline the same way DataModel does, so SnapshotWorker doesn't issue a per-entity query
+        // while computing.
         var entityIds = measuredCommits
             .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
             .ToHashSet();

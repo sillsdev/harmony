@@ -1,6 +1,7 @@
+# LF in the repo and in every working tree, Windows included, so `dotnet format`
+# (which follows .editorconfig's end_of_line) agrees with the Linux CI runner.
+* text=auto eol=lf
+
 *.verified.txt text eol=lf working-tree-encoding=UTF-8
 *.verified.xml text eol=lf working-tree-encoding=UTF-8
 *.verified.json text eol=lf working-tree-encoding=UTF-8
-
-# force LF line endings on all shell scripts, even on Windows
-*.sh text eol=lf

@@ -1,4 +1,4 @@
-﻿namespace SIL.Harmony.Tests;
+namespace SIL.Harmony.Tests;
 
 public class SnapshotCheckpointPolicyTests
 {

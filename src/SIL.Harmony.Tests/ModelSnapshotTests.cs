@@ -133,7 +133,7 @@ public class ModelSnapshotTests : DataModelTestBase
         }
 
         //adding all via sync means there's sparse snapshots
-        Commit[] allCommits = [..changes, ..addNew];
+        Commit[] allCommits = [.. changes, .. addNew];
         await AddCommitsViaSync(allCommits);
 
         var submittedChangeCount = allCommits.Sum(c => c.ChangeEntities.Count);

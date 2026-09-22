@@ -1,6 +1,6 @@
+# eol=lf, not just text=auto, so Windows working trees are LF too, matching .editorconfig.
+* text=auto eol=lf
+
 *.verified.txt text eol=lf working-tree-encoding=UTF-8
 *.verified.xml text eol=lf working-tree-encoding=UTF-8
 *.verified.json text eol=lf working-tree-encoding=UTF-8
-
-# force LF line endings on all shell scripts, even on Windows
-*.sh text eol=lf

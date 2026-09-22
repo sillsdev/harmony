@@ -192,7 +192,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task DeleteSnapshotsAfter(Commit commit)
     {
-        await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();
+        //going through the commits the snapshots hang off beats filtering the snapshots themselves: the sort key lives
+        //on Commits, so the direct form has to join every snapshot row to its commit
+        var staleCommitIds = Commits.WhereAfter(commit).Select(c => c.Id);
+        await Snapshots.Where(s => staleCommitIds.Contains(s.CommitId)).ExecuteDeleteAsync();
     }
 
     public async Task DeleteSnapshotsAndProjectedTables()

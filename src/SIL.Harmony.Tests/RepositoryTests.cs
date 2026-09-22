@@ -201,6 +201,22 @@ public class RepositoryTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task CurrentSnapshots_SortsByTimeWhenOneTimestampIsAPrefixOfTheOther()
+    {
+        //EF Core's SQLite mapping drops trailing zeros, so ".1" and ".15" are stored at different lengths
+        var entityId = Guid.NewGuid();
+        var newerCommitId = Guid.NewGuid();
+        await _repository.AddSnapshots([
+            Snapshot(entityId, Guid.NewGuid(), new HybridDateTime(new DateTimeOffset(2000, 1, 1, 0, 0, 0, 100, TimeSpan.Zero), 0)),
+            Snapshot(entityId, newerCommitId, new HybridDateTime(new DateTimeOffset(2000, 1, 1, 0, 0, 0, 150, TimeSpan.Zero), 0)),
+        ]);
+
+        var snapshots = await _repository.CurrentSnapshots().Include(s => s.Commit).ToArrayAsync(TestContext.Current.CancellationToken);
+        snapshots.Should().ContainSingle().Which.Commit.Id.Should().Be(newerCommitId);
+        (await _repository.GetCurrentSnapshotByObjectId(entityId))!.CommitId.Should().Be(newerCommitId);
+    }
+
+    [Fact]
     public async Task ScopedRepo_CurrentSnapshots_FiltersByCounter()
     {
         var entityId = Guid.NewGuid();

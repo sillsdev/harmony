@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -62,11 +62,11 @@ public class DataModelTestBase : IAsyncLifetime
         existingConnection.BackupDatabase(connection);
         //the fork has to be configured like its source, otherwise it replays under different settings
         var newTestBase = new DataModelTestBase(connection, alwaysValidate, _configure, _performanceTest);
-        newTestBase.SetCurrentDate(currentDate.DateTime);
+        newTestBase.SetCurrentDate(currentDate);
         return newTestBase;
     }
 
-    public void SetCurrentDate(DateTime dateTime)
+    public void SetCurrentDate(DateTimeOffset dateTime)
     {
         currentDate = dateTime;
     }
@@ -81,7 +81,7 @@ public class DataModelTestBase : IAsyncLifetime
     internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
 
     private static int _instanceCount = 0;
-    private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0).AddHours(_instanceCount++));
+    private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddHours(_instanceCount++));
     public DateTimeOffset NextDate() => currentDate = currentDate.AddDays(1);
 
     public async ValueTask<Commit> WriteNextChange(IChange change, bool add = true)
@@ -102,6 +102,18 @@ public class DataModelTestBase : IAsyncLifetime
     public async ValueTask<Commit> WriteChangeAfter(Commit after, IChange change)
     {
         return await WriteChange(_localClientId, after.DateTime.AddHours(1), change);
+    }
+
+    /// <summary>A commit with no changes in it. Triggers a history replay without affecting data.</summary>
+    public async ValueTask<Commit> WriteNoOpCommit()
+    {
+        return await WriteChange(_localClientId, NextDate(), []);
+    }
+
+    /// <summary>A commit with no changes in it. Triggers a history replay without affecting data.</summary>
+    public async ValueTask<Commit> WriteNoOpCommitAfter(Commit after)
+    {
+        return await WriteChange(_localClientId, after.DateTime.AddHours(1), []);
     }
 
     public async ValueTask<Commit> WriteChangeBefore(Commit before, IChange change, bool add = true)

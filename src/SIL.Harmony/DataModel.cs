@@ -73,8 +73,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         repo.ClearChangeTracker();
 
         await using var transaction = await repo.BeginTransactionAsync();
-        var updatedCommits = await repo.AddCommits(commits);
-        await UpdateSnapshots(repo, updatedCommits);
+        var replayWindow = await repo.AddCommits(commits);
+        await UpdateSnapshots(repo, replayWindow);
         await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
@@ -110,18 +110,13 @@ public class DataModel : ISyncable, IAsyncDisposable
         repo.ClearChangeTracker();
 
         await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
-        var updatedCommits = await repo.AddCommit(commit);
-        await UpdateSnapshots(repo, updatedCommits);
+        var replayWindow = await repo.AddCommit(commit);
+        await UpdateSnapshots(repo, replayWindow);
 
         if (AlwaysValidate) await ValidateCommits(repo);
 
 
         if (transaction is not null) await transaction.CommitAsync();
-    }
-
-    public ValueTask DisposeAsync()
-    {
-        return ValueTask.CompletedTask;
     }
 
     internal static ChangeEntity<IChange> ToChangeEntity(IChange change, int index, Guid commitId)
@@ -149,8 +144,8 @@ public class DataModel : ISyncable, IAsyncDisposable
             if (oldestChange is null || newCommits is []) return;
 
             await using var transaction = await repo.BeginTransactionAsync();
-            var updatedCommits = await repo.AddCommits(newCommits);
-            await UpdateSnapshots(repo, updatedCommits);
+            var replayWindow = await repo.AddCommits(newCommits);
+            await UpdateSnapshots(repo, replayWindow);
             await ValidateCommits(repo);
             await transaction.CommitAsync();
         }
@@ -187,35 +182,35 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private async Task UpdateSnapshots(CrdtRepository repo, SortedSet<Commit> commitsToApply)
+    /// <summary>
+    /// Rebuilds every snapshot the window covers by replaying its commits onto the state it resumes from.
+    /// A window resuming from nothing rebuilds all of history.
+    /// </summary>
+    private async Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
     {
+        var (checkpoint, commitsToApply) = window;
         if (commitsToApply.Count == 0) return;
-        var oldestAddedCommit = commitsToApply.First();
-        await repo.DeleteStaleSnapshots(oldestAddedCommit);
 
-        // Bulk-load relevant snapshots to minimize DB queries
-        var entityIds = commitsToApply
-            .SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId))
-            .ToHashSet();
-
-        //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
-        Dictionary<Guid, ObjectSnapshot?> snapshotLookup = [];
-        if (entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint)
+        ISnapshotView baseline;
+        // A database with no checkpoints replays all of history,
+        // which is what we want, because it will trigger creating checkpoints
+        if (checkpoint is null)
         {
-            snapshotLookup = await repo.CurrentSnapshots()
-                .Include(s => s.Commit)
-                .Where(s => EF.Parameter(entityIds).Contains(s.EntityId))
-                .ToDictionaryAsync(s => s.EntityId, s => (ObjectSnapshot?)s);
-            entityIds.ExceptWith(snapshotLookup.Keys);
-            foreach (Guid entityId in entityIds)
-            {
-                //snapshot does not exist, store null to tell SnapshotWorker NOT to attempt to fetch it from the database
-                snapshotLookup[entityId] = null;
-            }
+            await repo.DeleteSnapshotsAndProjectedTables();
+            //the delete left the table empty, so there's nothing to query
+            baseline = EmptySnapshotView.Instance;
+        }
+        else
+        {
+            await repo.DeleteSnapshotsAfter(checkpoint.Commit);
+            //the current table is the state at the checkpoint, because the delete above just made it so
+            baseline = repo.CurrentSnapshotView();
         }
 
-        var snapshotWorker = new SnapshotWorker(snapshotLookup, repo, _crdtConfig.Value);
-        await snapshotWorker.UpdateSnapshots(commitsToApply);
+        await PreloadTouched(baseline, commitsToApply);
+        var worker = new SnapshotWorker(commitsToApply, baseline, _crdtConfig.Value);
+        var (newSnapshots, checkpoints) = await worker.ComputeSnapshotsAndCheckpoints();
+        await repo.AddSnapshots(newSnapshots, checkpoints);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -244,11 +239,10 @@ public class DataModel : ISyncable, IAsyncDisposable
         using var locked = await repo.Lock();
         repo.ClearChangeTracker();
         await using var transaction = await repo.BeginTransactionAsync();
-        await repo.DeleteSnapshotsAndProjectedTables();
-        var allCommits = await repo.CurrentCommits()
-            .Include(c => c.ChangeEntities)
-            .ToSortedSetAsync();
-        await UpdateSnapshots(repo, allCommits);
+        var wholeHistory = await repo.WholeHistory();
+        //Replay does nothing without commits, which would leave snapshots with no history behind them in place
+        if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
+        else await UpdateSnapshots(repo, wholeHistory);
         await transaction.CommitAsync();
     }
 
@@ -310,18 +304,12 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAtCommit(Commit commit)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        var repository = repo.GetScopedRepository(commit);
-        var (snapshots, pendingCommits) = await repository.GetCurrentSnapshotsAndPendingCommits();
-
-        if (pendingCommits.Count != 0)
-        {
-            snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(snapshots,
-                repository,
-                pendingCommits,
-                _crdtConfig.Value);
-        }
-
-        return snapshots;
+        var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
+        //loading everything up front makes every lookup during the replay a cache hit
+        await baseline.PreloadAllAsync();
+        var updatedSnapshotView = await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value);
+        return await updatedSnapshotView.All()
+            .ToDictionaryAsync(s => s.EntityId);
     }
 
     public async Task<T> GetAtTime<T>(DateTimeOffset time, Guid entityId)
@@ -378,26 +366,41 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     private async Task<ObjectSnapshot?> GetSnapshotAtCommit(Commit commit, Guid entityId, CrdtRepository repo)
     {
-        var repository = repo.GetScopedRepository(commit);
-        var snapshot = await repository.GetCurrentSnapshotByObjectId(entityId, false);
-        if (snapshot is null) return null;
-        var newCommits = await repository.CurrentCommits()
-            .Include(c => c.ChangeEntities)
-            .WhereAfter(snapshot.Commit)
-            .ToSortedSetAsync();
-        if (newCommits.Count > 0)
+        //fast path: every entity is complete at a checkpoint, so if the entity's newest snapshot as of the next checkpoint
+        //is already at or before this commit, nothing touched it in between and that snapshot is its state here, no replay.
+        var nextCheckpoint = await repo.FindCheckpointAtOrAfter(commit);
+        if (nextCheckpoint is not null)
         {
-            var snapshots = await SnapshotWorker.ApplyCommitsToSnapshots(
-                new Dictionary<Guid, ObjectSnapshot>([
-                    new KeyValuePair<Guid, ObjectSnapshot>(snapshot.EntityId, snapshot)
-                ]),
-                repository,
-                newCommits,
-                _crdtConfig.Value);
-            snapshot = snapshots[snapshot.EntityId];
+            var newestByNextCheckpoint = await repo.SnapshotViewAsOf(nextCheckpoint).GetAsync(entityId);
+            //no snapshot by the next checkpoint means the entity does not exist at the commit either (roots are never pruned)
+            if (newestByNextCheckpoint is null) return null;
+            if (newestByNextCheckpoint.Commit.CompareKey.CompareTo(commit.CompareKey) <= 0) return newestByNextCheckpoint;
         }
 
-        return snapshot;
+        //we don't have a persisted snapshot in the correct state, so rebuild it
+        var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
+        await PreloadTouched(baseline, commitsToReplay);
+        return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
+    }
+
+    /// <summary>
+    /// What a point-in-time read resumes from: the snapshots as of the newest checkpoint at or before
+    /// <paramref name="commit"/>, and the commits to replay onto them to reach <paramref name="commit"/>.
+    /// </summary>
+    private static async Task<(ISnapshotView baseline, SortedSet<Commit> commitsToReplay)> ResumeFromCheckpoint(
+        Commit commit,
+        CrdtRepository repo)
+    {
+        var checkpoint = await repo.FindCheckpointAtOrBefore(commit);
+        var commitsToReplay = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: commit);
+        return (repo.SnapshotViewAsOf(checkpoint), commitsToReplay);
+    }
+
+    /// <summary>one query for every entity the commits touch beats a lookup per entity only for large batches</summary>
+    private async Task PreloadTouched(ISnapshotView baseline, IEnumerable<Commit> commits)
+    {
+        var entityIds = commits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId)).ToHashSet();
+        if (entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint) await baseline.PreloadAsync(entityIds);
     }
 
     public async Task<SyncState> GetSyncState()
@@ -420,5 +423,10 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task SyncMany(ISyncable[] remotes)
     {
         await SyncHelper.SyncMany(this, remotes, _serializerOptions);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
     }
 }

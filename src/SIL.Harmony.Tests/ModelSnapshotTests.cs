@@ -88,7 +88,7 @@ public class ModelSnapshotTests : DataModelTestBase
         var firstCommit = await WriteNextChange(SetWord(entityId, "first"));
         var secondCommit = await WriteNextChange(SetWord(entityId, "second"));
         var thirdCommit = await WriteNextChange(SetWord(entityId, "third"));
-        //ensures that SnapshotWorker.ApplyCommitsToSnapshots will be called when getting the snapshots
+        //ensures that SnapshotWorker.ReplayCommits will be called when getting the snapshots
         await ClearNonRootSnapshots();
         var firstWord = await DataModel.GetAtTime<Word>(firstCommit.DateTime.AddMinutes(5), entityId);
         firstWord.Should().NotBeNull();
@@ -108,15 +108,18 @@ public class ModelSnapshotTests : DataModelTestBase
         thirdWord.Text.Should().Be("third");
     }
 
-    private Task ClearNonRootSnapshots()
+    private async Task ClearNonRootSnapshots()
     {
-        return DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        //checkpoints are tied to snapshots, so they need to go too
+        await ClearCheckpointFlags();
+        await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        DbContext.ChangeTracker.Clear();
     }
 
     [Theory]
     [InlineData(10)]
     [InlineData(100)]
-    // [InlineData(1_000)]
+    [InlineData(1_000)]
     public async Task CanGetSnapshotFromEarlier(int changeCount)
     {
         var entityId = Guid.NewGuid();
@@ -125,15 +128,20 @@ public class ModelSnapshotTests : DataModelTestBase
         var addNew = new List<Commit>(changeCount);
         for (var i = 0; i < changeCount; i++)
         {
-            // todo: these commits all have an odd index, so no intermediate snapshots will be persisted i.e. the snapshot count checking is somewhat deceptive
             changes.Add(await WriteNextChange(SetWord(entityId, $"change {i}"), false).AsTask());
             addNew.Add(await WriteNextChange(SetWord(Guid.NewGuid(), $"add {i}"), false).AsTask());
         }
 
         //adding all via sync means there's sparse snapshots
-        await AddCommitsViaSync(changes.Concat(addNew));
-        //there will only be a snapshot for every other commit, but there's change count * 2 commits, plus a first and last change
-        DbContext.Snapshots.Should().HaveCount(2 + changeCount);
+        Commit[] allCommits = [.. changes, .. addNew];
+        await AddCommitsViaSync(allCommits);
+
+        var submittedChangeCount = allCommits.Sum(c => c.ChangeEntities.Count);
+        var expectedSnapshots =
+            1 // root snapshot
+            + Math.Max(1, submittedChangeCount / HarmonyConfig.MaxChangesBetweenSnapshotCheckpoints) // edits to that entity
+            + changeCount; // new entities
+        DbContext.Snapshots.Should().HaveCount(expectedSnapshots);
 
         for (int i = 0; i < changeCount; i++)
         {
@@ -156,7 +164,7 @@ public class ModelSnapshotTests : DataModelTestBase
 
         var latestSnapshot = await DataModel.GetLatestSnapshotByObjectId(entityId);
         //delete snapshots so when we get at then we need to re-apply
-        await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
+        await ClearNonRootSnapshots();
 
         var computedModelSnapshots = await DataModel.GetSnapshotsAtCommit(latestSnapshot.Commit);
 

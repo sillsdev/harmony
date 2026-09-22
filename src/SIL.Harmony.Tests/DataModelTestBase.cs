@@ -18,9 +18,11 @@ public class DataModelTestBase : IAsyncLifetime
     protected readonly ServiceProvider _services;
     protected readonly Guid _localClientId = Guid.NewGuid();
     private readonly bool _performanceTest;
+    private readonly Action<IServiceCollection>? _configure;
     public readonly DataModel DataModel;
     public readonly SampleDbContext DbContext;
     protected readonly MockTimeProvider MockTimeProvider = new();
+    protected readonly HarmonyConfig HarmonyConfig;
 
     public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true,
         Action<IServiceCollection>? configure = null, bool performanceTest = false) : this(saveToDisk
@@ -36,6 +38,7 @@ public class DataModelTestBase : IAsyncLifetime
     public DataModelTestBase(SqliteConnection connection, bool alwaysValidate = true, Action<IServiceCollection>? configure = null, bool performanceTest = false)
     {
         _performanceTest = performanceTest;
+        _configure = configure;
         var serviceCollection = new ServiceCollection().AddCrdtDataSample(builder =>
             {
                 builder.UseSqlite(connection, true);
@@ -44,6 +47,7 @@ public class DataModelTestBase : IAsyncLifetime
             .Replace(ServiceDescriptor.Singleton<IHybridDateTimeProvider>(MockTimeProvider));
         configure?.Invoke(serviceCollection);
         _services = serviceCollection.BuildServiceProvider();
+        HarmonyConfig = _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
         DbContext = _services.GetRequiredService<SampleDbContext>();
         DbContext.Database.OpenConnection();
         DbContext.Database.EnsureCreated();
@@ -56,12 +60,13 @@ public class DataModelTestBase : IAsyncLifetime
         connection.Open();
         if (DbContext.Database.GetDbConnection() is not SqliteConnection existingConnection) throw new InvalidOperationException("Database is not SQLite");
         existingConnection.BackupDatabase(connection);
-        var newTestBase = new DataModelTestBase(connection, alwaysValidate, performanceTest: _performanceTest);
-        newTestBase.SetCurrentDate(currentDate.DateTime);
+        //the fork has to be configured like its source, otherwise it replays under different settings
+        var newTestBase = new DataModelTestBase(connection, alwaysValidate, _configure, _performanceTest);
+        newTestBase.SetCurrentDate(currentDate);
         return newTestBase;
     }
 
-    public void SetCurrentDate(DateTime dateTime)
+    public void SetCurrentDate(DateTimeOffset dateTime)
     {
         currentDate = dateTime;
     }
@@ -76,7 +81,7 @@ public class DataModelTestBase : IAsyncLifetime
     internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
 
     private static int _instanceCount = 0;
-    private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0).AddHours(_instanceCount++));
+    private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddHours(_instanceCount++));
     public DateTimeOffset NextDate() => currentDate = currentDate.AddDays(1);
 
     public async ValueTask<Commit> WriteNextChange(IChange change, bool add = true)
@@ -89,9 +94,26 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(_localClientId, NextDate(), changes, add);
     }
 
+    public async ValueTask<Commit> WriteChangeAt(DateTimeOffset dateTime, IChange change, bool add = true)
+    {
+        return await WriteChange(_localClientId, dateTime, change, add);
+    }
+
     public async ValueTask<Commit> WriteChangeAfter(Commit after, IChange change)
     {
         return await WriteChange(_localClientId, after.DateTime.AddHours(1), change);
+    }
+
+    /// <summary>A commit with no changes in it. Triggers a history replay without affecting data.</summary>
+    public async ValueTask<Commit> WriteNoOpCommit()
+    {
+        return await WriteChange(_localClientId, NextDate(), []);
+    }
+
+    /// <summary>A commit with no changes in it. Triggers a history replay without affecting data.</summary>
+    public async ValueTask<Commit> WriteNoOpCommitAfter(Commit after)
+    {
+        return await WriteChange(_localClientId, after.DateTime.AddHours(1), []);
     }
 
     public async ValueTask<Commit> WriteChangeBefore(Commit before, IChange change, bool add = true)
@@ -99,7 +121,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(_localClientId, before.DateTime.AddHours(-1), change, add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId,
+    public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
         IChange change,
         bool add = true)
@@ -107,7 +129,7 @@ public class DataModelTestBase : IAsyncLifetime
         return await WriteChange(clientId, dateTime, [change], add);
     }
 
-    protected async ValueTask<Commit> WriteChange(Guid clientId,
+    public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
         IEnumerable<IChange> changes,
         bool add = true)
@@ -132,9 +154,17 @@ public class DataModelTestBase : IAsyncLifetime
         return await DataModel.AddChanges(clientId, changes);
     }
 
-    protected async Task AddCommitsViaSync(IEnumerable<Commit> commits)
+    public async Task AddCommitsViaSync(IEnumerable<Commit> commits)
     {
         await ((ISyncable)DataModel).AddRangeFromSync(commits);
+    }
+
+    /// <summary>makes the database look like one written before snapshot checkpoints existed</summary>
+    public async Task ClearCheckpointFlags()
+    {
+        await DbContext.Commits.ExecuteUpdateAsync(s => s.SetProperty(c => c.IsSnapshotCheckpoint, false),
+            TestContext.Current.CancellationToken);
+        DbContext.ChangeTracker.Clear();
     }
 
     public IChange SetWord(Guid entityId, string value)

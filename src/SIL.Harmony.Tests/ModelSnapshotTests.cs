@@ -110,8 +110,8 @@ public class ModelSnapshotTests : DataModelTestBase
 
     private async Task ClearNonRootSnapshots()
     {
-        //the flags go first: a checkpoint claims that the snapshots at or before it hold the state a replay resumes from
-        await DbContext.Commits.ExecuteUpdateAsync(s => s.SetProperty(c => c.IsSnapshotCheckpoint, false), TestContext.Current.CancellationToken);
+        //checkpoints are tied to snapshots, so they need to go too
+        await ClearCheckpointFlags();
         await DbContext.Snapshots.Where(s => !s.IsRoot).ExecuteDeleteAsync(TestContext.Current.CancellationToken);
         DbContext.ChangeTracker.Clear();
     }

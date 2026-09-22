@@ -55,11 +55,11 @@ internal sealed class SnapshotCheckpointPolicy
         }
     }
 
-    // which multiple of maxChanges the commit falls in; two commits straddle a boundary iff these differ
-    private long CheckpointInterval(int commitIndex) => _changesBeforeCommit[commitIndex] / _maxChangesBetweenCheckpoints;
-
     /// <summary>Whether the batch's commit at <paramref name="commitIndex"/> is safe to resume a replay from.</summary>
     internal bool IsCheckpoint(int commitIndex) => _isCheckpoint[commitIndex];
+
+    // which multiple of maxChanges the commit falls in; two commits straddle a boundary iff these differ
+    private long CheckpointInterval(int commitIndex) => _changesBeforeCommit[commitIndex] / _maxChangesBetweenCheckpoints;
 
     /// <summary>
     /// Pairs each of <paramref name="batchCommits"/> (the same commits in the same order the policy was built from)

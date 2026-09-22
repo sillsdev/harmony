@@ -12,6 +12,9 @@ namespace SIL.Harmony;
 /// </summary>
 internal class SnapshotWorker : ISnapshotView
 {
+    /// <param name="CreatedAtIndex">the batch index of the commit the snapshot was made at</param>
+    private readonly record struct LatestSnapshot(ObjectSnapshot Snapshot, int CreatedAtIndex);
+
     private readonly ISnapshotView _baseline;
     private readonly HarmonyConfig _crdtConfig;
     private readonly Commit[] _batchCommits;
@@ -20,9 +23,6 @@ internal class SnapshotWorker : ISnapshotView
     private readonly Dictionary<Guid, LatestSnapshot> _latestSnapshots = [];
     /// <summary>superseded snapshots we want to persist/retain: roots, and ones required by the checkpoint policy</summary>
     private readonly List<ObjectSnapshot> _retainedIntermediateSnapshots = [];
-
-    /// <param name="CreatedAtIndex">the batch index of the commit the snapshot was made at</param>
-    private readonly record struct LatestSnapshot(ObjectSnapshot Snapshot, int CreatedAtIndex);
 
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
     internal SnapshotWorker(SortedSet<Commit> commits, ISnapshotView baseline, HarmonyConfig crdtConfig)

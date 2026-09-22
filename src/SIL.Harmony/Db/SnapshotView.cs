@@ -135,8 +135,8 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
         // (https://sqlite.org/lang_select.html#bareagg). The commit order (DateTime, Counter, Id) is
         // packed into one sortable text key (Counter zero-padded to cover the long range); the trailing
         // max(...) column is unmapped and ignored by EF.
-        // The separator has to sort below '.' and every digit: SQLite trims trailing zeros off the datetime, so
-        // "00:00:00" vs "00:00:00.5" is decided by the separator, and '|' (0x7C) ranked the earlier commit first.
+        // The separator '!' (0x21) has to sort below '.' and every digit: SQLite trims trailing zeros off the datetime, so
+        // "00:00:00" vs "00:00:00.5" is decided by the separator.
         return dbContext.Set<ObjectSnapshot>().FromSql(
             $"""
              SELECT "s".*,

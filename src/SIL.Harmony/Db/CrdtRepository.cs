@@ -153,11 +153,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return (oldestChange, newCommits);
     }
 
-    public async Task DeleteSnapshotsAfter(Commit commit)
-    {
-        await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();
-    }
-
     private IQueryable<Commit> Checkpoints => Commits.Where(c => c.IsSnapshotCheckpoint);
 
     public async Task<Checkpoint?> FindCheckpointBefore(Commit commit)
@@ -193,6 +188,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     public ISnapshotView CurrentSnapshotView()
     {
         return new DbSnapshotView(_dbContext, null);
+    }
+
+    public async Task DeleteSnapshotsAfter(Commit commit)
+    {
+        await Snapshots.WhereAfter(commit).ExecuteDeleteAsync();
     }
 
     public async Task DeleteSnapshotsAndProjectedTables()

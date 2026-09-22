@@ -119,11 +119,6 @@ public class DataModel : ISyncable, IAsyncDisposable
         if (transaction is not null) await transaction.CommitAsync();
     }
 
-    public ValueTask DisposeAsync()
-    {
-        return ValueTask.CompletedTask;
-    }
-
     internal static ChangeEntity<IChange> ToChangeEntity(IChange change, int index, Guid commitId)
     {
         return new ChangeEntity<IChange>()
@@ -317,26 +312,6 @@ public class DataModel : ISyncable, IAsyncDisposable
             .ToDictionaryAsync(s => s.EntityId);
     }
 
-    /// <summary>
-    /// What a point-in-time read resumes from: the snapshots as of the newest checkpoint at or before
-    /// <paramref name="commit"/>, and the commits to replay onto them to reach <paramref name="commit"/>.
-    /// </summary>
-    private static async Task<(ISnapshotView baseline, SortedSet<Commit> commitsToReplay)> ResumeFromCheckpoint(
-        Commit commit,
-        CrdtRepository repo)
-    {
-        var checkpoint = await repo.FindCheckpointAtOrBefore(commit);
-        var commitsToReplay = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: commit);
-        return (repo.SnapshotViewAsOf(checkpoint), commitsToReplay);
-    }
-
-    /// <summary>one query for every entity the commits touch beats a lookup per entity only for large batches</summary>
-    private async Task PreloadTouched(ISnapshotView baseline, IEnumerable<Commit> commits)
-    {
-        var entityIds = commits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId)).ToHashSet();
-        if (entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint) await baseline.PreloadAsync(entityIds);
-    }
-
     public async Task<T> GetAtTime<T>(DateTimeOffset time, Guid entityId)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
@@ -408,6 +383,26 @@ public class DataModel : ISyncable, IAsyncDisposable
         return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
     }
 
+    /// <summary>
+    /// What a point-in-time read resumes from: the snapshots as of the newest checkpoint at or before
+    /// <paramref name="commit"/>, and the commits to replay onto them to reach <paramref name="commit"/>.
+    /// </summary>
+    private static async Task<(ISnapshotView baseline, SortedSet<Commit> commitsToReplay)> ResumeFromCheckpoint(
+        Commit commit,
+        CrdtRepository repo)
+    {
+        var checkpoint = await repo.FindCheckpointAtOrBefore(commit);
+        var commitsToReplay = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: commit);
+        return (repo.SnapshotViewAsOf(checkpoint), commitsToReplay);
+    }
+
+    /// <summary>one query for every entity the commits touch beats a lookup per entity only for large batches</summary>
+    private async Task PreloadTouched(ISnapshotView baseline, IEnumerable<Commit> commits)
+    {
+        var entityIds = commits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId)).ToHashSet();
+        if (entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint) await baseline.PreloadAsync(entityIds);
+    }
+
     public async Task<SyncState> GetSyncState()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
@@ -428,5 +423,10 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task SyncMany(ISyncable[] remotes)
     {
         await SyncHelper.SyncMany(this, remotes, _serializerOptions);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        return ValueTask.CompletedTask;
     }
 }

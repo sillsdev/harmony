@@ -200,8 +200,8 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         //fork the database, this creates a new DbContext which does not have a cache of all the snapshots created above
         //that cache causes DetectChanges (used by SaveChanges) to be slower than it should be
         dataModelTest = dataModelTest.ForkDatabase(false);
-        //ForkDatabase does not propagate config, so set the breakpoint on the forked (measured) instance directly.
-        //DataModel reads PrefetchSnapshotsBreakpoint fresh on each write, so mutating the singleton config takes effect.
+        //set the breakpoint on the forked (measured) instance; DataModel reads PrefetchSnapshotsBreakpoint
+        //fresh on each write, so mutating the singleton config takes effect.
         if (breakpoint is { } value) dataModelTest.CrdtConfig.PrefetchSnapshotsBreakpoint = value;
 
         var existingIds = editExisting

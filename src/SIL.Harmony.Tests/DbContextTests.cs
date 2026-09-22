@@ -13,6 +13,36 @@ public class DbContextTests : DataModelTestBase
         await Verify(DbContext.Model.ToDebugString(MetadataDebugStringOptions.LongDefault));
     }
 
+    // EFCore.ComplexIndexes only reaches EnsureCreated via UseComplexIndexes(); without it these
+    // exist in migrated databases only.
+    [Fact]
+    public async Task EnsureCreatedCreatesTheComplexIndexes()
+    {
+        var indexNames = await GetIndexNames("Commits");
+        indexNames.Should().Contain(["IX_Commits_DateTime_Counter_Id", "IX_Commits_Checkpoint"]);
+    }
+
+    [Fact]
+    public async Task EnsureCreatedStillCreatesPlainIndexes()
+    {
+        var indexNames = await GetIndexNames("Snapshots");
+        indexNames.Should().Contain(["IX_Snapshots_CommitId_EntityId", "IX_Snapshots_EntityId"]);
+    }
+
+    private async Task<List<string>> GetIndexNames(string table)
+    {
+        await using var command = DbContext.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "select name from sqlite_master where type = 'index' and tbl_name = $table";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$table";
+        parameter.Value = table;
+        command.Parameters.Add(parameter);
+        await using var reader = await command.ExecuteReaderAsync(TestContext.Current.CancellationToken);
+        var names = new List<string>();
+        while (await reader.ReadAsync(TestContext.Current.CancellationToken)) names.Add(reader.GetString(0));
+        return names;
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(4)]

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using EFCore.ComplexIndexes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,16 +14,24 @@ public static class CrdtKernel
     public static IServiceCollection AddCrdtDataDbFactory<TContext>(this IServiceCollection services,
         Action<HarmonyConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
     {
-        services.AddCrdtDataCore(configureCrdt);
-        services.AddScoped<ICrdtDbContextFactory, CrdtDbContextFactory<TContext>>();
-        return services;
+        return services.AddCrdtData<TContext, CrdtDbContextFactory<TContext>>(configureCrdt);
     }
 
     public static IServiceCollection AddCrdtData<TContext>(this IServiceCollection services,
         Action<HarmonyConfig> configureCrdt) where TContext : DbContext, ICrdtDbContext
     {
+        return services.AddCrdtData<TContext, CrdtDbContextNoDisposeFactory<TContext>>(configureCrdt);
+    }
+
+    private static IServiceCollection AddCrdtData<TContext, TFactory>(this IServiceCollection services,
+        Action<HarmonyConfig> configureCrdt)
+        where TContext : DbContext, ICrdtDbContext
+        where TFactory : class, ICrdtDbContextFactory
+    {
         services.AddCrdtDataCore(configureCrdt);
-        services.AddScoped<ICrdtDbContextFactory, CrdtDbContextNoDisposeFactory<TContext>>();
+        //without this EnsureCreated skips the Commits complex indexes, EFCore.ComplexIndexes only wires its differ at design time
+        services.ConfigureDbContext<TContext>(options => options.UseComplexIndexes());
+        services.AddScoped<ICrdtDbContextFactory, TFactory>();
         return services;
     }
 

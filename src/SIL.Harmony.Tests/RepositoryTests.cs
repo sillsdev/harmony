@@ -370,7 +370,7 @@ public class RepositoryTests : IAsyncLifetime
             Commit(Guid.NewGuid(), Time(3, 0)),
         ]);
 
-        var changes = await _repository.GetChanges(new SyncState(new()
+        var changes = await _repository.GetChanges(new SyncState(new Dictionary<Guid, long>()
         {
             { Guid.Empty, commit2Time.DateTime.ToUnixTimeMilliseconds() }
         }));

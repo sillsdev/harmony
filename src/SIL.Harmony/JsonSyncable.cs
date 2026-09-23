@@ -61,6 +61,8 @@ public class JsonSyncable : ISyncable
             {
                 UpdateClientState(clientStateBuilder, commit, ref hash);
             }
+            if (clientStateBuilder.Count == 0)
+                return;
             heads.Add(clientStateBuilder.Build());
         });
         return new SyncState(heads.ToArray());
@@ -92,7 +94,8 @@ public class JsonSyncable : ISyncable
                 UpdateClientState(clientStateBuilder, commit, ref hash);
                 allCommits.Add(commit);
             }
-
+            if (clientStateBuilder.Count == 0)
+                return;
             heads.Add(clientStateBuilder.Build());
         });
         var localState = new SyncState(heads.ToArray());

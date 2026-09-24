@@ -3,9 +3,8 @@ using SIL.Harmony.Db;
 namespace SIL.Harmony;
 
 /// <summary>
-/// The snapshots a replay of one batch produces. Holds each entity's newest snapshot, decides which superseded ones
-/// must still be persisted, and tracks which of the batch's commits a later replay can resume from as a result.
-/// Has mutable state, one instance per replay.
+/// Decides, for a replay of one batch, whether a superseded snapshot must still be persisted, and tracks which of the
+/// batch's commits a later replay can resume from as a result. Has mutable state, one instance per replay.
 /// </summary>
 /// <remarks>
 /// A superseded snapshot is only worth persisting if it is its entity's state at a checkpoint: a commit a later replay
@@ -13,7 +12,7 @@ namespace SIL.Harmony;
 /// checkpoints. Keeping every superseded snapshot that straddles a boundary between two checkpoint intervals is what
 /// guarantees a checkpoint at least every <c>maxChangesBetweenCheckpoints</c> changes.
 /// </remarks>
-internal sealed class ReplaySnapshots
+internal sealed class SnapshotCheckpointPolicy
 {
     private readonly int _maxChangesBetweenCheckpoints;
     private readonly Commit[] _commits;
@@ -24,14 +23,9 @@ internal sealed class ReplaySnapshots
     /// <summary>every commit is safe to resume from until a dropped snapshot says otherwise</summary>
     private readonly bool[] _isCheckpoint;
 
-    /// <summary>each entity's newest snapshot so far in this replay</summary>
-    private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
-    /// <summary>superseded snapshots that must still be persisted: roots, and the ones checkpoints depend on</summary>
-    private readonly List<ObjectSnapshot> _keptSupersededSnapshots = [];
-
     /// <param name="commits">the batch being replayed, in replay order</param>
     /// <param name="maxChangesBetweenCheckpoints">force a safe commit at least this many changes apart</param>
-    internal ReplaySnapshots(IEnumerable<Commit> commits, int maxChangesBetweenCheckpoints)
+    internal SnapshotCheckpointPolicy(IEnumerable<Commit> commits, int maxChangesBetweenCheckpoints)
     {
         if (maxChangesBetweenCheckpoints < 1) throw new ArgumentOutOfRangeException(nameof(maxChangesBetweenCheckpoints));
         _maxChangesBetweenCheckpoints = maxChangesBetweenCheckpoints;
@@ -48,47 +42,30 @@ internal sealed class ReplaySnapshots
         Array.Fill(_isCheckpoint, true);
     }
 
-    /// <summary>the entity's newest snapshot in this replay, or null if the replay hasn't touched it yet</summary>
-    internal ObjectSnapshot? Latest(Guid entityId) => _latestSnapshots.GetValueOrDefault(entityId);
-
-    /// <summary>whether this replay has made a snapshot of the entity</summary>
-    internal bool Contains(Guid entityId) => _latestSnapshots.ContainsKey(entityId);
-
-    /// <summary>the newest snapshot of every entity this replay has touched</summary>
-    internal IReadOnlyCollection<ObjectSnapshot> LatestSnapshots => _latestSnapshots.Values;
-
     /// <summary>
-    /// Makes <paramref name="snapshot"/> its entity's newest, and decides the fate of the one it supersedes.
+    /// Whether <paramref name="superseded"/> must still be persisted now that <paramref name="newer"/> is its entity's
+    /// newest snapshot. Answering no drops it, so the commits its entity's state is then missing for stop being checkpoints.
     /// </summary>
-    internal void Add(ObjectSnapshot snapshot)
+    internal bool MustKeep(ObjectSnapshot superseded, ObjectSnapshot newer)
     {
-        var superseded = Latest(snapshot.EntityId);
-        _latestSnapshots[snapshot.EntityId] = snapshot;
-        if (superseded is null) return;
-
-        if (superseded.CommitId == snapshot.CommitId)
+        if (superseded.CommitId == newer.CommitId)
         {
             // we (can) only keep 1 snapshot per entity per commit, so the new one replaces it and no history is lost
-            return;
+            return false;
         }
 
-        if (superseded.IsRoot || StraddlesCheckpointBoundary(superseded, snapshot))
-        {
-            _keptSupersededSnapshots.Add(superseded);
-        }
-        else
-        {
-            // the entity's state is no longer stored from the superseded commit up to (not including) the new one
-            ClearCheckpoints(superseded.CommitId, upTo: snapshot.CommitId);
-        }
+        if (superseded.IsRoot) return true; // always keep root snapshots
+
+        if (StraddlesCheckpointBoundary(superseded, newer)) return true;
+
+        // the entity's state is no longer stored from the superseded commit up to (not including) the new one
+        ClearCheckpoints(superseded.CommitId, upTo: newer.CommitId);
+        return false;
     }
 
-    /// <summary>every snapshot the replay must persist: the kept superseded ones and each entity's newest</summary>
-    internal IReadOnlyList<ObjectSnapshot> SnapshotsToPersist() => [.. _keptSupersededSnapshots, .. _latestSnapshots.Values];
-
     /// <summary>
-    /// Each batch commit paired with whether a replay can resume from it. Only valid once every snapshot has been added:
-    /// until then we don't know which ones get dropped.
+    /// Each batch commit paired with whether a replay can resume from it. Only valid once the replay is done:
+    /// until then we don't know which snapshots get dropped.
     /// </summary>
     internal CheckpointFlag[] CheckpointFlags()
     {

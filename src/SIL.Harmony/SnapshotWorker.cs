@@ -15,14 +15,17 @@ internal class SnapshotWorker : ISnapshotView
     private readonly ISnapshotView _baseline;
     private readonly HarmonyConfig _crdtConfig;
     private readonly Commit[] _batchCommits;
-    /// <summary>the snapshots this replay has made; it decides which to persist and which commits stay checkpoints</summary>
-    private readonly ReplaySnapshots _snapshots;
+    private readonly SnapshotCheckpointPolicy _policy;
+    /// <summary>each entity's newest snapshot so far in this replay</summary>
+    private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
+    /// <summary>superseded snapshots the policy says must still be persisted</summary>
+    private readonly List<ObjectSnapshot> _keptSupersededSnapshots = [];
 
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
     internal SnapshotWorker(SortedSet<Commit> commits, ISnapshotView baseline, HarmonyConfig crdtConfig)
     {
         _batchCommits = [.. commits];
-        _snapshots = new ReplaySnapshots(_batchCommits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
+        _policy = new SnapshotCheckpointPolicy(_batchCommits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
         _baseline = baseline;
         _crdtConfig = crdtConfig;
     }
@@ -46,7 +49,8 @@ internal class SnapshotWorker : ISnapshotView
     internal async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeSnapshotsAndCheckpoints()
     {
         await ApplyCommitChanges();
-        return (_snapshots.SnapshotsToPersist(), _snapshots.CheckpointFlags());
+        IReadOnlyList<ObjectSnapshot> snapshots = [.. _keptSupersededSnapshots, .. _latestSnapshots.Values];
+        return (snapshots, _policy.CheckpointFlags());
     }
 
     private async ValueTask ApplyCommitChanges()
@@ -137,12 +141,27 @@ internal class SnapshotWorker : ISnapshotView
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        _snapshots.Add(newSnapshot);
+        AddSnapshot(newSnapshot);
+    }
+
+    private void AddSnapshot(ObjectSnapshot newSnapshot)
+    {
+        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.MustKeep(superseded, newSnapshot))
+        {
+            _keptSupersededSnapshots.Add(superseded);
+        }
+
+        _latestSnapshots[newSnapshot.EntityId] = newSnapshot;
     }
 
     public async ValueTask<ObjectSnapshot?> GetAsync(Guid entityId)
     {
-        return _snapshots.Latest(entityId) ?? await _baseline.GetAsync(entityId);
+        if (_latestSnapshots.TryGetValue(entityId, out var latest))
+        {
+            return latest;
+        }
+
+        return await _baseline.GetAsync(entityId);
     }
 
     public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression)
@@ -150,28 +169,28 @@ internal class SnapshotWorker : ISnapshotView
         var predicate = predicateExpression.Compile();
 
         // this run's snapshots first, so we don't return an out of date copy of an entity we've already updated
-        foreach (var snapshot in _snapshots.LatestSnapshots.Where(predicate))
+        foreach (var snapshot in _latestSnapshots.Values.Where(predicate))
         {
             yield return snapshot;
         }
 
         await foreach (var snapshot in _baseline.Where(predicateExpression))
         {
-            if (_snapshots.Contains(snapshot.EntityId)) continue;
+            if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
             yield return snapshot;
         }
     }
 
     public async IAsyncEnumerable<ObjectSnapshot> All()
     {
-        foreach (var snapshot in _snapshots.LatestSnapshots)
+        foreach (var snapshot in _latestSnapshots.Values)
         {
             yield return snapshot;
         }
 
         await foreach (var snapshot in _baseline.All())
         {
-            if (_snapshots.Contains(snapshot.EntityId)) continue;
+            if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
             yield return snapshot;
         }
     }

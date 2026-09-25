@@ -31,7 +31,7 @@ public record SimpleSnapshot(
 
 public class ObjectSnapshot : IObjectSnapshot
 {
-    public static ObjectSnapshot ForTesting(Commit commit)
+    public static ObjectSnapshot ForTesting(Commit commit, Guid entityId = default, bool isRoot = false)
     {
         return new ObjectSnapshot
         {
@@ -40,8 +40,8 @@ public class ObjectSnapshot : IObjectSnapshot
             Id = Guid.Empty,
             References = [],
             CommitId = commit.Id,
-            EntityId = Guid.Empty,
-            IsRoot = false,
+            EntityId = entityId,
+            IsRoot = isRoot,
             TypeName = "Test",
             EntityIsDeleted = false
         };

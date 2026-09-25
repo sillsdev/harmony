@@ -146,7 +146,7 @@ internal class SnapshotWorker : ISnapshotView
 
     private void AddSnapshot(ObjectSnapshot newSnapshot)
     {
-        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.MustKeep(superseded, newSnapshot))
+        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.Supersede(superseded, by: newSnapshot))
         {
             _keptSupersededSnapshots.Add(superseded);
         }

@@ -48,7 +48,7 @@ public class SnapshotCheckpointPolicyTests
         var commits = SingleChangeCommits(20);
         var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 4);
 
-        policy.MustKeep(SnapshotAt(commits[snapshotPosition]), SnapshotAt(commits[newSnapshotPosition])).Should().Be(mustKeep);
+        policy.Supersede(SnapshotAt(commits[snapshotPosition]), by: SnapshotAt(commits[newSnapshotPosition])).Should().Be(mustKeep);
     }
 
     [Fact]
@@ -57,8 +57,8 @@ public class SnapshotCheckpointPolicyTests
         // commit 1 alone carries more than maxChanges changes, so it is a required checkpoint
         var commits = Commits([1, 5, 1, 1, 1]);
         var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 4);
-        policy.MustKeep(SnapshotAt(commits[0]), SnapshotAt(commits[1])).Should().BeFalse("the first commit is one change, not a required checkpoint");
-        policy.MustKeep(SnapshotAt(commits[1]), SnapshotAt(commits[2])).Should().BeTrue("the second commit's five changes take the total past 4, so it is a required checkpoint");
+        policy.Supersede(SnapshotAt(commits[0]), by: SnapshotAt(commits[1])).Should().BeFalse("the first commit is one change, not a required checkpoint");
+        policy.Supersede(SnapshotAt(commits[1]), by: SnapshotAt(commits[2])).Should().BeTrue("the second commit's five changes take the total past 4, so it is a required checkpoint");
     }
 
     [Fact]
@@ -66,9 +66,9 @@ public class SnapshotCheckpointPolicyTests
     {
         // ten single-change commits hold no required checkpoint at maxChanges 20; ten five-change commits hold two
         var singleChange = Commits(Enumerable.Repeat(1, 11));
-        PolicyFor(singleChange, 20).MustKeep(SnapshotAt(singleChange[0]), SnapshotAt(singleChange[10])).Should().BeFalse();
+        PolicyFor(singleChange, 20).Supersede(SnapshotAt(singleChange[0]), by: SnapshotAt(singleChange[10])).Should().BeFalse();
         var fiveChanges = Commits(Enumerable.Repeat(5, 11));
-        PolicyFor(fiveChanges, 20).MustKeep(SnapshotAt(fiveChanges[0]), SnapshotAt(fiveChanges[10])).Should().BeTrue();
+        PolicyFor(fiveChanges, 20).Supersede(SnapshotAt(fiveChanges[0]), by: SnapshotAt(fiveChanges[10])).Should().BeTrue();
     }
 
     [Fact]
@@ -78,7 +78,7 @@ public class SnapshotCheckpointPolicyTests
         var commits = SingleChangeCommits(5);
         var everyCommit = PolicyFor(commits, maxChangesBetweenCheckpoints: 1);
         foreach (var from in Enumerable.Range(0, 4))
-            everyCommit.MustKeep(SnapshotAt(commits[from]), SnapshotAt(commits[from + 1])).Should().BeTrue();
+            everyCommit.Supersede(SnapshotAt(commits[from]), by: SnapshotAt(commits[from + 1])).Should().BeTrue();
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public class SnapshotCheckpointPolicyTests
         var commits = Commits([10, 1]);
         var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 4);
 
-        policy.MustKeep(SnapshotAt(commits[0]), SnapshotAt(commits[1])).Should().BeTrue();
+        policy.Supersede(SnapshotAt(commits[0]), by: SnapshotAt(commits[1])).Should().BeTrue();
         Checkpoints(policy).Should().Equal(true, true);
     }
 
@@ -98,7 +98,7 @@ public class SnapshotCheckpointPolicyTests
         var commits = SingleChangeCommits(3);
         var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 1000);
 
-        policy.MustKeep(SnapshotAt(commits[0], isRoot: true), SnapshotAt(commits[1])).Should().BeTrue();
+        policy.Supersede(SnapshotAt(commits[0], isRoot: true), by: SnapshotAt(commits[1])).Should().BeTrue();
         Checkpoints(policy).Should().Equal(new[] { true, true, true }, "nothing was dropped");
     }
 
@@ -108,7 +108,7 @@ public class SnapshotCheckpointPolicyTests
         var commits = SingleChangeCommits(2);
         var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 1);
 
-        policy.MustKeep(SnapshotAt(commits[0], isRoot: true), SnapshotAt(commits[0])).Should().BeFalse("only 1 snapshot per entity per commit, even a root");
+        policy.Supersede(SnapshotAt(commits[0], isRoot: true), by: SnapshotAt(commits[0])).Should().BeFalse("only 1 snapshot per entity per commit, even a root");
         Checkpoints(policy).Should().Equal(true, true);
     }
 
@@ -122,7 +122,7 @@ public class SnapshotCheckpointPolicyTests
         var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 1000);
         foreach (var (from, toExclusive) in drops)
         {
-            policy.MustKeep(SnapshotAt(commits[from]), SnapshotAt(commits[toExclusive])).Should().BeFalse();
+            policy.Supersede(SnapshotAt(commits[from]), by: SnapshotAt(commits[toExclusive])).Should().BeFalse();
         }
 
         return Checkpoints(policy);

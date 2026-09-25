@@ -57,28 +57,30 @@ internal sealed class SnapshotCheckpointPolicy
     }
 
     /// <summary>
-    /// Whether <paramref name="superseded"/> must still be persisted now that <paramref name="newer"/> is its entity's
-    /// newest snapshot. Answering no drops it, and the commits it was the entity's state for stop being checkpoints.
+    /// Records that <paramref name="by"/> is now the newest snapshot of <paramref name="older"/>'s entity, and says whether
+    /// <paramref name="older"/> must still be persisted. When it needn't be it is dropped, and the commits it was the
+    /// entity's state for stop being checkpoints.
     /// </summary>
-    internal bool MustKeep(ObjectSnapshot superseded, ObjectSnapshot newer)
+    /// <returns>whether to keep <paramref name="older"/></returns>
+    internal bool Supersede(ObjectSnapshot older, ObjectSnapshot by)
     {
-        if (superseded.CommitId == newer.CommitId)
+        if (older.CommitId == by.CommitId)
         {
             // we (can) only keep 1 snapshot per entity per commit, so the new one replaces it and no history is lost
             return false;
         }
 
-        if (superseded.IsRoot) return true; // always keep root snapshots
+        if (older.IsRoot) return true; // always keep root snapshots
 
-        // a required checkpoint in [superseded, newer) needs the superseded snapshot as its entity's state there
-        var requiredCheckpoint = _successors.GetValueOrDefault(superseded.CommitId).NextRequiredCheckpoint;
-        if (requiredCheckpoint is not null && _commits.Comparer.Compare(requiredCheckpoint, newer.Commit) < 0)
+        // a required checkpoint in [older, by) needs the older snapshot as its entity's state there
+        var requiredCheckpoint = _successors.GetValueOrDefault(older.CommitId).NextRequiredCheckpoint;
+        if (requiredCheckpoint is not null && _commits.Comparer.Compare(requiredCheckpoint, by.Commit) < 0)
         {
             return true;
         }
 
-        // the entity's state is no longer stored from the superseded commit up to (not including) the new one
-        for (var commit = superseded.Commit; commit.Id != newer.CommitId; commit = _successors[commit.Id].Next!)
+        // the entity's state is no longer stored from the older commit up to (not including) the new one
+        for (var commit = older.Commit; commit.Id != by.CommitId; commit = _successors[commit.Id].Next!)
         {
             _holes.Add(commit.Id);
         }

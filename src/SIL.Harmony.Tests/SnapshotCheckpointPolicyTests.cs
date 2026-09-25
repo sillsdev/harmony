@@ -25,73 +25,88 @@ public class SnapshotCheckpointPolicyTests
 
     private static Commit[] SingleChangeCommits(int commitCount) => Commits(Enumerable.Repeat(1, commitCount));
 
+    /// <summary>a policy over the batch, as the worker would build it</summary>
+    private static SnapshotCheckpointPolicy PolicyFor(Commit[] commits, int maxChangesBetweenCheckpoints) =>
+        new(new SortedSet<Commit>(commits), maxChangesBetweenCheckpoints);
+
     private static ObjectSnapshot SnapshotAt(Commit commit, bool isRoot = false) => ObjectSnapshot.ForTesting(commit, isRoot: isRoot);
 
     private static bool[] Checkpoints(SnapshotCheckpointPolicy policy) => [.. policy.CheckpointFlags().Select(f => f.IsCheckpoint)];
 
     [Theory]
-    // maxChanges: 4 means that boundaries land at/before multiples of 4 (4, 8, 12 etc.)
+    // maxChanges: 4 makes commits 3, 7, 11 etc. required checkpoints, where the running total reaches 4, 8, 12
     [InlineData(0, 2, false)]
     [InlineData(0, 4, true)]
     [InlineData(3, 4, true)]
     [InlineData(4, 7, false)]
     [InlineData(4, 8, true)]
-    public void KeepsASupersededSnapshotOnlyWhenACheckpointBoundaryFallsInTheGap(
+    public void KeepsASupersededSnapshotOnlyWhenARequiredCheckpointIsInItsCoverage(
         int snapshotPosition, // the batch position of the snapshot we're deciding whether we need to keep
         int newSnapshotPosition, // the batch position of a snapshot that was just generated and may or may not supersede the one before it
         bool mustKeep)
     {
         var commits = SingleChangeCommits(20);
-        var policy = new SnapshotCheckpointPolicy(commits, maxChangesBetweenCheckpoints: 4);
+        var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 4);
 
         policy.MustKeep(SnapshotAt(commits[snapshotPosition]), SnapshotAt(commits[newSnapshotPosition])).Should().Be(mustKeep);
     }
 
     [Fact]
-    public void ABigCommitIsACheckpointBoundaryOfItsOwn()
+    public void ABigCommitIsARequiredCheckpointOfItsOwn()
     {
-        // commit 1 alone carries a whole checkpoint interval of changes, so the snapshot before commit 2 must be kept
+        // commit 1 alone carries more than maxChanges changes, so it is a required checkpoint
         var commits = Commits([1, 5, 1, 1, 1]);
-        var policy = new SnapshotCheckpointPolicy(commits, maxChangesBetweenCheckpoints: 4);
-        policy.MustKeep(SnapshotAt(commits[0]), SnapshotAt(commits[1])).Should().BeFalse("the first commit is one change, no boundary yet");
-        policy.MustKeep(SnapshotAt(commits[1]), SnapshotAt(commits[2])).Should().BeTrue("the second commit's five changes cross a boundary, so we'd keep its snapshots");
+        var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 4);
+        policy.MustKeep(SnapshotAt(commits[0]), SnapshotAt(commits[1])).Should().BeFalse("the first commit is one change, not a required checkpoint");
+        policy.MustKeep(SnapshotAt(commits[1]), SnapshotAt(commits[2])).Should().BeTrue("the second commit's five changes take the total past 4, so it is a required checkpoint");
     }
 
     [Fact]
     public void CountsChangesNotCommits()
     {
-        // ten single-change commits hold no boundary at maxChanges 20; ten five-change commits hold two
+        // ten single-change commits hold no required checkpoint at maxChanges 20; ten five-change commits hold two
         var singleChange = Commits(Enumerable.Repeat(1, 11));
-        new SnapshotCheckpointPolicy(singleChange, 20).MustKeep(SnapshotAt(singleChange[0]), SnapshotAt(singleChange[10])).Should().BeFalse();
+        PolicyFor(singleChange, 20).MustKeep(SnapshotAt(singleChange[0]), SnapshotAt(singleChange[10])).Should().BeFalse();
         var fiveChanges = Commits(Enumerable.Repeat(5, 11));
-        new SnapshotCheckpointPolicy(fiveChanges, 20).MustKeep(SnapshotAt(fiveChanges[0]), SnapshotAt(fiveChanges[10])).Should().BeTrue();
+        PolicyFor(fiveChanges, 20).MustKeep(SnapshotAt(fiveChanges[0]), SnapshotAt(fiveChanges[10])).Should().BeTrue();
     }
 
     [Fact]
     public void KeepsEverySnapshotWhenEveryChangeIsACheckpoint()
     {
-        // maxChanges 1 forces a boundary at every commit, so no snapshot is ever droppable
+        // maxChanges 1 makes every commit a required checkpoint, so no snapshot is ever droppable
         var commits = SingleChangeCommits(5);
-        var everyCommit = new SnapshotCheckpointPolicy(commits, maxChangesBetweenCheckpoints: 1);
+        var everyCommit = PolicyFor(commits, maxChangesBetweenCheckpoints: 1);
         foreach (var from in Enumerable.Range(0, 4))
             everyCommit.MustKeep(SnapshotAt(commits[from]), SnapshotAt(commits[from + 1])).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ACommitSpanningSeveralMultiplesIsOneRequiredCheckpoint()
+    {
+        // commit 0 takes the total from 0 to 10, past both 4 and 8, but that's a single required checkpoint
+        var commits = Commits([10, 1]);
+        var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 4);
+
+        policy.MustKeep(SnapshotAt(commits[0]), SnapshotAt(commits[1])).Should().BeTrue();
+        Checkpoints(policy).Should().Equal(true, true);
     }
 
     [Fact]
     public void ARootSnapshotIsAlwaysKept()
     {
         var commits = SingleChangeCommits(3);
-        var policy = new SnapshotCheckpointPolicy(commits, maxChangesBetweenCheckpoints: 1000);
+        var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 1000);
 
         policy.MustKeep(SnapshotAt(commits[0], isRoot: true), SnapshotAt(commits[1])).Should().BeTrue();
-        Checkpoints(policy).Should().Equal(true, true, true, "nothing was dropped");
+        Checkpoints(policy).Should().Equal(new[] { true, true, true }, "nothing was dropped");
     }
 
     [Fact]
     public void ASnapshotSupersededWithinItsOwnCommitIsNeverKeptAndLeavesNoHole()
     {
         var commits = SingleChangeCommits(2);
-        var policy = new SnapshotCheckpointPolicy(commits, maxChangesBetweenCheckpoints: 1);
+        var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 1);
 
         policy.MustKeep(SnapshotAt(commits[0], isRoot: true), SnapshotAt(commits[0])).Should().BeFalse("only 1 snapshot per entity per commit, even a root");
         Checkpoints(policy).Should().Equal(true, true);
@@ -99,12 +114,12 @@ public class SnapshotCheckpointPolicyTests
 
     /// <summary>
     /// The checkpoint flags after a snapshot at <c>From</c> was superseded by one at <c>ToExclusive</c> for each drop,
-    /// with a maxChanges so high that nothing straddles a boundary
+    /// with a maxChanges so high that there are no required checkpoints
     /// </summary>
     private static bool[] CheckpointsAfterDropping(int commitCount, params (int From, int ToExclusive)[] drops)
     {
         var commits = SingleChangeCommits(commitCount);
-        var policy = new SnapshotCheckpointPolicy(commits, maxChangesBetweenCheckpoints: 1000);
+        var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 1000);
         foreach (var (from, toExclusive) in drops)
         {
             policy.MustKeep(SnapshotAt(commits[from]), SnapshotAt(commits[toExclusive])).Should().BeFalse();
@@ -146,7 +161,7 @@ public class SnapshotCheckpointPolicyTests
     public void CheckpointFlagsPairEachBatchCommitWithItsOutcome()
     {
         var commits = SingleChangeCommits(3);
-        var policy = new SnapshotCheckpointPolicy(commits, maxChangesBetweenCheckpoints: 1000);
+        var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 1000);
         policy.CheckpointFlags().Select(f => f.Commit).Should().Equal(commits);
     }
 }

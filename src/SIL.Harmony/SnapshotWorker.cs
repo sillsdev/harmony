@@ -14,7 +14,7 @@ internal class SnapshotWorker : ISnapshotView
 {
     private readonly ISnapshotView _baseline;
     private readonly HarmonyConfig _crdtConfig;
-    private readonly Commit[] _batchCommits;
+    private readonly SortedSet<Commit> _batchCommits;
     private readonly SnapshotCheckpointPolicy _policy;
     /// <summary>each entity's newest snapshot so far in this replay</summary>
     private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
@@ -24,8 +24,8 @@ internal class SnapshotWorker : ISnapshotView
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
     internal SnapshotWorker(SortedSet<Commit> commits, ISnapshotView baseline, HarmonyConfig crdtConfig)
     {
-        _batchCommits = [.. commits];
-        _policy = new SnapshotCheckpointPolicy(_batchCommits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
+        _batchCommits = commits;
+        _policy = new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
         _baseline = baseline;
         _crdtConfig = crdtConfig;
     }

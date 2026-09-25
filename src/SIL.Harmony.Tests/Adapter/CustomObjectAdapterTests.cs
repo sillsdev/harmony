@@ -152,6 +152,7 @@ public class CustomObjectAdapterTests
             .AddDbContext<MyDbContext>(builder => builder.UseSqlite("Data Source=test.db"))
             .AddCrdtData<MyDbContext>(config =>
             {
+                config.AlwaysValidateCommits = true;
                 config.ChangeTypeListBuilder.Add<CreateMyClassChange>().Add<CreateMyClass2Change>();
                 config.ObjectTypeListBuilder
                     .CustomAdapter<IMyCustomInterface, MyClassAdapter>()

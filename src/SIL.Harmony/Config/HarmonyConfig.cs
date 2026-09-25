@@ -31,7 +31,7 @@ public class HarmonyConfig
     /// <summary>
     /// after adding any commit validate the commit history, not great for performance but good for testing.
     /// </summary>
-    public bool AlwaysValidateCommits { get; set; } = true;
+    public bool AlwaysValidateCommits { get; set; }
     /// <summary>
     /// Controls how an unknown <see cref="IChange"/> <c>$type</c> is handled during deserialization.
     /// Defaults to <see cref="UnknownChangeHandling.Throw"/>; set to <see cref="UnknownChangeHandling.Fallback"/>

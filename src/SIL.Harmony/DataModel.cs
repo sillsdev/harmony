@@ -75,7 +75,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var transaction = await repo.BeginTransactionAsync();
         var updatedCommits = await repo.AddCommits(commits);
         await UpdateSnapshots(repo, updatedCommits);
-        await ValidateCommits(repo);
+        if (AlwaysValidate) await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
 
@@ -151,7 +151,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             await using var transaction = await repo.BeginTransactionAsync();
             var updatedCommits = await repo.AddCommits(newCommits);
             await UpdateSnapshots(repo, updatedCommits);
-            await ValidateCommits(repo);
+            if (AlwaysValidate) await ValidateCommits(repo);
             await transaction.CommitAsync();
         }
         catch (DbUpdateException e)

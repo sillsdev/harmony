@@ -113,7 +113,7 @@ internal class SnapshotWorker : ISnapshotView
     {
         // Including deleted shouldn't be necessary, because change objects are responsible for not adding references to deleted entities.
         // But maybe it's a good fallback.
-        var toRemoveRefFrom = await this.WhereReferences(deletedEntityId, includeDeleted: true)
+        var toRemoveRefFrom = await ((ISnapshotView)this).WhereReferences(deletedEntityId, includeDeleted: true)
             .ToArrayAsync();
 
         var commit = context.Commit;

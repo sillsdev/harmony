@@ -13,16 +13,10 @@ internal interface ISnapshotView
     Task PreloadAsync(IReadOnlyCollection<Guid> entityIds);
     /// <summary>fetches every entity in one query, so every later read is a cache hit</summary>
     Task PreloadAllAsync();
-}
 
-internal static class SnapshotViewExtensions
-{
-    public static IAsyncEnumerable<ObjectSnapshot> WhereReferences(this ISnapshotView snapshots,
-        Guid entityId,
-        bool includeDeleted)
-    {
-        return snapshots.Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
-    }
+    /// <summary>snapshots whose entity holds a reference to <paramref name="entityId"/></summary>
+    IAsyncEnumerable<ObjectSnapshot> WhereReferences(Guid entityId, bool includeDeleted) =>
+        Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
 }
 
 /// <summary>the view before the first commit</summary>

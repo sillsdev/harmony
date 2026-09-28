@@ -13,10 +13,9 @@ using SIL.Harmony.Tests.Mocks;
 
 namespace SIL.Harmony.Tests;
 
-public class DataModelTestBase : IAsyncLifetime
+public class DataModelTestBase : CommitTestBase, IAsyncLifetime
 {
     protected readonly ServiceProvider _services;
-    protected readonly Guid _localClientId = Guid.NewGuid();
     private readonly bool _performanceTest;
     private readonly Action<IServiceCollection>? _configure;
     public readonly DataModel DataModel;
@@ -62,13 +61,8 @@ public class DataModelTestBase : IAsyncLifetime
         existingConnection.BackupDatabase(connection);
         //the fork has to be configured like its source, otherwise it replays under different settings
         var newTestBase = new DataModelTestBase(connection, alwaysValidate, _configure, _performanceTest);
-        newTestBase.SetCurrentDate(currentDate);
+        newTestBase.SetCurrentDate(CurrentDate);
         return newTestBase;
-    }
-
-    public void SetCurrentDate(DateTimeOffset dateTime)
-    {
-        currentDate = dateTime;
     }
 
     /// <summary>
@@ -79,10 +73,6 @@ public class DataModelTestBase : IAsyncLifetime
         _services.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
 
     internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
-
-    private static int _instanceCount = 0;
-    private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddHours(_instanceCount++));
-    public DateTimeOffset NextDate() => currentDate = currentDate.AddDays(1);
 
     public async ValueTask<Commit> WriteNextChange(IChange change, bool add = true)
     {
@@ -105,9 +95,9 @@ public class DataModelTestBase : IAsyncLifetime
     }
 
     /// <summary>A commit with no changes in it. Triggers a history replay without affecting data.</summary>
-    public async ValueTask<Commit> WriteNoOpCommit(bool add = true)
+    public async ValueTask<Commit> WriteNoOpCommit()
     {
-        return await WriteChange(_localClientId, NextDate(), [], add);
+        return await WriteChange(_localClientId, NextDate(), []);
     }
 
     /// <summary>A commit with no changes in it. Triggers a history replay without affecting data.</summary>
@@ -134,22 +124,7 @@ public class DataModelTestBase : IAsyncLifetime
         IEnumerable<IChange> changes,
         bool add = true)
     {
-        if (!add)
-        {
-            var commit = new Commit
-            {
-                ClientId = clientId,
-                HybridDateTime = new HybridDateTime(dateTime, 0),
-            };
-            commit.ChangeEntities.AddRange(changes.Select((change, index) => new ChangeEntity<IChange>
-            {
-                Change = change,
-                Index = index,
-                CommitId = commit.Id,
-                EntityId = change.EntityId
-            }));
-            return commit;
-        }
+        if (!add) return BuildCommit(clientId, dateTime, changes);
         MockTimeProvider.SetNextDateTime(dateTime);
         return await DataModel.AddChanges(clientId, changes);
     }
@@ -165,51 +140,6 @@ public class DataModelTestBase : IAsyncLifetime
         await DbContext.Commits.ExecuteUpdateAsync(s => s.SetProperty(c => c.IsSnapshotCheckpoint, false),
             TestContext.Current.CancellationToken);
         DbContext.ChangeTracker.Clear();
-    }
-
-    public IChange SetWord(Guid entityId, string value)
-    {
-        return new SetWordTextChange(entityId, value);
-    }
-
-    public IChange SetWordNote(Guid entityId, string note)
-    {
-        return new SetWordNoteChange(entityId, note);
-    }
-
-    public IChange DeleteWord(Guid entityId)
-    {
-        return new DeleteChange<Word>(entityId);
-    }
-
-    public IChange SetTag(Guid entityId, string value)
-    {
-        return new SetTagChange(entityId, value);
-    }
-
-    public IChange TagWord(Guid wordId, Guid tagId, Guid entityId = default)
-    {
-        return new TagWordChange(new WordTag { Id = entityId, WordId = wordId, TagId = tagId });
-    }
-
-    public IChange DeleteTag(Guid entityId)
-    {
-        return new DeleteChange<Tag>(entityId);
-    }
-
-    public IChange NewDefinition(Guid wordId,
-        string text,
-        string partOfSpeech,
-        double order = 0,
-        Guid? definitionId = default)
-    {
-        return new NewDefinitionChange(definitionId ?? Guid.NewGuid())
-        {
-            WordId = wordId,
-            Text = text,
-            PartOfSpeech = partOfSpeech,
-            Order = order
-        };
     }
 
     public virtual ValueTask InitializeAsync()

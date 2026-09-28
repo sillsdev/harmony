@@ -69,18 +69,20 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// A commit at which every entity's newest snapshot is its complete state, so the snapshots as of it are a sound
-    /// base to replay from. Only the checkpoint lookups create one, and it is only as fresh as the query behind it.
+    /// base to replay from. Exists so a plain commit can't be handed to <see cref="SnapshotViewAsOf"/> or a
+    /// <see cref="ReplayWindow"/>; only as fresh as the query behind it.
     /// </summary>
-    internal sealed record Checkpoint
+    internal sealed record CheckpointCommit
     {
-        private Checkpoint(Commit commit)
+        private CheckpointCommit(Commit commit)
         {
+            if (!commit.IsSnapshotCheckpoint) throw new ArgumentException($"Commit {commit.Id} is not a snapshot checkpoint", nameof(commit));
             Commit = commit;
         }
 
         public Commit Commit { get; }
 
-        internal static Checkpoint? From(Commit? commit) => commit is null ? null : new Checkpoint(commit);
+        internal static CheckpointCommit? From(Commit? commit) => commit is null ? null : new CheckpointCommit(commit);
     }
 
     /// <summary>
@@ -89,7 +91,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     /// </summary>
     /// <param name="ResumeFrom">null is the state before the first commit, so <paramref name="Commits"/> is every commit there is</param>
     /// <param name="Commits">empty means there is nothing to replay, whatever <paramref name="ResumeFrom"/> says</param>
-    internal readonly record struct ReplayWindow(Checkpoint? ResumeFrom, SortedSet<Commit> Commits);
+    internal readonly record struct ReplayWindow(CheckpointCommit? ResumeFrom, SortedSet<Commit> Commits);
 
     public AwaitableDisposable<IDisposable> Lock()
     {
@@ -153,34 +155,34 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return (oldestChange, newCommits);
     }
 
-    private IQueryable<Commit> Checkpoints => Commits.Where(c => c.IsSnapshotCheckpoint);
+    private IQueryable<Commit> CheckpointCommits => Commits.Where(c => c.IsSnapshotCheckpoint);
 
-    public async Task<Checkpoint?> FindCheckpointBefore(Commit commit)
+    public async Task<CheckpointCommit?> FindCheckpointBefore(Commit commit)
     {
-        return Checkpoint.From(await Checkpoints
+        return CheckpointCommit.From(await CheckpointCommits
             .WhereBefore(commit, inclusive: false)
             .DefaultOrderDescending()
             .FirstOrDefaultAsync());
     }
 
-    public async Task<Checkpoint?> FindCheckpointAtOrBefore(Commit commit)
+    public async Task<CheckpointCommit?> FindCheckpointAtOrBefore(Commit commit)
     {
-        return Checkpoint.From(await Checkpoints
+        return CheckpointCommit.From(await CheckpointCommits
             .WhereBefore(commit, inclusive: true)
             .DefaultOrderDescending()
             .FirstOrDefaultAsync());
     }
 
-    public async Task<Checkpoint?> FindCheckpointAtOrAfter(Commit commit)
+    public async Task<CheckpointCommit?> FindCheckpointAtOrAfter(Commit commit)
     {
-        return Checkpoint.From(await Checkpoints
+        return CheckpointCommit.From(await CheckpointCommits
             .WhereAfter(commit, inclusive: true)
             .DefaultOrder()
             .FirstOrDefaultAsync());
     }
 
     /// <param name="checkpoint">null is the state before the first commit, i.e. no snapshots at all</param>
-    public ISnapshotView SnapshotViewAsOf(Checkpoint? checkpoint)
+    public ISnapshotView SnapshotViewAsOf(CheckpointCommit? checkpoint)
     {
         return checkpoint is null ? EmptySnapshotView.Instance : new DbSnapshotView(_dbContext, checkpoint.Commit);
     }
@@ -264,13 +266,13 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .FirstOrDefaultAsync();
     }
 
-    private Task<SortedSet<Commit>> GetCommitsAfter(Checkpoint? checkpoint)
+    private Task<SortedSet<Commit>> GetCommitsAfter(CheckpointCommit? checkpoint)
     {
         return GetCommitsBetween(checkpoint?.Commit, upToInclusive: null);
     }
 
     /// <summary>The commits in <c>(afterExclusive, upToInclusive]</c>. Null <paramref name="afterExclusive"/> starts at the beginning.</summary>
-    public Task<SortedSet<Commit>> GetCommitsBetween(Checkpoint? afterExclusive, Commit upToInclusive)
+    public Task<SortedSet<Commit>> GetCommitsBetween(CheckpointCommit? afterExclusive, Commit upToInclusive)
     {
         return GetCommitsBetween(afterExclusive?.Commit, upToInclusive);
     }

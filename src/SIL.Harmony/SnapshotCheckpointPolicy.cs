@@ -31,9 +31,10 @@ internal sealed class SnapshotCheckpointPolicy
         _successors = new Dictionary<Guid, Successors>(commits.Count);
         _holes = new HashSet<Guid>(commits.Count);
         // commits since the last required checkpoint, which is the next required checkpoint of each of them
-        var awaitingRequiredCheckpoint = new List<Commit>();
+        var awaitingRequiredCheckpoint = new List<Commit>(maxChangesBetweenCheckpoints);
         Commit? previous = null;
-        var changesSoFar = 0L;
+        var changesSinceCheckpoint = 0L;
+
         foreach (var commit in commits)
         {
             // a commit may already be in the map, or not yet, depending on which of its successors we learn first
@@ -41,10 +42,9 @@ internal sealed class SnapshotCheckpointPolicy
             previous = commit;
 
             awaitingRequiredCheckpoint.Add(commit);
-            var changesBefore = changesSoFar;
-            changesSoFar += commit.ChangeEntities.Count;
+            changesSinceCheckpoint += commit.ChangeEntities.Count;
             // the total just reached or passed a multiple of maxChanges; a commit spanning several is still one checkpoint
-            if (changesSoFar / maxChangesBetweenCheckpoints > changesBefore / maxChangesBetweenCheckpoints)
+            if (changesSinceCheckpoint >= maxChangesBetweenCheckpoints)
             {
                 foreach (var awaiting in awaitingRequiredCheckpoint)
                 {
@@ -52,6 +52,7 @@ internal sealed class SnapshotCheckpointPolicy
                 }
 
                 awaitingRequiredCheckpoint.Clear();
+                changesSinceCheckpoint %= maxChangesBetweenCheckpoints;
             }
         }
     }
@@ -74,15 +75,17 @@ internal sealed class SnapshotCheckpointPolicy
 
         // a required checkpoint in [older, by) needs the older snapshot as its entity's state there
         var requiredCheckpoint = _successors.GetValueOrDefault(older.CommitId).NextRequiredCheckpoint;
-        if (requiredCheckpoint is not null && _commits.Comparer.Compare(requiredCheckpoint, by.Commit) < 0)
+        if (requiredCheckpoint is not null && requiredCheckpoint < by.Commit)
         {
             return true;
         }
 
         // the entity's state is no longer stored from the older commit up to (not including) the new one
-        for (var commit = older.Commit; commit.Id != by.CommitId; commit = _successors[commit.Id].Next!)
+        Commit? commit = older.Commit;
+        while (commit is not null && commit.Id != by.CommitId)
         {
             _holes.Add(commit.Id);
+            commit = _successors[commit.Id].Next;
         }
 
         return false;

@@ -53,6 +53,19 @@ public abstract class CommitBase : IComparable<CommitBase>
         if (other is null) return 1;
         return CompareKey.CompareTo(other.CompareKey);
     }
+
+    // null sorts before any commit, matching CompareTo's treatment of a null other
+    public static bool operator >(CommitBase? left, CommitBase? right) =>
+        left is not null && left.CompareTo(right) > 0;
+
+    public static bool operator <(CommitBase? left, CommitBase? right) =>
+        left is null ? right is not null : left.CompareTo(right) < 0;
+
+    public static bool operator >=(CommitBase? left, CommitBase? right) =>
+        left is null ? right is null : left.CompareTo(right) >= 0;
+
+    public static bool operator <=(CommitBase? left, CommitBase? right) =>
+        left is null || left.CompareTo(right) <= 0;
 }
 
 /// <inheritdoc cref="CommitBase"/>

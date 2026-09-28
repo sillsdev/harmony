@@ -22,7 +22,7 @@ internal class SnapshotWorker : ISnapshotView
     private readonly List<ObjectSnapshot> _keptSupersededSnapshots = [];
 
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
-    internal SnapshotWorker(SortedSet<Commit> commits, ISnapshotView baseline, HarmonyConfig crdtConfig)
+    private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
         _batchCommits = commits;
         _policy = new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
@@ -37,7 +37,7 @@ internal class SnapshotWorker : ISnapshotView
     internal static async Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
         if (commits.Count == 0) return baseline;
-        var worker = new SnapshotWorker(commits, baseline, crdtConfig);
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig);
         await worker.ApplyCommitChanges();
         return worker;
     }
@@ -46,11 +46,13 @@ internal class SnapshotWorker : ISnapshotView
     /// The snapshots to persist, and which of the batch commits a later replay can resume from.
     /// Persisting both is the caller's job.
     /// </summary>
-    internal async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeSnapshotsAndCheckpoints()
+    internal static async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeNewSnapshotsAndCheckpoints(
+        ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
-        await ApplyCommitChanges();
-        IReadOnlyList<ObjectSnapshot> snapshots = [.. _keptSupersededSnapshots, .. _latestSnapshots.Values];
-        return (snapshots, _policy.CheckpointFlags());
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig);
+        await worker.ApplyCommitChanges();
+        IReadOnlyList<ObjectSnapshot> snapshots = [.. worker._keptSupersededSnapshots, .. worker._latestSnapshots.Values];
+        return (snapshots, worker._policy.CheckpointFlags());
     }
 
     private async ValueTask ApplyCommitChanges()
@@ -99,7 +101,7 @@ internal class SnapshotWorker : ISnapshotView
                     continue;
                 }
 
-                await GenerateSnapshotForEntity(entity, prevSnapshot, changeContext);
+                await RecordEntitySnapshot(entity, prevSnapshot, changeContext);
             }
         }
     }
@@ -123,7 +125,7 @@ internal class SnapshotWorker : ISnapshotView
             updatedEntry.RemoveReference(deletedEntityId, commit);
             var deletedByRemoveRef = !wasDeleted && updatedEntry.DeletedAt.HasValue;
 
-            await GenerateSnapshotForEntity(updatedEntry, snapshot, context);
+            await RecordEntitySnapshot(updatedEntry, snapshot, context);
 
             //we need to do this after we add the snapshot above otherwise we might get stuck in a loop of deletions
             if (deletedByRemoveRef)
@@ -133,7 +135,7 @@ internal class SnapshotWorker : ISnapshotView
         }
     }
 
-    private async Task GenerateSnapshotForEntity(IObjectBase entity, ObjectSnapshot? prevSnapshot, ChangeContext context)
+    private async Task RecordEntitySnapshot(IObjectBase entity, ObjectSnapshot? prevSnapshot, ChangeContext context)
     {
         //when both snapshots are for the same commit we don't want to keep the previous, therefore the new snapshot should be root
         var isRoot = prevSnapshot is null || (prevSnapshot.IsRoot && prevSnapshot.CommitId == context.Commit.Id);
@@ -141,11 +143,6 @@ internal class SnapshotWorker : ISnapshotView
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        AddSnapshot(newSnapshot);
-    }
-
-    private void AddSnapshot(ObjectSnapshot newSnapshot)
-    {
         if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.Supersede(superseded, by: newSnapshot))
         {
             _keptSupersededSnapshots.Add(superseded);

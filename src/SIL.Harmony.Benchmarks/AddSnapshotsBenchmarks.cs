@@ -126,8 +126,7 @@ public class AddSnapshotsBenchmarks
         var baseline = _repository.SnapshotViewAsOf(checkpoint);
         baseline.PreloadAsync(entityIds).GetAwaiter().GetResult();
 
-        var worker = new SnapshotWorker(measuredCommits, baseline, _local.CrdtConfig);
-        var (snapshots, checkpointFlags) = worker.ComputeSnapshotsAndCheckpoints().GetAwaiter().GetResult();
+        var (snapshots, checkpointFlags) = SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, measuredCommits, _local.CrdtConfig).GetAwaiter().GetResult();
         _snapshotsToAdd = snapshots.ToArray();
         _checkpointFlags = checkpointFlags;
     }

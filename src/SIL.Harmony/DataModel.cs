@@ -208,8 +208,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
 
         await PreloadTouched(baseline, commitsToApply);
-        var worker = new SnapshotWorker(commitsToApply, baseline, _crdtConfig.Value);
-        var (newSnapshots, checkpoints) = await worker.ComputeSnapshotsAndCheckpoints();
+        var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, _crdtConfig.Value);
         await repo.AddSnapshots(newSnapshots, checkpoints);
     }
 

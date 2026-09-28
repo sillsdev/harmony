@@ -12,25 +12,20 @@ namespace SIL.Harmony;
 /// </summary>
 internal class SnapshotWorker : ISnapshotView
 {
-    /// <param name="CreatedAtIndex">the batch index of the commit the snapshot was made at</param>
-    private readonly record struct LatestSnapshot(ObjectSnapshot Snapshot, int CreatedAtIndex);
-
     private readonly ISnapshotView _baseline;
     private readonly HarmonyConfig _crdtConfig;
-    private readonly Commit[] _batchCommits;
+    private readonly SortedSet<Commit> _batchCommits;
     private readonly SnapshotCheckpointPolicy _policy;
-    /// <summary>each entity's newest snapshot so far in this run</summary>
-    private readonly Dictionary<Guid, LatestSnapshot> _latestSnapshots = [];
-    /// <summary>superseded snapshots we want to persist/retain: roots, and ones required by the checkpoint policy</summary>
-    private readonly List<ObjectSnapshot> _retainedIntermediateSnapshots = [];
+    /// <summary>each entity's newest snapshot so far in this replay</summary>
+    private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
+    /// <summary>superseded snapshots the policy says must still be persisted</summary>
+    private readonly List<ObjectSnapshot> _keptSupersededSnapshots = [];
 
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
     internal SnapshotWorker(SortedSet<Commit> commits, ISnapshotView baseline, HarmonyConfig crdtConfig)
     {
-        _batchCommits = [.. commits];
-        _policy = new SnapshotCheckpointPolicy(
-            _batchCommits.Select(c => c.ChangeEntities.Count),
-            crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
+        _batchCommits = commits;
+        _policy = new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
         _baseline = baseline;
         _crdtConfig = crdtConfig;
     }
@@ -54,20 +49,19 @@ internal class SnapshotWorker : ISnapshotView
     internal async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeSnapshotsAndCheckpoints()
     {
         await ApplyCommitChanges();
-        IReadOnlyList<ObjectSnapshot> snapshots = [.. _retainedIntermediateSnapshots, .. _latestSnapshots.Values.Select(l => l.Snapshot)];
-        return (snapshots, _policy.CheckpointFlags(_batchCommits));
+        IReadOnlyList<ObjectSnapshot> snapshots = [.. _keptSupersededSnapshots, .. _latestSnapshots.Values];
+        return (snapshots, _policy.CheckpointFlags());
     }
 
     private async ValueTask ApplyCommitChanges()
     {
-        for (var commitIndex = 0; commitIndex < _batchCommits.Length; commitIndex++)
+        foreach (var commit in _batchCommits)
         {
-            var commit = _batchCommits[commitIndex];
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
                 IObjectBase entity;
                 var prevSnapshot = await GetAsync(commitChange.EntityId);
-                var changeContext = new ChangeContext(commit, commitIndex, this, _crdtConfig);
+                var changeContext = new ChangeContext(commit, this, _crdtConfig);
 
                 if (prevSnapshot is null)
                 {
@@ -147,40 +141,24 @@ internal class SnapshotWorker : ISnapshotView
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        AddSnapshot(newSnapshot, context.BatchCommitIndex);
+        AddSnapshot(newSnapshot);
     }
 
-    private void AddSnapshot(ObjectSnapshot newSnapshot, int currCommitIndex)
+    private void AddSnapshot(ObjectSnapshot newSnapshot)
     {
-        var hasPrevious = _latestSnapshots.TryGetValue(newSnapshot.EntityId, out var prevSnapshot);
-        _latestSnapshots[newSnapshot.EntityId] = new LatestSnapshot(newSnapshot, currCommitIndex);
-
-        if (!hasPrevious)
+        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.Supersede(superseded, by: newSnapshot))
         {
-            // we're not dropping anything
-            return;
+            _keptSupersededSnapshots.Add(superseded);
         }
 
-        if (prevSnapshot.Snapshot.CommitId == newSnapshot.CommitId)
-        {
-            // we (can) only keep 1 snapshot per entity per commit, so the new one wins
-            return;
-        }
-
-        var mustBeRescued = prevSnapshot.Snapshot.IsRoot // always keep root snapshots
-            || _policy.MustKeepSnapshot(prevSnapshot.CreatedAtIndex, currCommitIndex);
-
-        if (mustBeRescued)
-            _retainedIntermediateSnapshots.Add(prevSnapshot.Snapshot);
-        else
-            _policy.SnapshotDropped(prevSnapshot.CreatedAtIndex, currCommitIndex);
+        _latestSnapshots[newSnapshot.EntityId] = newSnapshot;
     }
 
     public async ValueTask<ObjectSnapshot?> GetAsync(Guid entityId)
     {
         if (_latestSnapshots.TryGetValue(entityId, out var latest))
         {
-            return latest.Snapshot;
+            return latest;
         }
 
         return await _baseline.GetAsync(entityId);
@@ -191,9 +169,9 @@ internal class SnapshotWorker : ISnapshotView
         var predicate = predicateExpression.Compile();
 
         // this run's snapshots first, so we don't return an out of date copy of an entity we've already updated
-        foreach (var latest in _latestSnapshots.Values.Where(l => predicate(l.Snapshot)))
+        foreach (var snapshot in _latestSnapshots.Values.Where(predicate))
         {
-            yield return latest.Snapshot;
+            yield return snapshot;
         }
 
         await foreach (var snapshot in _baseline.Where(predicateExpression))
@@ -205,9 +183,9 @@ internal class SnapshotWorker : ISnapshotView
 
     public async IAsyncEnumerable<ObjectSnapshot> All()
     {
-        foreach (var latest in _latestSnapshots.Values)
+        foreach (var snapshot in _latestSnapshots.Values)
         {
-            yield return latest.Snapshot;
+            yield return snapshot;
         }
 
         await foreach (var snapshot in _baseline.All())

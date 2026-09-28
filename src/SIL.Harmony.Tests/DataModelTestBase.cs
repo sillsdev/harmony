@@ -105,9 +105,9 @@ public class DataModelTestBase : IAsyncLifetime
     }
 
     /// <summary>A commit with no changes in it. Triggers a history replay without affecting data.</summary>
-    public async ValueTask<Commit> WriteNoOpCommit()
+    public async ValueTask<Commit> WriteNoOpCommit(bool add = true)
     {
-        return await WriteChange(_localClientId, NextDate(), []);
+        return await WriteChange(_localClientId, NextDate(), [], add);
     }
 
     /// <summary>A commit with no changes in it. Triggers a history replay without affecting data.</summary>

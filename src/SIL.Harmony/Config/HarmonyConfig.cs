@@ -29,7 +29,8 @@ public class HarmonyConfig
         DefaultOnProjectedEntitiesChanged;
 
     /// <summary>
-    /// after adding any commit validate the commit history, not great for performance but good for testing.
+    /// After adding any commit validate the commit history.
+    /// Not great for performance but good for testing, so off by default.
     /// </summary>
     public bool AlwaysValidateCommits { get; set; }
     /// <summary>

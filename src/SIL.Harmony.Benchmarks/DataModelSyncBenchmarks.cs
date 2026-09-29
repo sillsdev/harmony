@@ -51,12 +51,10 @@ public class DataModelSyncBenchmarks
     private Commit[] _commits = null!;
     private List<Commit>? _toSeed = null;
     private List<Commit>? _toSync = null;
-    private HashSet<Guid>? _syncCommitIds;
 
     [GlobalSetup]
     public void GlobalSetup()
     {
-        _syncCommitIds = null;
         remote = new DataModelTestBase(alwaysValidate: false, performanceTest: true);
         var clientId = Guid.NewGuid();
         List<Commit> commits;

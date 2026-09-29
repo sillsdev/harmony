@@ -1,5 +1,4 @@
 using System.Linq.Expressions;
-using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
@@ -7,77 +6,64 @@ using SIL.Harmony.Db;
 namespace SIL.Harmony;
 
 /// <summary>
-/// helper service to update snapshots and apply commits to them, has mutable state, don't reuse
+/// Applies a batch of commits on top of a base state (the snapshots as of a checkpoint) and produces the snapshots
+/// that result. Once <see cref="ReplayCommits"/> returns it is the <see cref="ISnapshotView"/> as of the last commit; before
+/// that its reads show mid-batch state. Has mutable state, don't reuse.
 /// </summary>
-internal class SnapshotWorker
+internal class SnapshotWorker : ISnapshotView
 {
-    private readonly Dictionary<Guid, ObjectSnapshot?> _snapshotCache;
-    private readonly CrdtRepository _crdtRepository;
+    private readonly ISnapshotView _baseline;
     private readonly HarmonyConfig _crdtConfig;
-    private readonly Dictionary<Guid, ObjectSnapshot> _pendingSnapshots = [];
-    private readonly Dictionary<Guid, ObjectSnapshot> _rootSnapshots = [];
-    private readonly List<ObjectSnapshot> _newIntermediateSnapshots = [];
+    private readonly SortedSet<Commit> _batchCommits;
+    private readonly SnapshotCheckpointPolicy _policy;
+    /// <summary>each entity's newest snapshot so far in this replay</summary>
+    private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
+    /// <summary>superseded snapshots the policy says must still be persisted</summary>
+    private readonly List<ObjectSnapshot> _keptSupersededSnapshots = [];
 
-    private SnapshotWorker(Dictionary<Guid, ObjectSnapshot> snapshots,
-        Dictionary<Guid, ObjectSnapshot?> snapshotCache,
-        CrdtRepository crdtRepository,
-        HarmonyConfig crdtConfig)
+    /// <param name="baseline">the snapshots the commits are applied on top of</param>
+    private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
-        _pendingSnapshots = snapshots;
-        _crdtRepository = crdtRepository;
-        _snapshotCache = snapshotCache;
+        _batchCommits = commits;
+        _policy = new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
+        _baseline = baseline;
         _crdtConfig = crdtConfig;
     }
 
-    internal static async Task<Dictionary<Guid, ObjectSnapshot>> ApplyCommitsToSnapshots(
-        Dictionary<Guid, ObjectSnapshot> snapshots,
-        CrdtRepository crdtRepository,
-        SortedSet<Commit> commits,
-        HarmonyConfig crdtConfig)
+    /// <summary>
+    /// The snapshots as of the last of <paramref name="commits"/>, applied on top of <paramref name="baseline"/>
+    /// without persisting anything.
+    /// </summary>
+    internal static async Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
-        //we need to pass in the snapshots because we expect it to be modified, this is intended.
-        //if the constructor makes a copy in the future this will need to be updated
-        await new SnapshotWorker(snapshots, [], crdtRepository, crdtConfig).ApplyCommitChanges(commits);
-        return snapshots;
-    }
-
-    /// <param name="snapshotCache">a dictionary of entity id to latest snapshot id</param>
-    /// <param name="crdtRepository"></param>
-    /// <param name="crdtConfig"></param>
-    internal SnapshotWorker(Dictionary<Guid, ObjectSnapshot?> snapshotCache,
-        CrdtRepository crdtRepository,
-        HarmonyConfig crdtConfig) : this([], snapshotCache, crdtRepository, crdtConfig)
-    {
-    }
-
-    public async Task UpdateSnapshots(SortedSet<Commit> commits)
-    {
-        await _crdtRepository.AddSnapshots(await ComputeSnapshotsToPersist(commits));
+        if (commits.Count == 0) return baseline;
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig);
+        await worker.ApplyCommitChanges();
+        return worker;
     }
 
     /// <summary>
-    /// Applies the commits to snapshots the same way <see cref="UpdateSnapshots"/> does, but returns the full list
-    /// of snapshots that would be persisted instead of writing them. Used by benchmarks to isolate the
-    /// <see cref="CrdtRepository.AddSnapshots"/> step from commit application.
+    /// The snapshots to persist, and which of the batch commits a later replay can resume from.
+    /// Persisting both is the caller's job.
     /// </summary>
-    internal async Task<IReadOnlyList<ObjectSnapshot>> ComputeSnapshotsToPersist(SortedSet<Commit> commits)
+    internal static async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeNewSnapshotsAndCheckpoints(
+        ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
-        await ApplyCommitChanges(commits);
-        return [.. _rootSnapshots.Values, .. _newIntermediateSnapshots, .. _pendingSnapshots.Values];
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig);
+        await worker.ApplyCommitChanges();
+        IReadOnlyList<ObjectSnapshot> snapshots = [.. worker._keptSupersededSnapshots, .. worker._latestSnapshots.Values];
+        return (snapshots, worker._policy.CheckpointFlags());
     }
 
-    private async ValueTask ApplyCommitChanges(SortedSet<Commit> commits)
+    private async ValueTask ApplyCommitChanges()
     {
-        var intermediateSnapshots = new Dictionary<Guid, ObjectSnapshot>();
-        var commitIndex = 0;
-        foreach (var commit in commits)
+        foreach (var commit in _batchCommits)
         {
-            commitIndex++;
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
                 IObjectBase entity;
-                var prevSnapshot = await GetSnapshot(commitChange.EntityId);
-                var changeContext = new ChangeContext(commit, commitIndex, intermediateSnapshots, this, _crdtConfig);
+                var prevSnapshot = await GetAsync(commitChange.EntityId);
+                var changeContext = new ChangeContext(commit, this, _crdtConfig);
 
                 if (prevSnapshot is null)
                 {
@@ -115,23 +101,19 @@ internal class SnapshotWorker
                     continue;
                 }
 
-                await GenerateSnapshotForEntity(entity, prevSnapshot, changeContext);
+                await RecordEntitySnapshot(entity, prevSnapshot, changeContext);
             }
-            _newIntermediateSnapshots.AddRange(intermediateSnapshots.Values);
-            intermediateSnapshots.Clear();
         }
     }
 
     /// <summary>
     /// responsible for removing references to the deleted entity from other entities
     /// </summary>
-    /// <param name="deletedEntityId"></param>
-    /// <param name="commit"></param>
     private async ValueTask MarkDeleted(Guid deletedEntityId, ChangeContext context)
     {
         // Including deleted shouldn't be necessary, because change objects are responsible for not adding references to deleted entities.
         // But maybe it's a good fallback.
-        var toRemoveRefFrom = await GetSnapshotsReferencing(deletedEntityId, true)
+        var toRemoveRefFrom = await ((ISnapshotView)this).WhereReferences(deletedEntityId, includeDeleted: true)
             .ToArrayAsync();
 
         var commit = context.Commit;
@@ -143,7 +125,7 @@ internal class SnapshotWorker
             updatedEntry.RemoveReference(deletedEntityId, commit);
             var deletedByRemoveRef = !wasDeleted && updatedEntry.DeletedAt.HasValue;
 
-            await GenerateSnapshotForEntity(updatedEntry, snapshot, context);
+            await RecordEntitySnapshot(updatedEntry, snapshot, context);
 
             //we need to do this after we add the snapshot above otherwise we might get stuck in a loop of deletions
             if (deletedByRemoveRef)
@@ -153,118 +135,64 @@ internal class SnapshotWorker
         }
     }
 
-    public async ValueTask<ObjectSnapshot?> GetSnapshot(Guid entityId)
+    private async Task RecordEntitySnapshot(IObjectBase entity, ObjectSnapshot? prevSnapshot, ChangeContext context)
     {
-        if (_pendingSnapshots.TryGetValue(entityId, out var snapshot))
-        {
-            return snapshot;
-        }
-
-        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
-        {
-            return rootSnapshot;
-        }
-
-        if (_snapshotCache.TryGetValue(entityId, out snapshot))
-        {
-            return snapshot;
-        }
-
-        snapshot = await _crdtRepository.GetCurrentSnapshotByObjectId(entityId, true);
-        _snapshotCache[entityId] = snapshot;
-
-        return snapshot;
-    }
-
-    internal IAsyncEnumerable<ObjectSnapshot> GetSnapshotsReferencing(Guid entityId, bool includeDeleted = false)
-    {
-        return GetSnapshotsWhere(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
-    }
-
-    internal async IAsyncEnumerable<ObjectSnapshot> GetSnapshotsWhere(Expression<Func<ObjectSnapshot, bool>> predicateExpression)
-    {
-        var predicate = predicateExpression.Compile();
-
-        // foreaches ordered by most to least up-to-date, so we don't return snapshots that are out of date
-        foreach (var snapshot in _pendingSnapshots.Values
-            .Where(predicate))
-        {
-            yield return snapshot;
-        }
-
-        foreach (var snapshot in _rootSnapshots.Values
-            .Where(predicate)
-            .Where(s => !_pendingSnapshots.ContainsKey(s.EntityId)))
-        {
-            yield return snapshot;
-        }
-
-        await foreach (var snapshot in _crdtRepository.CurrentSnapshots()
-            .Where(predicateExpression)
-            .AsAsyncEnumerable())
-        {
-            if (_pendingSnapshots.ContainsKey(snapshot.EntityId) || _rootSnapshots.ContainsKey(snapshot.EntityId))
-                continue;
-            yield return snapshot;
-        }
-    }
-
-    private async Task GenerateSnapshotForEntity(IObjectBase entity, ObjectSnapshot? prevSnapshot, ChangeContext context)
-    {
-        //to get the state in a point in time we would have to find a snapshot before that time, then apply any commits that came after that snapshot but still before the point in time.
-        //we would probably want the most recent snapshot to always follow current, so we might need to track the number of changes a given snapshot represents so we can
-        //decide when to create a new snapshot instead of replacing one inline. This would be done by using the current snapshots parent, instead of the snapshot itself.
-        // s0 -> s1 -> sCurrent
-        // if always taking snapshots would become
-        // s0 -> s1 -> sCurrent -> sNew
-        //but but to not snapshot every change we could do this instead
-        // s0 -> s1 -> sNew
-
         //when both snapshots are for the same commit we don't want to keep the previous, therefore the new snapshot should be root
         var isRoot = prevSnapshot is null || (prevSnapshot.IsRoot && prevSnapshot.CommitId == context.Commit.Id);
         var newSnapshot = new ObjectSnapshot(entity, context.Commit, isRoot);
-        //if both snapshots are for the same commit then we don't want to keep the previous snapshot
-        if (prevSnapshot is null || prevSnapshot.CommitId == context.Commit.Id)
-        {
-            //do nothing, will cause prevSnapshot to be overriden in _pendingSnapshots if it exists
-        }
-        else if (context.CommitIndex % 2 == 0 && !prevSnapshot.IsRoot && IsNew(prevSnapshot))
-        {
-            context.IntermediateSnapshots[prevSnapshot.Entity.Id] = prevSnapshot;
-        }
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        AddSnapshot(newSnapshot);
+        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.Supersede(superseded, by: newSnapshot))
+        {
+            _keptSupersededSnapshots.Add(superseded);
+        }
+
+        _latestSnapshots[newSnapshot.EntityId] = newSnapshot;
     }
 
-    private void AddSnapshot(ObjectSnapshot snapshot)
+    public async ValueTask<ObjectSnapshot?> GetAsync(Guid entityId)
     {
-        if (snapshot.IsRoot)
+        if (_latestSnapshots.TryGetValue(entityId, out var latest))
         {
-            _rootSnapshots[snapshot.Entity.Id] = snapshot;
+            return latest;
         }
-        else
+
+        return await _baseline.GetAsync(entityId);
+    }
+
+    public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression)
+    {
+        var predicate = predicateExpression.Compile();
+
+        // this run's snapshots first, so we don't return an out of date copy of an entity we've already updated
+        foreach (var snapshot in _latestSnapshots.Values.Where(predicate))
         {
-            //if there was already a pending snapshot there's no need to store it as both may point to the same commit
-            _pendingSnapshots[snapshot.Entity.Id] = snapshot;
+            yield return snapshot;
+        }
+
+        await foreach (var snapshot in _baseline.Where(predicateExpression))
+        {
+            if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
+            yield return snapshot;
         }
     }
 
-    /// <summary>
-    /// snapshot is not from the database
-    /// </summary>
-    private bool IsNew(ObjectSnapshot snapshot)
+    public async IAsyncEnumerable<ObjectSnapshot> All()
     {
-        var entityId = snapshot.EntityId;
-        if (_pendingSnapshots.TryGetValue(entityId, out var pendingSnapshot))
+        foreach (var snapshot in _latestSnapshots.Values)
         {
-            return pendingSnapshot.Id == snapshot.Id;
+            yield return snapshot;
         }
-        if (_rootSnapshots.TryGetValue(entityId, out var rootSnapshot))
+
+        await foreach (var snapshot in _baseline.All())
         {
-            return rootSnapshot.Id == snapshot.Id;
+            if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
+            yield return snapshot;
         }
-        return false;
     }
+
+    public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => _baseline.PreloadAsync(entityIds);
+
+    public Task PreloadAllAsync() => _baseline.PreloadAllAsync();
 }

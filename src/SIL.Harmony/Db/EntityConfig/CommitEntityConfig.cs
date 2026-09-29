@@ -29,6 +29,14 @@ public class CommitEntityConfig : IEntityTypeConfiguration<Commit>
         builder.HasComplexCompositeIndex(
             c => new { c.HybridDateTime.DateTime, c.HybridDateTime.Counter, c.Id },
             indexName: "IX_Commits_DateTime_Counter_Id");
+        // Ordering-only: a leading bool column can't seek, so filter on it instead.
+        builder.HasComplexCompositeIndex(
+            c => new { c.HybridDateTime.DateTime, c.HybridDateTime.Counter, c.Id },
+            index =>
+            {
+                index.HasName("IX_Commits_Checkpoint");
+                index.HasFilter("\"IsSnapshotCheckpoint\"");
+            });
         builder.Property(c => c.Metadata)
             .HasColumnType("jsonb")
             .HasConversion(

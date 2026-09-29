@@ -40,4 +40,10 @@ public class Commit : CommitBase<IChange>
 
     [JsonIgnore]
     public string ParentHash { get; private set; }
+
+    /// <summary>
+    /// All entity snapshots are complete as of this commit i.e. it is a safe point to start a replay from.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsSnapshotCheckpoint { get; internal set; }
 }

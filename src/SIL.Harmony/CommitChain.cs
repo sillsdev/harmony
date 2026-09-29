@@ -36,9 +36,6 @@ internal sealed class CommitChain
     }
 
     /// <param name="Next">the next commit in the batch; none for the last</param>
-    /// <param name="NextRequiredCheckpoint">
-    /// the first required checkpoint at or after this commit; none after the last one. A required checkpoint is a commit
-    /// where the running total of changes reached or passed a multiple of maxChanges.
-    /// </param>
+    /// <param name="NextRequiredCheckpoint">the first required checkpoint at or after this commit; none after the last one</param>
     private readonly record struct Link(Commit? Next, Commit? NextRequiredCheckpoint);
 }

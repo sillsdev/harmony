@@ -9,9 +9,9 @@ namespace SIL.Harmony;
 /// <remarks>
 /// A superseded snapshot at commit X, replaced by one at commit Y, is its entity's state for every commit in [X, Y).
 /// Dropping it leaves a hole there: the entity's state isn't persisted for those commits, so none of them is a checkpoint.
-/// Some commits are required checkpoints, one each time the running total of changes reaches a multiple of
-/// <c>maxChangesBetweenCheckpoints</c>. A snapshot whose coverage holds a required checkpoint is always kept, so no hole
-/// contains one, which guarantees a checkpoint at least every <c>maxChangesBetweenCheckpoints</c> changes.
+/// A commit is a required checkpoint once <c>maxChangesBetweenCheckpoints</c> changes have accumulated since the previous
+/// one. A snapshot whose coverage holds a required checkpoint is always kept, so no hole contains one, which guarantees a
+/// checkpoint at least every <c>maxChangesBetweenCheckpoints</c> changes.
 /// </remarks>
 internal sealed class SnapshotCheckpointPolicy
 {
@@ -42,7 +42,6 @@ internal sealed class SnapshotCheckpointPolicy
 
             awaitingCheckpoint.Add(commit);
             changesSinceCheckpoint += commit.ChangeEntities.Count;
-            // the total just reached or passed a multiple of maxChanges; a commit spanning several is still one checkpoint
             if (changesSinceCheckpoint >= maxChangesBetweenCheckpoints)
             {
                 foreach (var awaiting in awaitingCheckpoint)
@@ -51,7 +50,7 @@ internal sealed class SnapshotCheckpointPolicy
                 }
 
                 awaitingCheckpoint.Clear();
-                changesSinceCheckpoint = 0;
+                changesSinceCheckpoint = 0; // all of this commit's changes are behind its checkpoint, none carry over
             }
         }
     }

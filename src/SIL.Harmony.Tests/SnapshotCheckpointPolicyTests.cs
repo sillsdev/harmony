@@ -82,14 +82,14 @@ public class SnapshotCheckpointPolicyTests
     }
 
     [Fact]
-    public void ACommitSpanningSeveralMultiplesIsOneRequiredCheckpoint()
+    public void ChangesBeyondTheLimitDoNotCountTowardTheNextRequiredCheckpoint()
     {
-        // commit 0 takes the total from 0 to 10, past both 4 and 8, but that's a single required checkpoint
-        var commits = Commits([10, 1]);
+        // commit 1 takes the total to 6; the 2 beyond the limit don't carry over, so commit 2 only reaches 3
+        var commits = Commits([3, 3, 3, 3]);
         var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 4);
 
-        policy.Supersede(SnapshotAt(commits[0]), by: SnapshotAt(commits[1])).Should().BeTrue();
-        Checkpoints(policy).Should().Equal(true, true);
+        policy.Supersede(SnapshotAt(commits[1]), by: SnapshotAt(commits[2])).Should().BeTrue("commit 1 is a required checkpoint");
+        policy.Supersede(SnapshotAt(commits[2]), by: SnapshotAt(commits[3])).Should().BeFalse("commit 2 is not, though it would be if the 2 extra changes carried over");
     }
 
     [Fact]

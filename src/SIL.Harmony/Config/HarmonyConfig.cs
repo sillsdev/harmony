@@ -29,9 +29,10 @@ public class HarmonyConfig
         DefaultOnProjectedEntitiesChanged;
 
     /// <summary>
-    /// after adding any commit validate the commit history, not great for performance but good for testing.
+    /// After adding any commit validate the commit history.
+    /// Not great for performance but good for testing, so off by default.
     /// </summary>
-    public bool AlwaysValidateCommits { get; set; } = true;
+    public bool AlwaysValidateCommits { get; set; }
     /// <summary>
     /// Bounds how far back a replay of an out-of-order commit resumes, in changes. Lower keeps more snapshots (more
     /// storage, cheaper replay); higher keeps fewer. The only dial in the snapshot checkpoint design.

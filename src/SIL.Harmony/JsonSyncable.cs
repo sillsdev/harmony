@@ -56,25 +56,16 @@ public class JsonSyncable : ISyncable
             {
                 ClientId = ClientIdForFile(file)
             };
-            var hash = new byte[16];
-            await foreach (var commit in ReadAllCommitsAsync(file, ct).OrderBy(c => c.ClientId).ThenBy(c => c.Id))
+            await foreach (var commit in ReadAllCommitsAsync(file, ct))
             {
-                UpdateClientState(clientStateBuilder, commit, ref hash);
+                clientStateBuilder.Add(commit.Id, commit.HybridDateTime.DateTime);
             }
-            if (clientStateBuilder.Count == 0)
-                return;
-            heads.Add(clientStateBuilder.Build());
+            var state = clientStateBuilder.Build();
+            //an empty client file would otherwise produce a state that reads as ClientState.OnlyHasTimestamp
+            if (state.CommitCount > 0)
+                heads.Add(state);
         });
         return new SyncState(heads.ToArray());
-    }
-
-    private static void UpdateClientState(ClientStateBuilder clientStateBuilder, Commit commit, ref byte[] hash)
-    {
-        clientStateBuilder.Count++;
-        clientStateBuilder.Timestamp = Math.Max(clientStateBuilder.Timestamp,
-            commit.HybridDateTime.DateTime.ToUnixTimeMilliseconds());
-        commit.Id.TryWriteBytes(hash);
-        clientStateBuilder.Hash.Append(hash);
     }
 
     public async Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads)
@@ -88,15 +79,14 @@ public class JsonSyncable : ISyncable
             {
                 ClientId = ClientIdForFile(file)
             };
-            var hash = new byte[16];
-            await foreach (var commit in ReadAllCommitsAsync(file, ct).OrderBy(c => c.ClientId).ThenBy(c => c.Id))
+            await foreach (var commit in ReadAllCommitsAsync(file, ct))
             {
-                UpdateClientState(clientStateBuilder, commit, ref hash);
+                clientStateBuilder.Add(commit.Id, commit.HybridDateTime.DateTime);
                 allCommits.Add(commit);
             }
-            if (clientStateBuilder.Count == 0)
-                return;
-            heads.Add(clientStateBuilder.Build());
+            var state = clientStateBuilder.Build();
+            if (state.CommitCount > 0)
+                heads.Add(state);
         });
         var localState = new SyncState(heads.ToArray());
         var missing = allCommits.GetMissingCommits<Commit, IChange>(localState, otherHeads).ToArray();
@@ -151,11 +141,6 @@ public class JsonSyncable : ISyncable
             if (commit is not null)
                 yield return commit;
         }
-    }
-
-    private async Task<DateTimeOffset?> GetHeadTimestampAsync(FileInfo file, CancellationToken cancellationToken)
-    {
-        return await ReadAllCommitsAsync(file, cancellationToken).Select(c => (DateTimeOffset?)c.HybridDateTime.DateTime).MaxAsync(null, cancellationToken);
     }
 
     private async Task<HashSet<Guid>> GetExistingCommitIdsAsync(FileInfo file, CancellationToken cancellationToken)

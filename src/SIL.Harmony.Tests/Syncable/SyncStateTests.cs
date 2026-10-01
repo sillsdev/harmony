@@ -10,27 +10,34 @@ public class SyncStateTests
         var clientId1 = Guid.NewGuid();
         var clientId2 = Guid.NewGuid();
 
-        var dict = new Dictionary<Guid, ClientStateBuilder>()
-        {
-            [clientId1] = new ClientStateBuilder() { ClientId = clientId1, Timestamp = 5 },
-            [clientId2] = new ClientStateBuilder() { ClientId = clientId2, Timestamp = 10 },
-        };
-
         var clientStates = QueryHelpers.BuildSyncState(Enumerable.Range(1, 10_000)
-                .Select(i => new SimpleCommit(i <= 5000 ? clientId1 : clientId2, Guid.NewGuid()))
-                .ToArray(),
-            dict);
+            .Select(i => new SimpleCommit(i <= 5000 ? clientId1 : clientId2, Guid.NewGuid(),
+                DateTimeOffset.UnixEpoch.AddMilliseconds(i)))
+            .ToArray());
 
         clientStates.Should().HaveCount(2);
         ClientState clientState1 = clientStates.Should().ContainSingle(s => s.ClientId == clientId1).Subject;
-        clientState1.MaxTimestamp.Should().Be(5);
+        clientState1.MaxTimestamp.Should().Be(5000);
         clientState1.CommitCount.Should().Be(5000);
         clientState1.Hash.Should().NotBe(0);
 
         ClientState clientState2 = clientStates.Should().ContainSingle(s => s.ClientId == clientId2).Subject;
-        clientState2.MaxTimestamp.Should().Be(10);
+        clientState2.MaxTimestamp.Should().Be(10_000);
         clientState2.CommitCount.Should().Be(5000);
         clientState2.Hash.Should().NotBe(0);
+    }
+
+    [Fact]
+    public void BuildSyncState_HashIgnoresCommitOrder()
+    {
+        var clientId = Guid.NewGuid();
+        var commits = Enumerable.Range(1, 100)
+            .Select(i => new SimpleCommit(clientId, Guid.NewGuid(), DateTimeOffset.UnixEpoch.AddMilliseconds(i)))
+            .ToArray();
+
+        var forwards = QueryHelpers.BuildSyncState(commits).Should().ContainSingle().Subject;
+        var backwards = QueryHelpers.BuildSyncState(commits.Reverse().ToArray()).Should().ContainSingle().Subject;
+        backwards.Should().Be(forwards);
     }
 
     [Fact]

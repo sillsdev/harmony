@@ -64,61 +64,55 @@ public static class QueryHelpers
         if (includeChangeEntities) commits = commits.Include(c => c.ChangeEntities);
         foreach (var localClientState in localState.ClientStates)
         {
-            var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId);
+            var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
             var remoteClientState = remoteState.GetClientState(localClientState.ClientId);
-            if (SendCommitsAfterTimestamp(localClientState, remoteClientState) is { } afterTimestamp)
+            switch (PlanFor(localClientState, remoteClientState))
             {
-                await foreach (var commit in clientCommits
-                                   .Where(c => c.HybridDateTime.DateTime > afterTimestamp)
-                                   .DefaultOrder()
-                                   .AsAsyncEnumerable())
-                {
-                    if (commit.DateTime.ToUnixTimeMilliseconds() > afterTimestamp.ToUnixTimeMilliseconds())
+                case SyncPlan.SendNothing:
+                    break;
+                case SyncPlan.SendAll:
+                    await foreach (var commit in clientCommits.AsAsyncEnumerable())
                         yield return commit;
-                }
-                continue;
-            }
-
-            if (ShouldSendAllCommits(localClientState, remoteClientState))
-            {
-                await foreach (var commit in clientCommits.DefaultOrder().AsAsyncEnumerable())
-                    yield return commit;
+                    break;
+                case SyncPlan.SendAfterRemoteTimestamp:
+                    var after = DateTimeOffset.FromUnixTimeMilliseconds(remoteClientState!.MaxTimestamp);
+                    await foreach (var commit in clientCommits
+                                       .Where(c => c.HybridDateTime.DateTime > after)
+                                       .AsAsyncEnumerable())
+                    {
+                        if (IsAfter(commit, remoteClientState.MaxTimestamp))
+                            yield return commit;
+                    }
+                    break;
             }
         }
     }
 
-    private static DateTimeOffset? SendCommitsAfterTimestamp(ClientState localClientState, ClientState? remoteClientState)
+    private enum SyncPlan
     {
-        if (remoteClientState is null)
-            return null;
-        if (localClientState.MaxTimestamp > remoteClientState.MaxTimestamp)
-            return DateTimeOffset.FromUnixTimeMilliseconds(remoteClientState.MaxTimestamp);
-        return null;
+        SendNothing,
+        SendAll,
+        SendAfterRemoteTimestamp
     }
 
-    private static bool ShouldSendAllCommits(ClientState localClientState, ClientState? remoteClientState)
+    private static SyncPlan PlanFor(ClientState local, ClientState? remote)
     {
-        //remote does not have this client, so push everything
-        if (remoteClientState is null)
-        {
-            return true;
-        }
+        //the remote has never seen this client, so push everything
+        if (remote is null)
+            return SyncPlan.SendAll;
+        if (local.MaxTimestamp > remote.MaxTimestamp)
+            return SyncPlan.SendAfterRemoteTimestamp;
         //local and remote agree on this client, nothing to sync
-        if (localClientState.Hash == remoteClientState.Hash)
-        {
-            return false;
-        }
-
-        //the local client is missing commits from the remote, don't send anything.
-        //this could be a false positive, but we'll catch those on the next sync.
-        if (localClientState.CommitCount < remoteClientState.CommitCount)
-        {
-            return false;
-        }
-
-        //the hashes don't match and we have more or the same commit counts than remote, so just send everything
-        return true;
+        if (local.Hash == remote.Hash)
+            return SyncPlan.SendNothing;
+        //same head but different commits: whoever has at least as many pushes everything.
+        //if we have fewer we assume the remote has ours, which may be a false positive we catch next sync.
+        return local.CommitCount >= remote.CommitCount ? SyncPlan.SendAll : SyncPlan.SendNothing;
     }
+
+    //the db keeps sub-millisecond precision, so re-check against the millisecond value the remote reported
+    private static bool IsAfter(CommitBase commit, long afterMs) =>
+        commit.DateTime.ToUnixTimeMilliseconds() > afterMs;
 
     public static SortedSet<T> ToSortedSet<T>(this IEnumerable<T> queryable) where T : CommitBase
     {
@@ -143,35 +137,20 @@ public static class QueryHelpers
         foreach (var localClientState in localState.ClientStates)
         {
             ClientState? remoteClientState = remoteState.GetClientState(localClientState.ClientId);
-            foreach (var commit in GetMissingCommitsForClient(
-                         commits.Where(c => c.ClientId == localClientState.ClientId), localClientState, remoteClientState))
+            var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
+            switch (PlanFor(localClientState, remoteClientState))
             {
-                yield return commit;
+                case SyncPlan.SendNothing:
+                    break;
+                case SyncPlan.SendAll:
+                    foreach (var commit in clientCommits)
+                        yield return commit;
+                    break;
+                case SyncPlan.SendAfterRemoteTimestamp:
+                    foreach (var commit in clientCommits.Where(c => IsAfter(c, remoteClientState!.MaxTimestamp)))
+                        yield return commit;
+                    break;
             }
-        }
-    }
-
-    private static IEnumerable<TCommit> GetMissingCommitsForClient<TCommit>(
-        IEnumerable<TCommit> clientCommits,
-        ClientState localClientState,
-        ClientState? remoteClientState) where TCommit : CommitBase
-    {
-        if (SendCommitsAfterTimestamp(localClientState, remoteClientState) is { } afterTimestamp)
-        {
-            foreach (var commit in clientCommits
-                         .Where(c => c.HybridDateTime.DateTime > afterTimestamp)
-                         .DefaultOrder())
-            {
-                if (commit.DateTime.ToUnixTimeMilliseconds() > afterTimestamp.ToUnixTimeMilliseconds())
-                    yield return commit;
-            }
-            yield break;
-        }
-
-        if (ShouldSendAllCommits(localClientState, remoteClientState))
-        {
-            foreach (var commit in clientCommits.DefaultOrder())
-                yield return commit;
         }
     }
 

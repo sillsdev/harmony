@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SIL.Harmony.Changes;
 
 namespace SIL.Harmony.Tests.Syncable;
 
@@ -39,6 +40,37 @@ public class SyncStateTests
         var backwards = QueryHelpers.BuildSyncState(commits.Reverse().ToArray()).Should().ContainSingle().Subject;
         backwards.Should().Be(forwards);
     }
+
+    [Fact]
+    public void BuildSyncState_ADuplicateCommitCancelsOutOfTheHashButNotTheCount()
+    {
+        var clientId = Guid.NewGuid();
+        var commit1 = NewCommit(clientId, DateTimeOffset.UnixEpoch.AddMilliseconds(1));
+        var commit2 = NewCommit(clientId, DateTimeOffset.UnixEpoch.AddMilliseconds(2));
+        //backdated, so the duplicate doesn't move the head either
+        var duplicated = NewCommit(clientId, DateTimeOffset.UnixEpoch);
+
+        var without = BuildSyncState(commit1, commit2).Should().ContainSingle().Subject;
+        var withTwice = BuildSyncState(commit1, commit2, duplicated, duplicated).Should().ContainSingle().Subject;
+
+        //hash and head both match a state that is missing a commit; only the count tells them apart,
+        //which is why PlanFor compares whole states before deciding two clients agree
+        withTwice.Hash.Should().Be(without.Hash);
+        withTwice.MaxTimestamp.Should().Be(without.MaxTimestamp);
+        withTwice.CommitCount.Should().NotBe(without.CommitCount);
+        withTwice.Should().NotBe(without);
+
+        //so the side holding the duplicate pushes everything rather than calling the two in sync
+        Commit[] localCommits = [commit1, commit2, duplicated];
+        localCommits.GetCommitsMissingFromRemote<Commit, IChange>(new SyncState([withTwice]), new SyncState([without]))
+            .Should().BeEquivalentTo(localCommits);
+    }
+
+    private static Commit NewCommit(Guid clientId, DateTimeOffset dateTime) =>
+        new(Guid.NewGuid()) { ClientId = clientId, HybridDateTime = new HybridDateTime(dateTime, 0) };
+
+    private static ClientState[] BuildSyncState(params Commit[] commits) =>
+        QueryHelpers.BuildSyncState(commits.Select(c => new SimpleCommit(c.ClientId, c.Id, c.DateTime)));
 
     [Fact]
     public void CanDeserializeFromClientHeadsOnly()

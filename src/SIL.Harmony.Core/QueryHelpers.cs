@@ -87,8 +87,9 @@ public static class QueryHelpers
         //an older peer reports a head and nothing else, so timestamps are all we can compare
         if (remote.OnlyHasTimestamp)
             return local.MaxTimestamp > remote.MaxTimestamp ? SyncPlan.SendAfterRemoteTimestamp : SyncPlan.SendNothing;
-        //local and remote agree on this client, nothing to sync
-        if (local.Hash == remote.Hash)
+        //local and remote agree on this client, nothing to sync.
+        //the hash alone isn't enough: a commit id stored twice XORs back out of it, so the count has to match too.
+        if (local == remote)
             return SyncPlan.SendNothing;
         if (local.MaxTimestamp > remote.MaxTimestamp)
             return SyncPlan.SendAfterRemoteTimestamp;

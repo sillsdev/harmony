@@ -98,8 +98,8 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // act
         await AddCommitsViaSync([
-            await WriteNextChange(new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot), add: false),
-            await WriteNextChange(new SetAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot), add: false),
+            NextCommit(new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot)),
+            NextCommit(new SetAntonymReferenceChange(word3Id, _word2Id, setObject: includeObjectInSnapshot)),
         ]);
 
         // assert - snapshot
@@ -215,8 +215,8 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // act
         await AddCommitsViaSync([
-            await WriteNextChange(new NewWordChange(word3Id, "entity3"), add: false),
-            await WriteNextChange(new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot), add: false),
+            NextCommit(new NewWordChange(word3Id, "entity3")),
+            NextCommit(new SetAntonymReferenceChange(word3Id, _word1Id, setObject: includeObjectInSnapshot)),
         ]);
 
         // assert - snapshot
@@ -254,8 +254,8 @@ public class DataModelReferenceTests : DataModelTestBase
 
         // act
         await AddCommitsViaSync([
-            await WriteNextChange(new NewWordChange(word3Id, "entity3"), add: false),
-            await WriteNextChange(new SetAntonymReferenceChange(_word1Id, word3Id, setObject: includeObjectInSnapshot), add: false),
+            NextCommit(new NewWordChange(word3Id, "entity3")),
+            NextCommit(new SetAntonymReferenceChange(_word1Id, word3Id, setObject: includeObjectInSnapshot)),
         ]);
 
         // assert - snapshot
@@ -335,8 +335,8 @@ public class DataModelReferenceTests : DataModelTestBase
     public async Task DeleteDoesNotEffectARootSnapshotCreatedBeforeTheDelete()
     {
         var wordId = Guid.NewGuid();
-        var initialWordCommit = await WriteNextChange(new NewWordChange(wordId, "entity1", antonymId: _word1Id), add: false);
-        var deleteWordCommit = await WriteNextChange(DeleteWord(_word1Id), add: false);
+        var initialWordCommit = NextCommit(new NewWordChange(wordId, "entity1", antonymId: _word1Id));
+        var deleteWordCommit = NextCommit(DeleteWord(_word1Id));
         await AddCommitsViaSync([
             initialWordCommit,
             deleteWordCommit
@@ -397,14 +397,10 @@ public class DataModelReferenceTests : DataModelTestBase
         var wordId = Guid.NewGuid();
         var definitionId = Guid.NewGuid();
 
-        var initialCommit = await WriteNextChange(
-            [
-                SetWord(wordId, "original"),
-                NewDefinition(wordId, "the shiny one everything started with", "adj", 0, definitionId),
-            ], add: false);
-        var deleteCommit = await WriteNextChange(
-                new DeleteChange<Word>(wordId),
-            add: false);
+        var initialCommit = NextCommit(
+            SetWord(wordId, "original"),
+            NewDefinition(wordId, "the shiny one everything started with", "adj", 0, definitionId));
+        var deleteCommit = NextCommit(new DeleteChange<Word>(wordId));
         await AddCommitsViaSync([
             initialCommit,
             deleteCommit

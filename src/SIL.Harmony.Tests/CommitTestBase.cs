@@ -31,9 +31,11 @@ public class CommitTestBase
 
     protected DateTimeOffset CurrentDate => _currentDate;
 
-    public Commit NextCommit(params IChange[] changes) => CommitAt(NextDate(), changes);
+    public Commit NextCommit(params IEnumerable<IChange> changes) => CommitAt(NextDate(), changes);
 
-    public Commit CommitAt(DateTimeOffset dateTime, params IChange[] changes) => BuildCommit(_localClientId, dateTime, changes);
+    public Commit CommitAt(DateTimeOffset dateTime, params IEnumerable<IChange> changes) => BuildCommit(_localClientId, dateTime, changes);
+
+    public Commit CommitBefore(Commit before, params IEnumerable<IChange> changes) => CommitAt(before.DateTime.AddHours(-1), changes);
 
     public static Commit BuildCommit(Guid clientId, DateTimeOffset dateTime, IEnumerable<IChange> changes)
     {

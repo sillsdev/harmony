@@ -1,7 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
 
 namespace SIL.Harmony.Benchmarks;
 
+[SuppressMessage("Usage", "VSTHRD002:Avoid problematic synchronous waits")]
 [SimpleJob]
 public class BuildSyncStateBenchmarks
 {
@@ -21,5 +23,5 @@ public class BuildSyncStateBenchmarks
     }
 
     [Benchmark]
-    public ClientState[] Build() => QueryHelpers.BuildSyncState(SimpleCommits);
+    public ClientState[] Build() => QueryHelpers.BuildSyncState(SimpleCommits.ToAsyncEnumerable()).Result;
 }

@@ -10,17 +10,17 @@ public static class QueryHelpers
     public static async Task<SyncState> GetSyncState(this IQueryable<CommitBase> commits)
     {
         //one query, so the count, hash and timestamp can't disagree about which commits exist
-        var simpleCommits = await commits.AsNoTracking()
+        var simpleCommits = commits.AsNoTracking()
             .Select(c => new SimpleCommit(c.ClientId, c.Id, c.HybridDateTime.DateTime))
-            .ToArrayAsync();
+            .AsAsyncEnumerable();
 
-        return new SyncState(BuildSyncState(simpleCommits));
+        return new SyncState(await BuildSyncState(simpleCommits));
     }
 
-    public static ClientState[] BuildSyncState(IEnumerable<SimpleCommit> simpleCommits)
+    public static async Task<ClientState[]> BuildSyncState(IAsyncEnumerable<SimpleCommit> simpleCommits)
     {
         var builders = new Dictionary<Guid, ClientStateBuilder>();
-        foreach (var (clientId, commitId, dateTime) in simpleCommits)
+        await foreach (var (clientId, commitId, dateTime) in simpleCommits)
         {
             if (!builders.TryGetValue(clientId, out var builder))
                 builders[clientId] = builder = new ClientStateBuilder { ClientId = clientId };

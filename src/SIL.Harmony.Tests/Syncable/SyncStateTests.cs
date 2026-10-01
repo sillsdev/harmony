@@ -6,15 +6,15 @@ namespace SIL.Harmony.Tests.Syncable;
 public class SyncStateTests
 {
     [Fact]
-    public void BuildSyncState_TypicalUsage()
+    public async Task BuildSyncState_TypicalUsage()
     {
         var clientId1 = Guid.NewGuid();
         var clientId2 = Guid.NewGuid();
 
-        var clientStates = QueryHelpers.BuildSyncState(Enumerable.Range(1, 10_000)
+        var clientStates = await QueryHelpers.BuildSyncState(Enumerable.Range(1, 10_000)
             .Select(i => new SimpleCommit(i <= 5000 ? clientId1 : clientId2, Guid.NewGuid(),
                 DateTimeOffset.UnixEpoch.AddMilliseconds(i)))
-            .ToArray());
+            .ToAsyncEnumerable());
 
         clientStates.Should().HaveCount(2);
         ClientState clientState1 = clientStates.Should().ContainSingle(s => s.ClientId == clientId1).Subject;
@@ -29,20 +29,20 @@ public class SyncStateTests
     }
 
     [Fact]
-    public void BuildSyncState_HashIgnoresCommitOrder()
+    public async Task BuildSyncState_HashIgnoresCommitOrder()
     {
         var clientId = Guid.NewGuid();
         var commits = Enumerable.Range(1, 100)
             .Select(i => new SimpleCommit(clientId, Guid.NewGuid(), DateTimeOffset.UnixEpoch.AddMilliseconds(i)))
             .ToArray();
 
-        var forwards = QueryHelpers.BuildSyncState(commits).Should().ContainSingle().Subject;
-        var backwards = QueryHelpers.BuildSyncState(commits.Reverse().ToArray()).Should().ContainSingle().Subject;
+        var forwards = (await QueryHelpers.BuildSyncState(commits.ToAsyncEnumerable())).Should().ContainSingle().Subject;
+        var backwards = (await QueryHelpers.BuildSyncState(commits.Reverse().ToAsyncEnumerable())).Should().ContainSingle().Subject;
         backwards.Should().Be(forwards);
     }
 
     [Fact]
-    public void BuildSyncState_ADuplicateCommitCancelsOutOfTheHashButNotTheCount()
+    public async Task BuildSyncState_ADuplicateCommitCancelsOutOfTheHashButNotTheCount()
     {
         var clientId = Guid.NewGuid();
         var commit1 = NewCommit(clientId, DateTimeOffset.UnixEpoch.AddMilliseconds(1));
@@ -50,8 +50,8 @@ public class SyncStateTests
         //backdated, so the duplicate doesn't move the head either
         var duplicated = NewCommit(clientId, DateTimeOffset.UnixEpoch);
 
-        var without = BuildSyncState(commit1, commit2).Should().ContainSingle().Subject;
-        var withTwice = BuildSyncState(commit1, commit2, duplicated, duplicated).Should().ContainSingle().Subject;
+        var without = (await BuildSyncState(commit1, commit2)).Should().ContainSingle().Subject;
+        var withTwice = (await BuildSyncState(commit1, commit2, duplicated, duplicated)).Should().ContainSingle().Subject;
 
         //hash and head both match a state that is missing a commit; only the count tells them apart,
         //which is why PlanFor compares whole states before deciding two clients agree
@@ -69,8 +69,8 @@ public class SyncStateTests
     private static Commit NewCommit(Guid clientId, DateTimeOffset dateTime) =>
         new(Guid.NewGuid()) { ClientId = clientId, HybridDateTime = new HybridDateTime(dateTime, 0) };
 
-    private static ClientState[] BuildSyncState(params Commit[] commits) =>
-        QueryHelpers.BuildSyncState(commits.Select(c => new SimpleCommit(c.ClientId, c.Id, c.DateTime)));
+    private static Task<ClientState[]> BuildSyncState(params Commit[] commits) =>
+        QueryHelpers.BuildSyncState(commits.Select(c => new SimpleCommit(c.ClientId, c.Id, c.DateTime)).ToAsyncEnumerable());
 
     [Fact]
     public void CanDeserializeFromClientHeadsOnly()

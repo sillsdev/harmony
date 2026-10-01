@@ -49,6 +49,7 @@ public class SyncStateTests
         syncState.Should().NotBeNull();
         syncState.ClientHeads.Should().HaveCount(2);
         syncState.ClientStates.Should().HaveCount(2);
+        syncState.ClientStates.Should().AllSatisfy(s => s.OnlyHasTimestamp.Should().BeTrue());
         syncState.ClientStates.Should().ContainSingle(s => s.MaxTimestamp == 5);
         ClientState clientState = syncState.ClientStates.Should().ContainSingle(s => s.MaxTimestamp == 10).Subject;
         clientState.ClientId.Should().NotBe(Guid.Empty);

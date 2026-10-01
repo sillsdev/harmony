@@ -47,7 +47,12 @@ public record SyncState(Dictionary<Guid, long> ClientHeads, ClientState[]? Clien
         }
     }
 }
-public record ClientState(Guid ClientId, long MaxTimestamp, int CommitCount, ulong Hash);
+public record ClientState(Guid ClientId, long MaxTimestamp, int CommitCount, ulong Hash)
+{
+    //0 means this came from a ClientHeads-only SyncState (a peer on an older version);
+    //states we build always have at least one commit
+    public bool OnlyHasTimestamp => CommitCount == 0;
+}
 
 public class ClientStateBuilder
 {

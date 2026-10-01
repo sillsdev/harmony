@@ -100,11 +100,14 @@ public static class QueryHelpers
         //the remote has never seen this client, so push everything
         if (remote is null)
             return SyncPlan.SendAll;
-        if (local.MaxTimestamp > remote.MaxTimestamp)
-            return SyncPlan.SendAfterRemoteTimestamp;
+        //an older peer reports a head and nothing else, so timestamps are all we can compare
+        if (remote.OnlyHasTimestamp)
+            return local.MaxTimestamp > remote.MaxTimestamp ? SyncPlan.SendAfterRemoteTimestamp : SyncPlan.SendNothing;
         //local and remote agree on this client, nothing to sync
         if (local.Hash == remote.Hash)
             return SyncPlan.SendNothing;
+        if (local.MaxTimestamp > remote.MaxTimestamp)
+            return SyncPlan.SendAfterRemoteTimestamp;
         //same head but different commits: whoever has at least as many pushes everything.
         //if we have fewer we assume the remote has ours, which may be a false positive we catch next sync.
         return local.CommitCount >= remote.CommitCount ? SyncPlan.SendAll : SyncPlan.SendNothing;

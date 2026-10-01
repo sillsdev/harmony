@@ -90,6 +90,24 @@ public class SyncableTests
     }
 
 
+    //a peer from before ClientStates sends timestamps only; without a fallback every sync with one resends everything
+    [Theory]
+    [MemberData(nameof(SyncableBackends))]
+    public async Task GetChanges_SendsNothingToATimestampOnlyStateAtTheSameHead(ISyncableTestBackend backend)
+    {
+        await using var context = await backend.CreateAsync();
+        await context.Syncable.AddRangeFromSync([
+            SetWordCommit("x", context.ClientId, DateTimeOffset.Now.Subtract(TimeSpan.FromMinutes(1))),
+            SetWordCommit("y", context.ClientId, DateTimeOffset.Now)
+        ]);
+
+        var fullState = await context.Syncable.GetSyncState();
+        fullState.ClientStates.Should().AllSatisfy(s => s.OnlyHasTimestamp.Should().BeFalse());
+
+        var changes = await context.Syncable.GetChanges(new SyncState(fullState.ClientHeads));
+        changes.MissingFromClient.Should().BeEmpty();
+    }
+
     private static Commit SetWordCommit(string text, Guid clientId, DateTimeOffset? dateTime = null)
     {
         return CreateCommit(clientId, dateTime ?? DateTimeOffset.Now, SetWord(text));

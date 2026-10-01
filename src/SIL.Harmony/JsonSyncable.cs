@@ -89,7 +89,7 @@ public class JsonSyncable : ISyncable
                 heads.Add(state);
         });
         var localState = new SyncState(heads.ToArray());
-        var missing = allCommits.GetMissingCommits<Commit, IChange>(localState, otherHeads).ToArray();
+        var missing = allCommits.GetCommitsMissingFromRemote<Commit, IChange>(localState, otherHeads).ToArray();
         return new ChangesResult<Commit>(missing, localState);
     }
 

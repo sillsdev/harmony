@@ -35,11 +35,11 @@ public static class QueryHelpers
     {
         var localState = await commits.AsNoTracking().GetSyncState();
         return new ChangesResult<TCommit>(
-            await GetMissingCommits<TCommit, TChange>(commits, localState, remoteState).ToArrayAsync(),
+            await GetCommitsMissingFromRemote<TCommit, TChange>(commits, localState, remoteState).ToArrayAsync(),
             localState);
     }
 
-    public static async IAsyncEnumerable<TCommit> GetMissingCommits<TCommit, TChange>(
+    public static async IAsyncEnumerable<TCommit> GetCommitsMissingFromRemote<TCommit, TChange>(
         this IQueryable<TCommit> commits,
         SyncState localState,
         SyncState remoteState, bool includeChangeEntities = true) where TCommit : CommitBase<TChange>
@@ -116,7 +116,7 @@ public static class QueryHelpers
         return set;
     }
 
-    public static IEnumerable<TCommit> GetMissingCommits<TCommit, TChange>(
+    public static IEnumerable<TCommit> GetCommitsMissingFromRemote<TCommit, TChange>(
         this IEnumerable<TCommit> commits,
         SyncState localState,
         SyncState remoteState) where TCommit : CommitBase<TChange>

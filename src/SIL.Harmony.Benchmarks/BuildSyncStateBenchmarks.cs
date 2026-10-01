@@ -5,6 +5,7 @@ namespace SIL.Harmony.Benchmarks;
 
 [SuppressMessage("Usage", "VSTHRD002:Avoid problematic synchronous waits")]
 [SimpleJob]
+[MemoryDiagnoser]
 public class BuildSyncStateBenchmarks
 {
     private SimpleCommit[] SimpleCommits = [];
@@ -12,6 +13,7 @@ public class BuildSyncStateBenchmarks
     public int CommitCount { get; set; }
     [Params(2, 10)]
     public int ClientCount { get; set; }
+
     [GlobalSetup]
     public void GlobalSetup()
     {

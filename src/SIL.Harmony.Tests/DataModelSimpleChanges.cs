@@ -140,8 +140,8 @@ public class DataModelSimpleChanges : DataModelTestBase
         var second = await WriteNextChange(SetWord(_entity1Id, "second"));
         //add vis sync has some additional logic that depends on proper commit ordering
         await AddCommitsViaSync([
-            await WriteChangeBefore(second, new SetWordNoteChange(_entity1Id, "a word note"), false),
-            await WriteNextChange(SetWord(_entity1Id, "third"), false)
+            CommitBefore(second, new SetWordNoteChange(_entity1Id, "a word note")),
+            NextCommit(SetWord(_entity1Id, "third"))
         ]);
         var word = await DataModel.GetLatest<Word>(_entity1Id);
         word!.Text.Should().Be("third");

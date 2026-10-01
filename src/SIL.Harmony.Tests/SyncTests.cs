@@ -142,7 +142,7 @@ public class SyncTests : IAsyncLifetime
         {
             var changes = Enumerable.Range(0, changesPerCommit)
                 .Select(j => _client1.SetWord(Guid.NewGuid(), $"word {i}-{j}"));
-            commits.Add(await _client1.WriteNextChange(changes, add: false));
+            commits.Add(_client1.NextCommit(changes));
         }
 
         await ((ISyncable)_client1.DataModel).AddRangeFromSync(commits);

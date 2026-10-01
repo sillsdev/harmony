@@ -1,6 +1,8 @@
 using System.Text.Json;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Db;
+using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests.Mocks;
@@ -8,11 +10,11 @@ using SIL.Harmony.Tests.Mocks;
 namespace SIL.Harmony.Tests;
 
 /// <summary>drives <see cref="SnapshotWorker"/> directly, over an in-memory baseline, so no snapshot is ever persisted</summary>
-public class SnapshotWorkerTests : DataModelTestBase
+public class SnapshotWorkerTests : CommitTestBase
 {
-    private async Task<FakeSnapshotView> Baseline(params IObjectBase[] entities)
+    private FakeSnapshotView Baseline(params IObjectBase[] entities)
     {
-        var baselineCommit = await WriteNoOpCommit(add: false);
+        var baselineCommit = NextCommit();
         return new FakeSnapshotView([.. entities.Select(e => new ObjectSnapshot(e, baselineCommit, isRoot: true))]);
     }
 
@@ -22,9 +24,9 @@ public class SnapshotWorkerTests : DataModelTestBase
     public async Task AFirstChangeMakesARootSnapshot()
     {
         var wordId = Guid.NewGuid();
-        var commit = await WriteNextChange(new NewWordChange(wordId, "hello"), add: false);
+        var commit = NextCommit(new NewWordChange(wordId, "hello"));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], HarmonyConfig);
+        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], SampleConfig);
 
         var snapshot = snapshots.Should().ContainSingle().Subject;
         snapshot.EntityId.Should().Be(wordId);
@@ -37,9 +39,9 @@ public class SnapshotWorkerTests : DataModelTestBase
     public async Task TwoChangesToOneEntityInOneCommitKeepOnlyTheLast()
     {
         var wordId = Guid.NewGuid();
-        var commit = await WriteNextChange([new NewWordChange(wordId, "hello"), SetWord(wordId, "goodbye")], add: false);
+        var commit = NextCommit(new NewWordChange(wordId, "hello"), SetWord(wordId, "goodbye"));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], HarmonyConfig);
+        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], SampleConfig);
 
         var snapshot = snapshots.Should().ContainSingle().Subject;
         snapshot.IsRoot.Should().BeTrue("the root was replaced within its own commit, so the replacement is the root");
@@ -50,10 +52,10 @@ public class SnapshotWorkerTests : DataModelTestBase
     public async Task AnEditOnTopOfTheBaselineIsNotRoot()
     {
         var word = new Word { Id = Guid.NewGuid(), Text = "hello" };
-        var baseline = await Baseline(word);
-        var edit = await WriteNextChange(SetWord(word.Id, "goodbye"), add: false);
+        var baseline = Baseline(word);
+        var edit = NextCommit(SetWord(word.Id, "goodbye"));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [edit], HarmonyConfig);
+        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [edit], SampleConfig);
 
         var snapshot = snapshots.Should().ContainSingle().Subject;
         snapshot.IsRoot.Should().BeFalse();
@@ -65,15 +67,16 @@ public class SnapshotWorkerTests : DataModelTestBase
     [Fact]
     public async Task ASupersededSnapshotIsKeptOnlyWhenARequiredCheckpointFallsInItsCoverage()
     {
-        HarmonyConfig.MaxChangesBetweenSnapshotCheckpoints = 2;
+        var config = new HarmonyConfig { MaxChangesBetweenSnapshotCheckpoints = 2 };
+        CrdtSampleKernel.ConfigureSample(config);
         var wordId = Guid.NewGuid();
-        var create = await WriteNextChange(new NewWordChange(wordId, "0"), add: false);
-        var edit1 = await WriteNextChange(SetWord(wordId, "1"), add: false);
-        var edit2 = await WriteNextChange(SetWord(wordId, "2"), add: false);
-        var lastEdit = await WriteNextChange(SetWord(wordId, "3"), add: false);
+        var create = NextCommit(new NewWordChange(wordId, "0"));
+        var edit1 = NextCommit(SetWord(wordId, "1"));
+        var edit2 = NextCommit(SetWord(wordId, "2"));
+        var lastEdit = NextCommit(SetWord(wordId, "3"));
 
         var (snapshots, flags) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(
-            EmptySnapshotView.Instance, [create, edit1, edit2, lastEdit], HarmonyConfig);
+            EmptySnapshotView.Instance, [create, edit1, edit2, lastEdit], config);
 
         //the running total reaches 2 at edit1 and 4 at lastEdit, so those are required checkpoints and the snapshots covering them stay
         snapshots.Select(s => s.CommitId).Should().BeEquivalentTo([create.Id, edit1.Id, lastEdit.Id],
@@ -90,10 +93,10 @@ public class SnapshotWorkerTests : DataModelTestBase
     {
         var antonym = new Word { Id = Guid.NewGuid(), Text = "hot" };
         var word = new Word { Id = Guid.NewGuid(), Text = "cold", AntonymId = antonym.Id };
-        var baseline = await Baseline(antonym, word);
-        var delete = await WriteNextChange(DeleteWord(antonym.Id), add: false);
+        var baseline = Baseline(antonym, word);
+        var delete = NextCommit(DeleteWord(antonym.Id));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [delete], HarmonyConfig);
+        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [delete], SampleConfig);
 
         //one change, two snapshots: the delete cascades to the word that referenced the antonym
         snapshots.Should().HaveCount(2);
@@ -108,10 +111,10 @@ public class SnapshotWorkerTests : DataModelTestBase
     public async Task ADeletedEntityIsRevivedByACreateChange()
     {
         var word = new Word { Id = Guid.NewGuid(), Text = "hello", DeletedAt = DateTimeOffset.UtcNow };
-        var baseline = await Baseline(word);
-        var revive = await WriteNextChange(new NewWordChange(word.Id, "hello again"), add: false);
+        var baseline = Baseline(word);
+        var revive = NextCommit(new NewWordChange(word.Id, "hello again"));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [revive], HarmonyConfig);
+        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [revive], SampleConfig);
 
         var snapshot = snapshots.Should().ContainSingle().Subject;
         snapshot.EntityIsDeleted.Should().BeFalse();
@@ -123,9 +126,9 @@ public class SnapshotWorkerTests : DataModelTestBase
     public async Task AnOpaqueChangeForAnUnknownEntityIsSkipped()
     {
         var opaque = new OpaqueChange { TypeName = "not-a-known-change", RawJson = JsonDocument.Parse("{}").RootElement, EntityId = Guid.NewGuid() };
-        var commit = await WriteNextChange(opaque, add: false);
+        var commit = NextCommit(opaque);
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], HarmonyConfig);
+        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], SampleConfig);
 
         snapshots.Should().BeEmpty("an entity this client can't create stays absent until it understands the change");
     }
@@ -135,10 +138,10 @@ public class SnapshotWorkerTests : DataModelTestBase
     {
         var edited = new Word { Id = Guid.NewGuid(), Text = "old" };
         var untouched = new Word { Id = Guid.NewGuid(), Text = "same" };
-        var baseline = await Baseline(edited, untouched);
-        var edit = await WriteNextChange(SetWord(edited.Id, "new"), add: false);
+        var baseline = Baseline(edited, untouched);
+        var edit = NextCommit(SetWord(edited.Id, "new"));
 
-        var view = await SnapshotWorker.ReplayCommits(baseline, [edit], HarmonyConfig);
+        var view = await SnapshotWorker.ReplayCommits(baseline, [edit], SampleConfig);
 
         var matches = await view.Where(s => s.EntityId == edited.Id).ToArrayAsync(TestContext.Current.CancellationToken);
         var match = matches.Should().ContainSingle("the baseline copy of the edited word is shadowed and the untouched word is excluded by the predicate").Subject;
@@ -150,10 +153,10 @@ public class SnapshotWorkerTests : DataModelTestBase
     {
         var edited = new Word { Id = Guid.NewGuid(), Text = "old" };
         var untouched = new Word { Id = Guid.NewGuid(), Text = "same" };
-        var baseline = await Baseline(edited, untouched);
-        var edit = await WriteNextChange(SetWord(edited.Id, "new"), add: false);
+        var baseline = Baseline(edited, untouched);
+        var edit = NextCommit(SetWord(edited.Id, "new"));
 
-        var view = await SnapshotWorker.ReplayCommits(baseline, [edit], HarmonyConfig);
+        var view = await SnapshotWorker.ReplayCommits(baseline, [edit], SampleConfig);
 
         var all = await view.All().ToArrayAsync(TestContext.Current.CancellationToken);
         all.Should().HaveCount(2, "the edited word appears once, not once per layer");

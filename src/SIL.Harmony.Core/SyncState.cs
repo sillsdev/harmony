@@ -47,19 +47,33 @@ public record SyncState(Dictionary<Guid, long> ClientHeads, ClientState[]? Clien
         }
     }
 }
-public record ClientState(Guid ClientId, long MaxTimestamp, int CommitCount, ulong Hash);
+public record ClientState(Guid ClientId, long MaxTimestamp, int CommitCount, ulong Hash)
+{
+    //0 means this came from a ClientHeads-only SyncState (a peer on an older version);
+    //states we build always have at least one commit
+    public bool OnlyHasTimestamp => CommitCount == 0;
+}
 
 public class ClientStateBuilder
 {
-    public Guid ClientId;
-    public long Timestamp;
-    public int Count;
-    public XxHash3 Hash = new();
+    public Guid ClientId { get; init; }
+    private readonly byte[] _commitIdBytes = new byte[16];
+    private long _timestamp;
+    private int _count;
+    private ulong _hash;
 
-    public ClientState Build()
+    public void Add(Guid commitId, DateTimeOffset dateTime)
     {
-        return new ClientState(ClientId, Timestamp, Count, Hash.GetCurrentHashAsUInt64());
+        _count++;
+        _timestamp = Math.Max(_timestamp, dateTime.ToUnixTimeMilliseconds());
+        if (!commitId.TryWriteBytes(_commitIdBytes))
+            throw new InvalidOperationException("Commit ID is too large to fit in a 16-byte buffer.");
+        //XOR keeps the hash independent of the order commits arrive in, so backends that sort
+        //differently still agree. Only safe because commit IDs are unique within a client.
+        _hash ^= XxHash3.HashToUInt64(_commitIdBytes);
     }
+
+    public ClientState Build() => new(ClientId, _timestamp, _count, _hash);
 }
 
 public interface IChangesResult

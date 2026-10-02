@@ -2,6 +2,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
+using BenchmarkDotNet.Jobs;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Tests;
 
@@ -34,7 +35,7 @@ public enum SyncWorkload
     OutOfOrderInsert,
 }
 
-// [SimpleJob(RunStrategy.Monitoring)]
+[SimpleJob(RunStrategy.Monitoring, launchCount: 2, warmupCount: 10, iterationCount: 15)]
 [MemoryDiagnoser]
 [SuppressMessage("Usage", "VSTHRD002:Avoid problematic synchronous waits")]
 public class DataModelSyncBenchmarks

@@ -24,10 +24,13 @@ public class GetSyncStateBenchmarks
         var clientIds = Enumerable.Range(0, ClientCount).Select(_ => Guid.NewGuid()).ToArray();
         var commits = Enumerable.Range(0, CommitCount)
             .Select(i => BenchmarkWorkloadBuilders.NewCommit(clientIds[i % clientIds.Length], _model.NextDate()));
-        // only the commit rows matter here, so skip the snapshot pipeline and insert in chunks to keep the change tracker small
-        var repository = _model.CreateRepository();
+        // only the commit rows matter here, so skip the snapshot pipeline; SaveChanges keeps rows tracked, so clear after each chunk
+        using var repository = _model.CreateRepository();
         foreach (var chunk in commits.Chunk(10_000))
+        {
             repository.AddCommits(chunk).Wait();
+            repository.ClearChangeTracker();
+        }
     }
 
     [Benchmark]

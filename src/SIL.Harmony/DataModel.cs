@@ -281,7 +281,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         {
             added = currentConfig.ChangeTypes.Except(storedConfig.ChangeTypes, StringComparer.Ordinal).ToArray();
             removed = storedConfig.ChangeTypes.Except(currentConfig.ChangeTypes, StringComparer.Ordinal).ToArray();
-            affected = [..added, ..removed];
+            affected = [.. added, .. removed];
         }
 
         var replayFrom = await repo.FindOldestCommitWithChangeTypes(affected);

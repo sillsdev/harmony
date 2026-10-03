@@ -51,6 +51,19 @@
       Relational:TableName: ChangeEntities
       Relational:ViewName: 
       Relational:ViewSchema: 
+  EntityType: LocalStateEntry
+    Properties: 
+      Key (string) Required PK AfterSave:Throw
+      Value (string) Required
+    Keys: 
+      Key PK
+    Annotations: 
+      Relational:FunctionName: 
+      Relational:Schema: 
+      Relational:SqlQuery: 
+      Relational:TableName: LocalState
+      Relational:ViewName: 
+      Relational:ViewSchema: 
   EntityType: ObjectSnapshot
     Properties: 
       Id (Guid) Required PK AfterSave:Throw ValueGenerated.OnAdd

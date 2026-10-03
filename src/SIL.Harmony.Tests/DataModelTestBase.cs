@@ -56,12 +56,18 @@ public class DataModelTestBase : IAsyncLifetime
 
     public DataModelTestBase ForkDatabase(bool alwaysValidate = true)
     {
+        //the fork has to be configured like its source, otherwise it replays under different settings
+        return ForkDatabase(_configure, alwaysValidate);
+    }
+
+    /// <summary>a copy of this database opened with a different config, like a newer or older version of the app</summary>
+    public DataModelTestBase ForkDatabase(Action<IServiceCollection>? configure, bool alwaysValidate = true)
+    {
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
         if (DbContext.Database.GetDbConnection() is not SqliteConnection existingConnection) throw new InvalidOperationException("Database is not SQLite");
         existingConnection.BackupDatabase(connection);
-        //the fork has to be configured like its source, otherwise it replays under different settings
-        var newTestBase = new DataModelTestBase(connection, alwaysValidate, _configure, _performanceTest);
+        var newTestBase = new DataModelTestBase(connection, alwaysValidate, configure, _performanceTest);
         newTestBase.SetCurrentDate(currentDate);
         return newTestBase;
     }

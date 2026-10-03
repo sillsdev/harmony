@@ -238,11 +238,101 @@ public class DataModel : ISyncable, IAsyncDisposable
         using var locked = await repo.Lock();
         repo.ClearChangeTracker();
         await using var transaction = await repo.BeginTransactionAsync();
+        await RegenerateSnapshots(repo);
+        await transaction.CommitAsync();
+    }
+
+    private async Task RegenerateSnapshots(CrdtRepository repo)
+    {
         var wholeHistory = await repo.WholeHistory();
         //Replay does nothing without commits, which would leave snapshots with no history behind them in place
         if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
         else await UpdateSnapshots(repo, wholeHistory);
+    }
+
+    /// <summary>
+    /// Detects change types that were added to or removed from the config since the last call, for example after an app update,
+    /// and rebuilds the snapshots from the oldest commit that uses one of them.
+    /// Changes of an unknown type are stored as <see cref="OpaqueChange"/> and skipped, so once the type is known
+    /// they must be replayed. A removed type is the reverse: its changes are applied in the snapshots, but are now opaque,
+    /// so all snapshots are regenerated.
+    /// Call this when opening a database, before using it. Querying changes by type is SQLite only.
+    /// </summary>
+    /// <param name="missingConfig">what to do when no config was stored yet, see <see cref="MissingConfigBehavior"/></param>
+    public async Task<ConfigReconcileResult> ReconcileConfigChanges(
+        MissingConfigBehavior missingConfig = MissingConfigBehavior.ReplayAll)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
+        repo.ClearChangeTracker();
+        await using var transaction = await repo.BeginTransactionAsync();
+        var currentConfig = StoredHarmonyConfig.From(_crdtConfig.Value);
+        var storedConfig = await repo.GetLocalState<StoredHarmonyConfig>(StoredHarmonyConfig.LocalStateKey);
+        if (storedConfig is not null && storedConfig.SameAs(currentConfig)) return ConfigReconcileResult.Unchanged;
+
+        string[] added = [];
+        string[] removed = [];
+        string[] affected;
+        if (storedConfig is null)
+        {
+            affected = missingConfig == MissingConfigBehavior.ReplayAll ? currentConfig.ChangeTypes : [];
+        }
+        else
+        {
+            added = currentConfig.ChangeTypes.Except(storedConfig.ChangeTypes, StringComparer.Ordinal).ToArray();
+            removed = storedConfig.ChangeTypes.Except(currentConfig.ChangeTypes, StringComparer.Ordinal).ToArray();
+            affected = [.. added, .. removed];
+        }
+
+        var replayFrom = await repo.FindOldestCommitWithChangeTypes(affected);
+        if (replayFrom is not null)
+        {
+            _logger.LogInformation("Change types changed (added: {Added}, removed: {Removed}), replaying from commit {CommitId}",
+                added, removed, replayFrom.Id);
+            if (removed.Length > 0)
+            {
+                //rare, so keep it simple: a replay from a checkpoint only projects the snapshots it makes, but a removed
+                //type can leave entities with fewer snapshots than before, so their projected rows would be stale
+                await RegenerateSnapshots(repo);
+                replayFrom = await repo.CurrentCommits().FirstAsync();
+            }
+            else
+            {
+                await UpdateSnapshots(repo, await repo.ReplayWindowFrom(replayFrom));
+            }
+        }
+
+        await repo.SetLocalState(StoredHarmonyConfig.LocalStateKey, currentConfig);
         await transaction.CommitAsync();
+        return new ConfigReconcileResult(true, added, removed, replayFrom);
+    }
+
+    /// <summary>
+    /// Gets a value from the local state, which is stored in this database and never synced.
+    /// Keys starting with <c>harmony:</c> are used by Harmony itself, apps should use their own prefix.
+    /// </summary>
+    /// <returns>the value, or default when the key doesn't exist</returns>
+    public async Task<T?> GetLocalState<T>(string key)
+    {
+        return await _crdtRepositoryFactory.Execute(repo => repo.GetLocalState<T>(key));
+    }
+
+    /// <summary>
+    /// Adds or replaces a value in the local state, the value is stored as json.
+    /// </summary>
+    /// <inheritdoc cref="GetLocalState{T}"/>
+    public async Task SetLocalState<T>(string key, T value)
+    {
+        await _crdtRepositoryFactory.Execute(repo => repo.SetLocalState(key, value));
+    }
+
+    /// <summary>
+    /// Removes a value from the local state, does nothing when the key doesn't exist.
+    /// </summary>
+    /// <inheritdoc cref="GetLocalState{T}"/>
+    public async Task RemoveLocalState(string key)
+    {
+        await _crdtRepositoryFactory.Execute(repo => repo.RemoveLocalState(key));
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)

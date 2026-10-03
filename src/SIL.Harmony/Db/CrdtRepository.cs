@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -384,6 +385,41 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return new ReplayWindow(null, await GetCommitsAfter(null));
     }
 
+    /// <summary>The window that rebuilds every snapshot from <paramref name="commit"/> onwards.</summary>
+    public async Task<ReplayWindow> ReplayWindowFrom(Commit commit)
+    {
+        var resumeFrom = await FindCheckpointBefore(commit);
+        return new ReplayWindow(resumeFrom, await GetCommitsAfter(resumeFrom));
+    }
+
+    /// <summary>
+    /// The oldest commit with a change whose <c>$type</c> is one of <paramref name="changeTypes"/>.
+    /// Reads every change, so it's slow, only use it for rare operations. SQLite only.
+    /// </summary>
+    public async Task<Commit?> FindOldestCommitWithChangeTypes(IReadOnlyCollection<string> changeTypes)
+    {
+        if (changeTypes.Count == 0) return null;
+        if (!_dbContext.Database.IsSqlite())
+            throw new NotSupportedException(
+                $"Querying changes by type is only supported on SQLite, not {_dbContext.Database.ProviderName}");
+        //the key must be quoted in the path, because $ has a special meaning in json paths
+        var typeDiscriminatorPath = $"$.\"{CrdtConstants.ChangeDiscriminatorProperty}\"";
+        //one json array parameter, so the parameter count doesn't depend on how many types there are
+        var changeTypesJson = JsonSerializer.Serialize(changeTypes);
+        var commitIds = await _dbContext.Database.SqlQuery<Guid>($"""
+            SELECT c.Id AS Value FROM Commits c
+            WHERE EXISTS (
+                SELECT 1 FROM ChangeEntities ce
+                WHERE ce.CommitId = c.Id
+                  AND json_extract(ce.Change, {typeDiscriminatorPath}) IN (SELECT value FROM json_each({changeTypesJson}))
+            )
+            ORDER BY c.DateTime, c.Counter, c.Id
+            LIMIT 1
+            """).ToListAsync();
+        if (commitIds is not [var commitId]) return null;
+        return await Commits.SingleAsync(c => c.Id == commitId);
+    }
+
     /// <inheritdoc cref="AddCommits"/>
     public Task<ReplayWindow> AddCommit(Commit commit) => AddCommits([commit]);
 
@@ -427,6 +463,31 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             .FirstOrDefault();
     }
 
+
+    private DbSet<LocalStateEntry> LocalState => _dbContext.Set<LocalStateEntry>();
+
+    public async Task<T?> GetLocalState<T>(string key)
+    {
+        var value = await LocalState.AsNoTracking()
+            .Where(e => e.Key == key)
+            .Select(e => e.Value)
+            .SingleOrDefaultAsync();
+        return value is null ? default : JsonSerializer.Deserialize<T>(value);
+    }
+
+    public async Task SetLocalState<T>(string key, T value)
+    {
+        var json = JsonSerializer.Serialize(value);
+        var entry = await LocalState.SingleOrDefaultAsync(e => e.Key == key);
+        if (entry is null) LocalState.Add(new LocalStateEntry { Key = key, Value = json });
+        else entry.Value = json;
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task RemoveLocalState(string key)
+    {
+        await LocalState.Where(e => e.Key == key).ExecuteDeleteAsync();
+    }
 
     public async Task AddLocalResource(LocalResource localResource)
     {

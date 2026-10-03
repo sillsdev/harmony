@@ -32,4 +32,12 @@ public class ChangeTypeListBuilder
         _types.Add(new RegisteredChangeType(typeof(TDerived), TDerived.TypeName));
         return this;
     }
+
+    /// <summary>for tests that simulate a client which doesn't know about a change type yet</summary>
+    internal ChangeTypeListBuilder Remove<TDerived>() where TDerived : IChange, IPolyType
+    {
+        CheckFrozen();
+        _types.RemoveAll(t => t.Type == typeof(TDerived));
+        return this;
+    }
 }

@@ -186,10 +186,11 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// Rebuilds every snapshot the window covers by replaying its commits onto the state it resumes from.
     /// A window resuming from nothing rebuilds all of history.
     /// </summary>
-    private async Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
+    /// <returns>the snapshots the replay made</returns>
+    private async Task<IReadOnlyList<ObjectSnapshot>> UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
     {
         var (checkpoint, commitsToApply) = window;
-        if (commitsToApply.Count == 0) return;
+        if (commitsToApply.Count == 0) return [];
 
         ISnapshotView baseline;
         // A database with no checkpoints replays all of history,
@@ -210,6 +211,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         await PreloadTouched(baseline, commitsToApply);
         var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, _crdtConfig.Value);
         await repo.AddSnapshots(newSnapshots, checkpoints);
+        return newSnapshots;
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -243,6 +245,84 @@ public class DataModel : ISyncable, IAsyncDisposable
         if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
         else await UpdateSnapshots(repo, wholeHistory);
         await transaction.CommitAsync();
+    }
+
+    /// <summary>
+    /// Detects change types that were added to or removed from the config since the last call, for example after an app update,
+    /// and rebuilds the snapshots from the oldest commit that uses one of them.
+    /// Changes of an unknown type are stored as <see cref="OpaqueChange"/> and skipped, so once the type is known
+    /// they must be replayed. A removed type is the reverse: its changes are applied in the snapshots, but are now opaque.
+    /// Call this when opening a database, before using it. Querying changes by type is SQLite only.
+    /// </summary>
+    /// <param name="missingConfig">what to do when no config was stored yet, see <see cref="MissingConfigBehavior"/></param>
+    public async Task<ConfigReconcileResult> ReconcileConfigChanges(
+        MissingConfigBehavior missingConfig = MissingConfigBehavior.ReplayAll)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
+        repo.ClearChangeTracker();
+        await using var transaction = await repo.BeginTransactionAsync();
+        var currentConfig = StoredHarmonyConfig.From(_crdtConfig.Value);
+        var storedConfig = await repo.GetLocalState<StoredHarmonyConfig>(StoredHarmonyConfig.LocalStateKey);
+        if (storedConfig is not null && storedConfig.SameAs(currentConfig)) return ConfigReconcileResult.Unchanged;
+
+        string[] added = [];
+        string[] removed = [];
+        string[] affected;
+        if (storedConfig is null)
+        {
+            affected = missingConfig == MissingConfigBehavior.ReplayAll ? currentConfig.ChangeTypes : [];
+        }
+        else
+        {
+            added = currentConfig.ChangeTypes.Except(storedConfig.ChangeTypes, StringComparer.Ordinal).ToArray();
+            removed = storedConfig.ChangeTypes.Except(currentConfig.ChangeTypes, StringComparer.Ordinal).ToArray();
+            affected = [..added, ..removed];
+        }
+
+        var replayFrom = await repo.FindOldestCommitWithChangeTypes(affected);
+        if (replayFrom is not null)
+        {
+            _logger.LogInformation("Change types changed (added: {Added}, removed: {Removed}), replaying from commit {CommitId}",
+                added, removed, replayFrom.Id);
+            var window = await repo.ReplayWindowFrom(replayFrom);
+            var replacedSnapshots = await repo.SnapshotsAfter(window.ResumeFrom);
+            var newSnapshots = await UpdateSnapshots(repo, window);
+            //a removed change type can leave entities with fewer snapshots than before, which the replay doesn't project
+            await repo.ReprojectEntitiesWithoutNewSnapshots(replacedSnapshots, newSnapshots);
+        }
+
+        await repo.SetLocalState(StoredHarmonyConfig.LocalStateKey, currentConfig);
+        await transaction.CommitAsync();
+        return new ConfigReconcileResult(true, added, removed, replayFrom);
+    }
+
+    /// <summary>
+    /// Gets a value from the local state, which is stored in this database and never synced.
+    /// Keys starting with <c>harmony:</c> are used by Harmony itself, apps should use their own prefix.
+    /// </summary>
+    /// <returns>the value, or default when the key doesn't exist</returns>
+    public async Task<T?> GetLocalState<T>(string key)
+    {
+        return await _crdtRepositoryFactory.Execute(repo => repo.GetLocalState<T>(key));
+    }
+
+    /// <summary>
+    /// Adds or replaces a value in the local state, the value is stored as json.
+    /// </summary>
+    /// <inheritdoc cref="GetLocalState{T}"/>
+    public async Task SetLocalState<T>(string key, T value)
+    {
+        await _crdtRepositoryFactory.Execute(repo => repo.SetLocalState(key, value));
+    }
+
+    /// <summary>
+    /// Removes a value from the local state, does nothing when the key doesn't exist.
+    /// </summary>
+    /// <inheritdoc cref="GetLocalState{T}"/>
+    public async Task RemoveLocalState(string key)
+    {
+        await _crdtRepositoryFactory.Execute(repo => repo.RemoveLocalState(key));
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)

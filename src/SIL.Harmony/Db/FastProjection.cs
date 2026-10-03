@@ -90,10 +90,28 @@ internal class FastProjection
             $"Set {nameof(HarmonyConfig)}.{nameof(HarmonyConfig.EnableProjectedTables)} to false to disable projected tables.");
     }
 
+    /// <summary>
+    /// Writes the projected rows of snapshots that are already persisted, without inserting the snapshots.
+    /// </summary>
+    /// <param name="current">the current snapshot of each entity to project</param>
+    /// <param name="removed">a snapshot of each entity that no longer has any snapshot, so its projected row is deleted</param>
+    public async Task ReprojectAsync(
+        ICrdtDbContext dbContext,
+        IReadOnlyCollection<ObjectSnapshot> current,
+        IReadOnlyCollection<ObjectSnapshot> removed)
+    {
+        if (!_crdtConfig.EnableProjectedTables || current.Count + removed.Count == 0) return;
+        var removedIds = removed.Select(s => s.Id).ToHashSet();
+        var latest = current.Concat(removed).ToDictionary(s => s.EntityId);
+        await ProjectAsync(dbContext, latest, s => s.EntityIsDeleted || removedIds.Contains(s.Id));
+    }
+
     private async Task ProjectAsync(
         ICrdtDbContext dbContext,
-        Dictionary<Guid, ObjectSnapshot> latest)
+        Dictionary<Guid, ObjectSnapshot> latest,
+        Func<ObjectSnapshot, bool>? shouldDelete = null)
     {
+        shouldDelete ??= static s => s.EntityIsDeleted;
         EnsureSupportedProvider(dbContext.Database.ProviderName);
         var connection = dbContext.Database.GetDbConnection();
         var transaction = dbContext.Database.CurrentTransaction!.GetDbTransaction();
@@ -109,7 +127,7 @@ internal class FastProjection
         // same batch; children before parents (reverse dependency order) to satisfy FK constraints.
         for (var i = orderedTypes.Count - 1; i >= 0; i--)
         {
-            var deleted = byType[orderedTypes[i]].Where(s => s.EntityIsDeleted).ToList();
+            var deleted = byType[orderedTypes[i]].Where(shouldDelete).ToList();
             if (deleted.Count == 0) continue;
             var info = GetTableInfo(dbContext, orderedTypes[i], sqlHelper);
             await DeletePerQueryAsync(connection, transaction, info, deleted);
@@ -118,7 +136,7 @@ internal class FastProjection
         // upserts: parents first
         foreach (var type in orderedTypes)
         {
-            var live = byType[type].Where(s => !s.EntityIsDeleted).ToList();
+            var live = byType[type].Where(s => !shouldDelete(s)).ToList();
             if (live.Count == 0) continue;
             var info = GetTableInfo(dbContext, type, sqlHelper);
             // within a single type's batch, order rows so a row referenced by another row's

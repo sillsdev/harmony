@@ -357,83 +357,26 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             HarmonyConfig.DefaultOnProjectedEntitiesChanged);
     }
 
-    private ValueTask NotifyProjectedChanges(IReadOnlyCollection<ObjectSnapshot> latest)
+    private async ValueTask NotifyProjectedChanges(IReadOnlyCollection<ObjectSnapshot> latest)
     {
-        return NotifyProjectedChanges(latest, removed: []);
-    }
-
-    private async ValueTask NotifyProjectedChanges(IReadOnlyCollection<ObjectSnapshot> latest, IReadOnlyCollection<ObjectSnapshot> removed)
-    {
-        var changes = new List<ProjectedEntityChange>(latest.Count + removed.Count);
+        var changes = new List<ProjectedEntityChange>(latest.Count);
         foreach (var snapshot in latest)
         {
-            changes.Add(ToProjectedChange(snapshot,
-                snapshot.EntityIsDeleted ? ProjectedChangeKind.Delete : ProjectedChangeKind.Upsert));
-        }
-        foreach (var snapshot in removed)
-        {
-            changes.Add(ToProjectedChange(snapshot, ProjectedChangeKind.Delete));
+            var entity = snapshot.Entity.DbObject;
+            changes.Add(new ProjectedEntityChange
+            {
+                Entity = entity,
+                EntityId = snapshot.EntityId,
+                ClrType = entity.GetType(),
+                Kind = snapshot.EntityIsDeleted ? ProjectedChangeKind.Delete : ProjectedChangeKind.Upsert,
+                Snapshot = snapshot
+            });
         }
 
         var batch = new ProjectedEntityBatch { DbContext = _dbContext, Changes = changes };
         foreach (var interceptor in _interceptors)
             await interceptor.OnProjectedEntitiesChanged(batch);
         await _crdtConfig.Value.OnProjectedEntitiesChanged(batch);
-    }
-
-    private static ProjectedEntityChange ToProjectedChange(ObjectSnapshot snapshot, ProjectedChangeKind kind)
-    {
-        var entity = snapshot.Entity.DbObject;
-        return new ProjectedEntityChange
-        {
-            Entity = entity,
-            EntityId = snapshot.EntityId,
-            ClrType = entity.GetType(),
-            Kind = kind,
-            Snapshot = snapshot
-        };
-    }
-
-    /// <summary>
-    /// The snapshots a replay resuming from <paramref name="checkpoint"/> deletes, so the caller can check which entities
-    /// the replay didn't make new snapshots for, see <see cref="ReprojectEntitiesWithoutNewSnapshots"/>.
-    /// </summary>
-    public async Task<ObjectSnapshot[]> SnapshotsAfter(CheckpointCommit? checkpoint)
-    {
-        var snapshots = Snapshots;
-        if (checkpoint is not null)
-        {
-            var commitIdsAfter = Commits.WhereAfter(checkpoint.Commit).Select(c => c.Id);
-            snapshots = snapshots.Where(s => commitIdsAfter.Contains(s.CommitId));
-        }
-        return await snapshots.ToArrayAsync();
-    }
-
-    /// <summary>
-    /// A replay only projects the snapshots it makes. Normally a replay makes snapshots for the same entities it deleted
-    /// snapshots of, but not when a change type is no longer known. The projected rows of those entities go back to their
-    /// current snapshot, or are deleted when the entity has no snapshot left.
-    /// </summary>
-    /// <param name="replacedSnapshots">from <see cref="SnapshotsAfter"/>, before the replay</param>
-    /// <param name="newSnapshots">the snapshots the replay made</param>
-    public async Task ReprojectEntitiesWithoutNewSnapshots(IReadOnlyCollection<ObjectSnapshot> replacedSnapshots,
-        IReadOnlyCollection<ObjectSnapshot> newSnapshots)
-    {
-        if (!_crdtConfig.Value.EnableProjectedTables) return;
-        var entitiesWithNewSnapshots = newSnapshots.Select(s => s.EntityId).ToHashSet();
-        var currentView = CurrentSnapshotView();
-        var current = new List<ObjectSnapshot>();
-        var removed = new List<ObjectSnapshot>();
-        foreach (var replaced in replacedSnapshots.DistinctBy(s => s.EntityId))
-        {
-            if (entitiesWithNewSnapshots.Contains(replaced.EntityId)) continue;
-            if (await currentView.GetAsync(replaced.EntityId) is { } snapshot) current.Add(snapshot);
-            else removed.Add(replaced);
-        }
-
-        await _fastProjection.ReprojectAsync(_dbContext, current, removed);
-        if (ShouldNotifyProjectedChanges() && current.Count + removed.Count > 0)
-            await NotifyProjectedChanges(current, removed);
     }
 
     /// <summary>The window that rebuilds every snapshot: all of history, resuming from nothing.</summary>

@@ -170,8 +170,8 @@ public class ConfigReconcileTests() : DataModelTestBase(configure: OldApp)
         await using var newApp = ForkDatabase(NewApp);
         await newApp.DataModel.ReconcileConfigChanges();
         var wordId = Guid.NewGuid();
-        await newApp.WriteNextChange(new NewWordChange(wordId, "hello"));
-        var noteCommit = await newApp.WriteNextChange(new SetWordNoteChange(wordId, "a note"));
+        var firstCommit = await newApp.WriteNextChange(new NewWordChange(wordId, "hello"));
+        await newApp.WriteNextChange(new SetWordNoteChange(wordId, "a note"));
 
         await using var oldApp = newApp.ForkDatabase(OldApp);
         (await NoteOf(oldApp, wordId)).Should().Be("a note", "the snapshots were made by the new app");
@@ -179,7 +179,7 @@ public class ConfigReconcileTests() : DataModelTestBase(configure: OldApp)
 
         downgrade.AddedChangeTypes.Should().BeEmpty();
         downgrade.RemovedChangeTypes.Should().Equal(NoteChangeType);
-        downgrade.ReplayedFrom!.Id.Should().Be(noteCommit.Id);
+        downgrade.ReplayedFrom!.Id.Should().Be(firstCommit.Id, "a removed type regenerates all snapshots");
         (await NoteOf(oldApp, wordId)).Should().BeNull("the old app can't apply the note change");
 
         await using var upgradedAgain = oldApp.ForkDatabase(NewApp);

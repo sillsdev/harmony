@@ -186,11 +186,10 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// Rebuilds every snapshot the window covers by replaying its commits onto the state it resumes from.
     /// A window resuming from nothing rebuilds all of history.
     /// </summary>
-    /// <returns>the snapshots the replay made</returns>
-    private async Task<IReadOnlyList<ObjectSnapshot>> UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
+    private async Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
     {
         var (checkpoint, commitsToApply) = window;
-        if (commitsToApply.Count == 0) return [];
+        if (commitsToApply.Count == 0) return;
 
         ISnapshotView baseline;
         // A database with no checkpoints replays all of history,
@@ -211,7 +210,6 @@ public class DataModel : ISyncable, IAsyncDisposable
         await PreloadTouched(baseline, commitsToApply);
         var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, _crdtConfig.Value);
         await repo.AddSnapshots(newSnapshots, checkpoints);
-        return newSnapshots;
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -240,18 +238,24 @@ public class DataModel : ISyncable, IAsyncDisposable
         using var locked = await repo.Lock();
         repo.ClearChangeTracker();
         await using var transaction = await repo.BeginTransactionAsync();
+        await RegenerateSnapshots(repo);
+        await transaction.CommitAsync();
+    }
+
+    private async Task RegenerateSnapshots(CrdtRepository repo)
+    {
         var wholeHistory = await repo.WholeHistory();
         //Replay does nothing without commits, which would leave snapshots with no history behind them in place
         if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
         else await UpdateSnapshots(repo, wholeHistory);
-        await transaction.CommitAsync();
     }
 
     /// <summary>
     /// Detects change types that were added to or removed from the config since the last call, for example after an app update,
     /// and rebuilds the snapshots from the oldest commit that uses one of them.
     /// Changes of an unknown type are stored as <see cref="OpaqueChange"/> and skipped, so once the type is known
-    /// they must be replayed. A removed type is the reverse: its changes are applied in the snapshots, but are now opaque.
+    /// they must be replayed. A removed type is the reverse: its changes are applied in the snapshots, but are now opaque,
+    /// so all snapshots are regenerated.
     /// Call this when opening a database, before using it. Querying changes by type is SQLite only.
     /// </summary>
     /// <param name="missingConfig">what to do when no config was stored yet, see <see cref="MissingConfigBehavior"/></param>
@@ -285,11 +289,17 @@ public class DataModel : ISyncable, IAsyncDisposable
         {
             _logger.LogInformation("Change types changed (added: {Added}, removed: {Removed}), replaying from commit {CommitId}",
                 added, removed, replayFrom.Id);
-            var window = await repo.ReplayWindowFrom(replayFrom);
-            var replacedSnapshots = await repo.SnapshotsAfter(window.ResumeFrom);
-            var newSnapshots = await UpdateSnapshots(repo, window);
-            //a removed change type can leave entities with fewer snapshots than before, which the replay doesn't project
-            await repo.ReprojectEntitiesWithoutNewSnapshots(replacedSnapshots, newSnapshots);
+            if (removed.Length > 0)
+            {
+                //rare, so keep it simple: a replay from a checkpoint only projects the snapshots it makes, but a removed
+                //type can leave entities with fewer snapshots than before, so their projected rows would be stale
+                await RegenerateSnapshots(repo);
+                replayFrom = await repo.CurrentCommits().FirstAsync();
+            }
+            else
+            {
+                await UpdateSnapshots(repo, await repo.ReplayWindowFrom(replayFrom));
+            }
         }
 
         await repo.SetLocalState(StoredHarmonyConfig.LocalStateKey, currentConfig);

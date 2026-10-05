@@ -59,7 +59,9 @@ public class SnapshotWorkerTests : DataModelTestBase
         snapshot.IsRoot.Should().BeFalse();
         snapshot.CommitId.Should().Be(edit.Id);
         WordFrom(snapshot).Text.Should().Be("goodbye");
-        (await baseline.GetAsync(word.Id))!.IsRoot.Should().BeTrue("the baseline is never mutated");
+        var baselineSnapshot = (await baseline.GetAsync(word.Id))!;
+        baselineSnapshot.IsRoot.Should().BeTrue();
+        WordFrom(baselineSnapshot).Text.Should().Be("hello", "the baseline is never mutated");
     }
 
     [Fact]

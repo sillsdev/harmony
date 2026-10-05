@@ -21,7 +21,7 @@ public class NullSyncable : ISyncable
 
     public Task<SyncState> GetSyncState()
     {
-        return Task.FromResult(new SyncState([]));
+        return Task.FromResult(new SyncState([], []));
     }
 
     public Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads)

@@ -5,25 +5,13 @@ using SIL.Harmony.Tests.Mocks;
 
 namespace SIL.Harmony.Tests;
 
-public class SnapshotCheckpointPolicyTests
+public class SnapshotCheckpointPolicyTests : CommitTestBase
 {
     /// <summary>a batch of commits with the given number of changes each, in order</summary>
-    private static Commit[] Commits(IEnumerable<int> changesPerCommit)
-    {
-        return [.. changesPerCommit.Select((changeCount, position) =>
-        {
-            var commit = new Commit { ClientId = Guid.Empty, HybridDateTime = MockTimeProvider.Time(position, 0) };
-            for (var i = 0; i < changeCount; i++)
-            {
-                var change = new SetWordTextChange(Guid.NewGuid(), $"word {i}");
-                commit.ChangeEntities.Add(new ChangeEntity<IChange> { Index = i, CommitId = commit.Id, EntityId = change.EntityId, Change = change });
-            }
+    private Commit[] Commits(IEnumerable<int> changesPerCommit) =>
+        [.. changesPerCommit.Select(changeCount => NextCommit([.. Enumerable.Range(0, changeCount).Select(i => SetWord(Guid.NewGuid(), $"word {i}"))]))];
 
-            return commit;
-        })];
-    }
-
-    private static Commit[] SingleChangeCommits(int commitCount) => Commits(Enumerable.Repeat(1, commitCount));
+    private Commit[] SingleChangeCommits(int commitCount) => Commits(Enumerable.Repeat(1, commitCount));
 
     /// <summary>a policy over the batch, as the worker would build it</summary>
     private static SnapshotCheckpointPolicy PolicyFor(Commit[] commits, int maxChangesBetweenCheckpoints) =>
@@ -127,7 +115,7 @@ public class SnapshotCheckpointPolicyTests
     /// The checkpoint flags after a snapshot at <c>From</c> was superseded by one at <c>ToExclusive</c> for each drop,
     /// with a maxChanges so high that there are no required checkpoints
     /// </summary>
-    private static bool[] CheckpointsAfterDropping(int commitCount, params (int From, int ToExclusive)[] drops)
+    private bool[] CheckpointsAfterDropping(int commitCount, params (int From, int ToExclusive)[] drops)
     {
         var commits = SingleChangeCommits(commitCount);
         var policy = PolicyFor(commits, maxChangesBetweenCheckpoints: 1000);

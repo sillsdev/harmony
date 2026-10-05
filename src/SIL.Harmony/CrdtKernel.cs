@@ -60,19 +60,28 @@ public static class CrdtKernel
             .Validate(
                 config => config.MaxChangesBetweenSnapshotCheckpoints >= 1,
                 $"{nameof(HarmonyConfig.MaxChangesBetweenSnapshotCheckpoints)} must be at least 1")
-            .PostConfigure(crdtConfig => crdtConfig.ObjectTypeListBuilder.Freeze());
+            .PostConfigure(crdtConfig =>
+            {
+                crdtConfig.ObjectTypeListBuilder.Freeze();
+                crdtConfig.ModelVersionBuilder.Freeze();
+            })
+            .Validate(
+                config => config.ModelVersionBuilder.ChangeTypes.All(t => config.ChangeTypes.Any(ct => ct.Type == t)),
+                "Every change type in a model version must be registered in the ChangeTypeListBuilder");
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<HarmonyConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
         services.AddSingleton<FastProjection>();
         services.AddScoped<CrdtRepositoryFactory>();
+        services.AddScoped<ModelVersionService>();
         //must use factory method because DataModel constructor is internal
         services.AddScoped<DataModel>(provider => new DataModel(
             provider.GetRequiredService<CrdtRepositoryFactory>(),
             provider.GetRequiredService<JsonSerializerOptions>(),
             provider.GetRequiredService<IHybridDateTimeProvider>(),
             provider.GetRequiredService<IOptions<HarmonyConfig>>(),
-            provider.GetRequiredService<ILogger<DataModel>>()
+            provider.GetRequiredService<ILogger<DataModel>>(),
+            provider.GetRequiredService<ModelVersionService>()
         ));
         return services;
     }

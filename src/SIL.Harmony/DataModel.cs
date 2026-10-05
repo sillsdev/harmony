@@ -24,19 +24,22 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly IHybridDateTimeProvider _timeProvider;
     private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
+    private readonly ModelVersionService _modelVersionService;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
         JsonSerializerOptions serializerOptions,
         IHybridDateTimeProvider timeProvider,
         IOptions<HarmonyConfig> crdtConfig,
-        ILogger<DataModel> logger)
+        ILogger<DataModel> logger,
+        ModelVersionService modelVersionService)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _serializerOptions = serializerOptions;
         _timeProvider = timeProvider;
         _crdtConfig = crdtConfig;
         _logger = logger;
+        _modelVersionService = modelVersionService;
     }
 
 
@@ -98,7 +101,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             HybridDateTime = _timeProvider.GetDateTime(),
             Metadata = commitMetadata ?? new()
         };
-        commit.ChangeEntities.AddRange(changes.Select((c, i) => ToChangeEntity(c, i, commit.Id)));
+        commit.ChangeEntities.AddRange(changes.Select((c, i) => ToChangeEntity(c, i, commit.Id, _crdtConfig.Value)));
         return commit;
     }
 
@@ -119,14 +122,15 @@ public class DataModel : ISyncable, IAsyncDisposable
         if (transaction is not null) await transaction.CommitAsync();
     }
 
-    internal static ChangeEntity<IChange> ToChangeEntity(IChange change, int index, Guid commitId)
+    internal static ChangeEntity<IChange> ToChangeEntity(IChange change, int index, Guid commitId, HarmonyConfig config)
     {
         return new ChangeEntity<IChange>()
         {
             Change = change,
             CommitId = commitId,
             EntityId = change.EntityId,
-            Index = index
+            Index = index,
+            Version = config.ChangeVersion(change)
         };
     }
 
@@ -182,34 +186,9 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    /// <summary>
-    /// Rebuilds every snapshot the window covers by replaying its commits onto the state it resumes from.
-    /// A window resuming from nothing rebuilds all of history.
-    /// </summary>
-    private async Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
+    private Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
     {
-        var (checkpoint, commitsToApply) = window;
-        if (commitsToApply.Count == 0) return;
-
-        ISnapshotView baseline;
-        // A database with no checkpoints replays all of history,
-        // which is what we want, because it will trigger creating checkpoints
-        if (checkpoint is null)
-        {
-            await repo.DeleteSnapshotsAndProjectedTables();
-            //the delete left the table empty, so there's nothing to query
-            baseline = EmptySnapshotView.Instance;
-        }
-        else
-        {
-            await repo.DeleteSnapshotsAfter(checkpoint.Commit);
-            //the current table is the state at the checkpoint, because the delete above just made it so
-            baseline = repo.CurrentSnapshotView();
-        }
-
-        await PreloadTouched(baseline, commitsToApply);
-        var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, _crdtConfig.Value);
-        await repo.AddSnapshots(newSnapshots, checkpoints);
+        return SnapshotReplay.UpdateSnapshots(repo, window, _crdtConfig.Value);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -238,73 +217,14 @@ public class DataModel : ISyncable, IAsyncDisposable
         using var locked = await repo.Lock();
         repo.ClearChangeTracker();
         await using var transaction = await repo.BeginTransactionAsync();
-        await RegenerateSnapshots(repo);
+        await SnapshotReplay.RegenerateAll(repo, _crdtConfig.Value);
         await transaction.CommitAsync();
     }
 
-    private async Task RegenerateSnapshots(CrdtRepository repo)
+    /// <inheritdoc cref="ModelVersionService.ReconcileModelVersions"/>
+    public Task<ModelVersionReconcileResult> ReconcileModelVersions()
     {
-        var wholeHistory = await repo.WholeHistory();
-        //Replay does nothing without commits, which would leave snapshots with no history behind them in place
-        if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
-        else await UpdateSnapshots(repo, wholeHistory);
-    }
-
-    /// <summary>
-    /// Detects change types that were added to or removed from the config since the last call, for example after an app update,
-    /// and rebuilds the snapshots from the oldest commit that uses one of them.
-    /// Changes of an unknown type are stored as <see cref="OpaqueChange"/> and skipped, so once the type is known
-    /// they must be replayed. A removed type is the reverse: its changes are applied in the snapshots, but are now opaque,
-    /// so all snapshots are regenerated.
-    /// Call this when opening a database, before using it. Querying changes by type is SQLite only.
-    /// </summary>
-    /// <param name="missingConfig">what to do when no config was stored yet, see <see cref="MissingConfigBehavior"/></param>
-    public async Task<ConfigReconcileResult> ReconcileConfigChanges(
-        MissingConfigBehavior missingConfig = MissingConfigBehavior.ReplayAll)
-    {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        using var locked = await repo.Lock();
-        repo.ClearChangeTracker();
-        await using var transaction = await repo.BeginTransactionAsync();
-        var currentConfig = StoredHarmonyConfig.From(_crdtConfig.Value);
-        var storedConfig = await repo.GetLocalState<StoredHarmonyConfig>(StoredHarmonyConfig.LocalStateKey);
-        if (storedConfig is not null && storedConfig.SameAs(currentConfig)) return ConfigReconcileResult.Unchanged;
-
-        string[] added = [];
-        string[] removed = [];
-        string[] affected;
-        if (storedConfig is null)
-        {
-            affected = missingConfig == MissingConfigBehavior.ReplayAll ? currentConfig.ChangeTypes : [];
-        }
-        else
-        {
-            added = currentConfig.ChangeTypes.Except(storedConfig.ChangeTypes, StringComparer.Ordinal).ToArray();
-            removed = storedConfig.ChangeTypes.Except(currentConfig.ChangeTypes, StringComparer.Ordinal).ToArray();
-            affected = [.. added, .. removed];
-        }
-
-        var replayFrom = await repo.FindOldestCommitWithChangeTypes(affected);
-        if (replayFrom is not null)
-        {
-            _logger.LogInformation("Change types changed (added: {Added}, removed: {Removed}), replaying from commit {CommitId}",
-                added, removed, replayFrom.Id);
-            if (removed.Length > 0)
-            {
-                //rare, so keep it simple: a replay from a checkpoint only projects the snapshots it makes, but a removed
-                //type can leave entities with fewer snapshots than before, so their projected rows would be stale
-                await RegenerateSnapshots(repo);
-                replayFrom = await repo.CurrentCommits().FirstAsync();
-            }
-            else
-            {
-                await UpdateSnapshots(repo, await repo.ReplayWindowFrom(replayFrom));
-            }
-        }
-
-        await repo.SetLocalState(StoredHarmonyConfig.LocalStateKey, currentConfig);
-        await transaction.CommitAsync();
-        return new ConfigReconcileResult(true, added, removed, replayFrom);
+        return _modelVersionService.ReconcileModelVersions();
     }
 
     /// <summary>
@@ -468,7 +388,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         //we don't have a persisted snapshot in the correct state, so rebuild it
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
-        await PreloadTouched(baseline, commitsToReplay);
+        await SnapshotReplay.PreloadTouched(baseline, commitsToReplay, _crdtConfig.Value);
         return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
     }
 
@@ -486,12 +406,6 @@ public class DataModel : ISyncable, IAsyncDisposable
     }
 
     /// <summary>one query for every entity the commits touch beats a lookup per entity only for large batches</summary>
-    private async Task PreloadTouched(ISnapshotView baseline, IEnumerable<Commit> commits)
-    {
-        var entityIds = commits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId)).ToHashSet();
-        if (entityIds.Count > _crdtConfig.Value.PrefetchSnapshotsBreakpoint) await baseline.PreloadAsync(entityIds);
-    }
-
     public async Task<SyncState> GetSyncState()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();

@@ -1,4 +1,6 @@
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +48,14 @@ public class HarmonyConfig
     public UnknownChangeHandling UnknownChangeHandling { get; set; } = UnknownChangeHandling.Throw;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public IReadOnlyList<RegisteredChangeType> ChangeTypes => ChangeTypeListBuilder.Types;
+    /// <summary>
+    /// The ordered list of model versions, see <see cref="ModelVersionBuilder"/>.
+    /// </summary>
+    public ModelVersionBuilder ModelVersionBuilder { get; } = new();
+    public IReadOnlyList<ModelVersion> ModelVersions => ModelVersionBuilder.Versions;
+    /// <summary>the number of model versions, 0 when the app declares none</summary>
+    public int CurrentModelVersion => ModelVersions.Count;
+    private readonly Lazy<FrozenDictionary<string, int>> _lazyChangeVersions;
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
@@ -66,6 +76,7 @@ public class HarmonyConfig
     public HarmonyConfig()
     {
         _lazyChangeDiscriminatorMaps = new Lazy<ChangeDiscriminatorMaps>(BuildChangeDiscriminatorMaps);
+        _lazyChangeVersions = new Lazy<FrozenDictionary<string, int>>(BuildChangeVersions);
         _lazyJsonSerializerOptions = new Lazy<JsonSerializerOptions>(CreateJsonSerializerOptions);
     }
 
@@ -113,6 +124,51 @@ public class HarmonyConfig
         }
 
         return new ChangeDiscriminatorMaps(knownChanges, discriminators);
+    }
+
+    private FrozenDictionary<string, int> BuildChangeVersions()
+    {
+        ModelVersionBuilder.Freeze();
+        return ModelVersions.SelectMany(v => v.ChangeTypes)
+            .CountBy(t => t, StringComparer.Ordinal)
+            .ToFrozenDictionary(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// The version a change of this type is authored with: how many model versions list the type.
+    /// </summary>
+    /// <param name="discriminator">the change type's discriminator, its <c>$type</c></param>
+    public int ChangeVersion(string discriminator)
+    {
+        return _lazyChangeVersions.Value.GetValueOrDefault(discriminator);
+    }
+
+    internal int ChangeVersion(IChange change)
+    {
+        var discriminator = change is OpaqueChange opaque
+            ? opaque.TypeName
+            : _lazyChangeDiscriminatorMaps.Value.ByType.GetValueOrDefault(change.GetType());
+        return discriminator is null ? 0 : ChangeVersion(discriminator);
+    }
+
+    /// <summary>
+    /// A stable text form of <see cref="ModelVersions"/>, one line per version.
+    /// Use it in a snapshot test so a released version can't be modified by accident: the snapshot may only grow at the end.
+    /// </summary>
+    public string DescribeModelVersions()
+    {
+        var builder = new StringBuilder();
+        for (var i = 0; i < ModelVersions.Count; i++)
+        {
+            var version = ModelVersions[i];
+            builder.Append(i + 1)
+                .Append(version.Major ? " major " : " ")
+                .Append(version.Name)
+                .Append(": ")
+                .AppendJoin(", ", version.ChangeTypes)
+                .Append('\n');
+        }
+        return builder.ToString();
     }
 
     private sealed record ChangeDiscriminatorMaps(

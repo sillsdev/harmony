@@ -178,6 +178,30 @@ await dataModel.SyncWith(remoteModel);
 ```
 It's that easy. All the heavy lifting is done by the interface which is fairly simple to implement.
 
+### Model versions
+Clients on different app versions sync with each other. When a newer app adds a change type, an older app stores those changes as `OpaqueChange` (with `UnknownChangeHandling.Fallback`) and skips them. When a newer app changes how a change type applies, an older app applies those changes with its old code. In both cases the snapshots must be rebuilt when the older app upgrades.
+
+To make this possible, declare a model version each time a release adds a change type, or changes how one applies. Only add versions at the end, never modify a released version:
+```C#
+services.AddCrdtData<AppDbContext>(config =>
+{
+    config.ModelVersionBuilder
+        .Add("Word notes", v => v.Change<SetWordNoteChange>())
+        //a major version regenerates all snapshots on upgrade
+        .AddMajor("Reference rewrite", v => v.Change<SetAntonymReferenceChange>());
+});
+```
+Every change is stored with the version of its type when it was authored: how many model versions list that type. Changes from before model versions existed are version 0.
+
+Call `ReconcileModelVersions` when you open a database, before you use it. It compares the model versions stored in the database with the current ones, and replays only the changes that were authored by a newer app than the one that applied them. A major version, or a downgrade, regenerates all snapshots. It throws if a model version that was already applied to the database was modified. Querying changes by type is supported on SQLite only.
+```C#
+await dataModel.ReconcileModelVersions();
+```
+To make sure a released version is not modified by accident, add a snapshot test of `HarmonyConfig.DescribeModelVersions()` to your app. A new version only adds a line at the end of the snapshot.
+
+> [!NOTE]
+> Model versions add a `Version` column to `ChangeEntities` and a `LocalState` table, so an EF migration is required.
+
 ## Development
 
 ### SemVer commit messages

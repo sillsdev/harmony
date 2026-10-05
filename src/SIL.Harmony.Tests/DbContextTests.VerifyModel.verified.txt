@@ -40,6 +40,9 @@
         Annotations: 
           Relational:ColumnType: jsonb
       EntityId (Guid) Required
+      Version (int) Required ValueGenerated.OnAdd
+        Annotations: 
+          Relational:DefaultValue: 0
     Keys: 
       CommitId, Index PK
     Foreign keys: 

@@ -86,6 +86,8 @@ public class DataModelTestBase : IAsyncLifetime
 
     internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
 
+    internal ModelVersionService ModelVersionService => _services.GetRequiredService<ModelVersionService>();
+
     private static int _instanceCount = 0;
     private DateTimeOffset currentDate = new(new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddHours(_instanceCount++));
     public DateTimeOffset NextDate() => currentDate = currentDate.AddDays(1);

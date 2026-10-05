@@ -39,8 +39,8 @@ public class DeleteAndCreateTests : DataModelTestBase
         await WriteNextChange(new NewWordChange(wordId, "original"));
 
         await AddCommitsViaSync([
-            await WriteNextChange(new DeleteChange<Word>(wordId), add: false),
-            await WriteNextChange(new NewWordChange(wordId, "Undeleted"), add: false),
+            NextCommit(new DeleteChange<Word>(wordId)),
+            NextCommit(new NewWordChange(wordId, "Undeleted")),
         ]);
 
         var word = await DataModel.GetLatest<Word>(wordId);
@@ -87,8 +87,8 @@ public class DeleteAndCreateTests : DataModelTestBase
         await WriteNextChange(new DeleteChange<Word>(wordId));
 
         await AddCommitsViaSync([
-            await WriteNextChange(new SetWordNoteChange(wordId, "overridden-note"), add: false),
-            await WriteNextChange(new NewWordChange(wordId, "Undeleted"), add: false),
+            NextCommit(new SetWordNoteChange(wordId, "overridden-note")),
+            NextCommit(new NewWordChange(wordId, "Undeleted")),
         ]);
 
         var word = await DataModel.GetLatest<Word>(wordId);
@@ -131,9 +131,9 @@ public class DeleteAndCreateTests : DataModelTestBase
         var wordId = Guid.NewGuid();
 
         await AddCommitsViaSync([
-            await WriteNextChange(new NewWordChange(wordId, "original"), add: false),
-            await WriteNextChange(new DeleteChange<Word>(wordId), add: false),
-            await WriteNextChange(new NewWordChange(wordId, "Undeleted"), add: false),
+            NextCommit(new NewWordChange(wordId, "original")),
+            NextCommit(new DeleteChange<Word>(wordId)),
+            NextCommit(new NewWordChange(wordId, "Undeleted")),
         ]);
 
         var word = await DataModel.GetLatest<Word>(wordId);
@@ -173,8 +173,8 @@ public class DeleteAndCreateTests : DataModelTestBase
         var wordId = Guid.NewGuid();
 
         await AddCommitsViaSync([
-            await WriteNextChange(new NewWordChange(wordId, "original"), add: false),
-            await WriteNextChange(new DeleteChange<Word>(wordId), add: false),
+            NextCommit(new NewWordChange(wordId, "original")),
+            NextCommit(new DeleteChange<Word>(wordId)),
         ]);
 
         var word = await DataModel.GetLatest<Word>(wordId);

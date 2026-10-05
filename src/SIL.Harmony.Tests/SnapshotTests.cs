@@ -26,10 +26,8 @@ public class SnapshotTests : DataModelTestBase
         var commits = new List<Commit>();
         for (var i = 0; i < 4; i++)
         {
-            commits.Add(await WriteChange(_localClientId,
-                new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(i),
-                SetWord(entityId, $"test {i}"),
-                add: false));
+            commits.Add(CommitAt(new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero).AddHours(i),
+                SetWord(entityId, $"test {i}")));
         }
 
         await AddCommitsViaSync(commits);
@@ -49,9 +47,7 @@ public class SnapshotTests : DataModelTestBase
         var commits = new List<Commit>();
         for (var i = 0; i < 20; i++)
         {
-            commits.Add(await model.WriteNextChange(
-                [model.SetWord(entityId, $"test {i}"), model.SetWord(entityId, $"test {i} again")],
-                add: false));
+            commits.Add(model.NextCommit(model.SetWord(entityId, $"test {i}"), model.SetWord(entityId, $"test {i} again")));
         }
 
         await model.AddCommitsViaSync(commits);
@@ -90,8 +86,8 @@ public class SnapshotTests : DataModelTestBase
 
         await AddCommitsViaSync([
             //the order here is important, the second commit was causing the snapshot for 'test non root' to attempt to be inserted again
-            await WriteNextChange(SetWord(Guid.NewGuid(), "test 1"), add: false),
-            await WriteNextChange(SetWord(entityId, "test 2"), add: false),
+            NextCommit(SetWord(Guid.NewGuid(), "test 1")),
+            NextCommit(SetWord(entityId, "test 2")),
         ]);
 
         (await DataModel.GetLatest<Word>(entityId))!.Text.Should().Be("test 2");

@@ -74,19 +74,19 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
 
     internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
 
-    public async ValueTask<Commit> WriteNextChange(IChange change, bool add = true)
+    public async ValueTask<Commit> WriteNextChange(IChange change)
     {
-        return await WriteChange(_localClientId, NextDate(), change, add);
+        return await WriteChange(_localClientId, NextDate(), change);
     }
 
-    public async ValueTask<Commit> WriteNextChange(IEnumerable<IChange> changes, bool add = true)
+    public async ValueTask<Commit> WriteNextChange(IEnumerable<IChange> changes)
     {
-        return await WriteChange(_localClientId, NextDate(), changes, add);
+        return await WriteChange(_localClientId, NextDate(), changes);
     }
 
-    public async ValueTask<Commit> WriteChangeAt(DateTimeOffset dateTime, IChange change, bool add = true)
+    public async ValueTask<Commit> WriteChangeAt(DateTimeOffset dateTime, IChange change)
     {
-        return await WriteChange(_localClientId, dateTime, change, add);
+        return await WriteChange(_localClientId, dateTime, change);
     }
 
     public async ValueTask<Commit> WriteChangeAfter(Commit after, IChange change)
@@ -106,25 +106,22 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
         return await WriteChange(_localClientId, after.DateTime.AddHours(1), []);
     }
 
-    public async ValueTask<Commit> WriteChangeBefore(Commit before, IChange change, bool add = true)
+    public async ValueTask<Commit> WriteChangeBefore(Commit before, IChange change)
     {
-        return await WriteChange(_localClientId, before.DateTime.AddHours(-1), change, add);
+        return await WriteChange(_localClientId, before.DateTime.AddHours(-1), change);
     }
 
     public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
-        IChange change,
-        bool add = true)
+        IChange change)
     {
-        return await WriteChange(clientId, dateTime, [change], add);
+        return await WriteChange(clientId, dateTime, [change]);
     }
 
     public async ValueTask<Commit> WriteChange(Guid clientId,
         DateTimeOffset dateTime,
-        IEnumerable<IChange> changes,
-        bool add = true)
+        IEnumerable<IChange> changes)
     {
-        if (!add) return BuildCommit(clientId, dateTime, changes);
         MockTimeProvider.SetNextDateTime(dateTime);
         return await DataModel.AddChanges(clientId, changes);
     }

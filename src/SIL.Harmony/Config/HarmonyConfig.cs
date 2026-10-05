@@ -171,6 +171,14 @@ public class HarmonyConfig
     public bool RemoteResourcesEnabled { get; private set; }
     public Type? RemoteResourceMetadataType { get; private set; }
     public string LocalResourceCachePath { get; set; } = Path.GetFullPath("./localResourceCache");
+    /// <summary>
+    /// When true, a local resource whose file lives under <see cref="LocalResourceCachePath"/> is stored with a path
+    /// relative to that directory and resolved against it on read, so the cache directory can move between runs
+    /// (iOS reassigns the app container path on reinstall or update). Files outside the cache are still stored
+    /// with their absolute path. Callers always see absolute paths. Only enable this when
+    /// <see cref="LocalResourceCachePath"/> is set explicitly: the default is relative to the working directory.
+    /// </summary>
+    public bool StoreLocalResourcePathsRelativeToCache { get; set; }
     public string FailedSyncOutputPath { get; set; } = Path.GetFullPath("./failedSyncs");
     public void AddRemoteResourceEntity<TMetadata>(string? cachePath = null)
         where TMetadata : class

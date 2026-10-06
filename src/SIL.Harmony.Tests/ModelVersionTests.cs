@@ -446,6 +446,10 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await DataModel.RemoveLocalState("app:value");
         (await DataModel.GetLocalState<LocalStateTestValue>("app:value")).Should().BeNull();
         await DataModel.RemoveLocalState("app:value");
+
+        //the test base shares one db context between calls, so a removed entry must not stay tracked
+        await DataModel.SetLocalState("app:value", new LocalStateTestValue("third", 3));
+        (await DataModel.GetLocalState<LocalStateTestValue>("app:value")).Should().Be(new LocalStateTestValue("third", 3));
     }
 
     private record LocalStateTestValue(string Text, int Number);

@@ -489,7 +489,12 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task RemoveLocalState(string key)
     {
-        await LocalState.Where(e => e.Key == key).ExecuteDeleteAsync();
+        //a tracked removal, not ExecuteDelete: the db context can be shared between calls, and ExecuteDelete would leave
+        //a tracked entry behind, so setting the key again would fail
+        var entry = await LocalState.FindAsync(key);
+        if (entry is null) return;
+        LocalState.Remove(entry);
+        await _dbContext.SaveChangesAsync();
     }
 
     public async Task AddLocalResource(LocalResource localResource)

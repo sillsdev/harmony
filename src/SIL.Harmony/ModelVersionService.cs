@@ -79,10 +79,11 @@ internal class ModelVersionService(
     }
 
     /// <summary>
-    /// For each change type in the versions after <paramref name="storedVersion"/>, the version the database had for it.
-    /// A change of that type with a higher version was authored by a newer app than the one that applied it.
+    /// For each change type in the versions after <paramref name="storedVersion"/>, the change version that type had
+    /// at the stored model version. A change of that type with a higher version was authored by a newer app than the
+    /// app that applied it.
     /// </summary>
-    internal static (string ChangeType, int AfterVersion)[] ChangeVersionsToReplay(int storedVersion,
+    internal static (string ChangeType, int StoredChangeVersion)[] ChangeVersionsToReplay(int storedVersion,
         IReadOnlyList<ModelVersion> versions)
     {
         var appliedVersions = versions.Take(storedVersion).ToArray();

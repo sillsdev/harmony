@@ -30,6 +30,19 @@ public static class QueryHelpers
         return builders.Values.Select(b => b.Build()).ToArray();
     }
 
+    public static SyncState GetSyncState(this IEnumerable<CommitBase> commits)
+    {
+        var builders = new Dictionary<Guid, ClientStateBuilder>();
+        foreach (var commit in commits)
+        {
+            if (!builders.TryGetValue(commit.ClientId, out var builder))
+                builders[commit.ClientId] = builder = new ClientStateBuilder { ClientId = commit.ClientId };
+            builder.Add(commit.Id, commit.HybridDateTime.DateTime);
+        }
+
+        return new SyncState(builders.Values.Select(b => b.Build()).ToArray());
+    }
+
     public static async Task<ChangesResult<TCommit>> GetChanges<TCommit, TChange>(this IQueryable<TCommit> commits,
         SyncState remoteState) where TCommit : CommitBase<TChange>
     {

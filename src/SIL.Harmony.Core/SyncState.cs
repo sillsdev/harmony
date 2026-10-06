@@ -17,6 +17,7 @@ public record SyncState(Dictionary<Guid, long> ClientHeads, ClientState[]? Clien
     }
     public ClientState[] ClientStates { get; } = ClientStates ?? [];
     public ClientState? GetClientState(Guid clientId) => ClientStates?.FirstOrDefault(cs => cs.ClientId == clientId);
+    public SyncState Without(IReadOnlySet<Guid> clientIds) => new(ClientStates.Where(cs => !clientIds.Contains(cs.ClientId)).ToArray());
 
     public class SyncStateConverter : JsonConverter<SyncState>
     {
@@ -52,6 +53,17 @@ public record ClientState(Guid ClientId, long MaxTimestamp, int CommitCount, ulo
     //0 means this came from a ClientHeads-only SyncState (a peer on an older version);
     //states we build always have at least one commit
     public bool OnlyHasTimestamp => CommitCount == 0;
+
+    //the count and XOR hash identify the commit set (the timestamp follows from it) and give the state
+    //of a union from the states of its disjoint parts
+    public ClientState Plus(ClientState? other) => other is null ? this : this with
+    {
+        MaxTimestamp = Math.Max(MaxTimestamp, other.MaxTimestamp),
+        CommitCount = CommitCount + other.CommitCount,
+        Hash = Hash ^ other.Hash
+    };
+
+    public bool HasSameCommits(ClientState other) => CommitCount == other.CommitCount && Hash == other.Hash;
 }
 
 public class ClientStateBuilder

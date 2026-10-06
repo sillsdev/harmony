@@ -25,9 +25,7 @@ internal static class SyncHelper
     {
         if (!await localModel.ShouldSync() || !await remoteModel.ShouldSync()) return new SyncResults([], [], false);
         var localSyncState = await localModel.GetSyncState();
-        var (missingFromLocal, remoteSyncState) = await remoteModel.GetChanges(localSyncState);
-        //todo abort if local and remote heads are the same
-        var (missingFromRemote, _) = await localModel.GetChanges(remoteSyncState);
+        var (missingFromLocal, missingFromRemote) = await Exchange(localModel, localSyncState, remoteModel);
         if (localModel is DataModel && remoteModel is DataModel)
         {
             //cloning just to simulate the objects going over the wire
@@ -40,36 +38,89 @@ internal static class SyncHelper
             await remoteModel.AddRangeFromSync(missingFromRemote);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
+
     internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions)
     {
         var localSyncState = await localModel.GetSyncState();
-        var remoteSyncStates = new SyncState[remotes.Length];
+        var exchanges = new (Commit[] missingFromLocal, Commit[] missingFromRemote)[remotes.Length];
         for (var i = 0; i < remotes.Length; i++)
         {
-            var remote = remotes[i];
-            var (missingFromLocal, remoteSyncState) = await remote.GetChanges(localSyncState);
-            if (localModel is DataModel && remote is DataModel)
+            var (missingFromLocal, missingFromRemote) = await Exchange(localModel, localSyncState, remotes[i]);
+            if (localModel is DataModel && remotes[i] is DataModel)
             {
                 //cloning just to simulate the objects going over the wire
                 missingFromLocal = Clone(missingFromLocal, serializerOptions);
             }
-            remoteSyncStates[i] = remoteSyncState;
-            await localModel.AddRangeFromSync(missingFromLocal);
+            exchanges[i] = (missingFromLocal, missingFromRemote);
         }
-        // Now the localModel has all the changes from all remotes, so all remotes will get the changes from the localModel as well as all other remotes
+        var pulled = exchanges.SelectMany(e => e.missingFromLocal).DistinctBy(c => c.Id).ToArray();
+        await localModel.AddRangeFromSync(pulled);
+        //each remote also gets what the others sent, so every remote ends up with the same commits as the local
         for (var i = 0; i < remotes.Length; i++)
         {
-            var remote = remotes[i];
-            var remoteSyncState = remoteSyncStates[i];
-            var (missingFromRemote, _) = await localModel.GetChanges(remoteSyncState);
-            if (localModel is DataModel && remote is DataModel)
+            var (missingFromLocal, missingFromRemote) = exchanges[i];
+            missingFromRemote = [..missingFromRemote, ..pulled.ExceptBy(missingFromLocal.Select(c => c.Id), c => c.Id)];
+            if (localModel is DataModel && remotes[i] is DataModel)
             {
                 //cloning just to simulate the objects going over the wire
                 missingFromRemote = Clone(missingFromRemote, serializerOptions);
             }
-            await remote.AddRangeFromSync(missingFromRemote);
+            await remotes[i].AddRangeFromSync(missingFromRemote);
         }
     }
+
+    /// <summary>
+    /// Works out what each side is missing so that one sync leaves both with the union of their commits.
+    /// For a client where the remote has fewer commits it assumes we hold all of its and withholds them
+    /// (QueryHelpers.PlanFor). What it sent and reported tells us whether that was true; if it may not
+    /// have been, one more request fetches that client's commits in full.
+    /// </summary>
+    private static async Task<(Commit[] missingFromLocal, Commit[] missingFromRemote)> Exchange(ISyncable localModel,
+        SyncState localSyncState,
+        ISyncable remoteModel)
+    {
+        var (missingFromLocal, remoteSyncState) = await remoteModel.GetChanges(localSyncState);
+        //todo abort if local and remote heads are the same
+        var (missingFromRemote, _) = await localModel.GetChanges(remoteSyncState);
+
+        var pulledState = missingFromLocal.GetSyncState();
+        var pushedState = missingFromRemote.GetSyncState();
+        HashSet<Guid> fullyPulled = [];
+        HashSet<Guid> maybeWithheld = [];
+        foreach (var local in localSyncState.ClientStates)
+        {
+            var remote = remoteSyncState.GetClientState(local.ClientId);
+            if (remote is null || remote.OnlyHasTimestamp || remote == local) continue;
+            var pulled = pulledState.GetClientState(local.ClientId);
+            //a push after the remote's head is exact, so the remote should hold what it sent plus our commits up to its head
+            var pushed = local.MaxTimestamp > remote.MaxTimestamp ? pushedState.GetClientState(local.ClientId) : null;
+            if (local.Plus(pulled).HasSameCommits(remote.Plus(pushed))) continue;
+            if (pulled?.HasSameCommits(remote) == true)
+                fullyPulled.Add(local.ClientId);
+            else
+                maybeWithheld.Add(local.ClientId);
+        }
+
+        if (maybeWithheld.Count > 0)
+        {
+            //a client missing from the state we give the remote gets sent in full
+            var (withheld, _) = await remoteModel.GetChanges(remoteSyncState.Without(maybeWithheld));
+            missingFromLocal = missingFromLocal.UnionBy(withheld, c => c.Id).ToArray();
+            fullyPulled.UnionWith(maybeWithheld);
+        }
+        if (fullyPulled.Count > 0)
+        {
+            //the remote holds exactly what it sent for these clients, so push exactly the rest of ours
+            var (ours, _) = await localModel.GetChanges(localSyncState.Without(fullyPulled));
+            missingFromRemote =
+            [
+                ..missingFromRemote.Where(c => !fullyPulled.Contains(c.ClientId)),
+                ..ours.ExceptBy(missingFromLocal.Select(c => c.Id), c => c.Id)
+            ];
+        }
+        return (missingFromLocal, missingFromRemote);
+    }
+
     private static T Clone<T>(this T source, JsonSerializerOptions options)
     {
         ArgumentNullException.ThrowIfNull(source);
@@ -78,4 +129,3 @@ internal static class SyncHelper
         return clone ?? throw new NullReferenceException("unable to clone object type " + typeof(T));
     }
 }
-

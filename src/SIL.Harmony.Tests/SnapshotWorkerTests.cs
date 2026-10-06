@@ -36,6 +36,16 @@ public class SnapshotWorkerTests : CommitTestBase
     }
 
     [Fact]
+    public async Task AnEditWithNoEntityMakesNoSnapshot()
+    {
+        var edit = NextCommit(new SetWordNoteChange(Guid.NewGuid(), "a note"));
+
+        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [edit], SampleConfig);
+
+        snapshots.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task TwoChangesToOneEntityInOneCommitKeepOnlyTheLast()
     {
         var wordId = Guid.NewGuid();

@@ -14,6 +14,20 @@ public class LateCommitTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task AnEditSyncedBeforeItsCreateIsAppliedOnceTheCreateArrives()
+    {
+        var wordId = Guid.NewGuid();
+        var create = NextCommit(SetWord(wordId, "word"));
+        var setNote = NextCommit(new SetWordNoteChange(wordId, "a note"));
+
+        await AddCommitsViaSync([setNote]);
+        (await DataModel.GetLatest<Word>(wordId)).Should().BeNull();
+
+        await AddCommitsViaSync([create]);
+        (await DataModel.GetLatest<Word>(wordId))!.Note.Should().Be("a note");
+    }
+
+    [Fact]
     public async Task ALateCommitKeepsAnEditWhoseSnapshotWasPruned()
     {
         var wordId = Guid.NewGuid();

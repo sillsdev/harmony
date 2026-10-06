@@ -73,7 +73,9 @@ internal class SnapshotWorker : ISnapshotView
                         continue;
                     }
 
-                    // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
+                    // The create hasn't synced here, and may never. It's older than this edit, so if it arrives, replay re-runs this edit.
+                    if (!commitChange.Change.SupportsNewEntity()) continue;
+
                     entity = await commitChange.Change.NewEntity(commit, changeContext);
                 }
                 else if (prevSnapshot.EntityIsDeleted && commitChange.Change.SupportsNewEntity())

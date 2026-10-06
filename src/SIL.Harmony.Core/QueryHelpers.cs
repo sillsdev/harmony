@@ -1,16 +1,33 @@
+using System.IO.Hashing;
 using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Core;
+
+public record struct SimpleCommit(Guid ClientId, Guid CommitId, DateTimeOffset DateTime);
 
 public static class QueryHelpers
 {
     public static async Task<SyncState> GetSyncState(this IQueryable<CommitBase> commits)
     {
-        var dict = await commits.AsNoTracking().GroupBy(c => c.ClientId)
-            .Select(g => new { ClientId = g.Key, DateTime = g.Max(c => c.HybridDateTime.DateTime) })
-            .AsAsyncEnumerable()//this is so the ticks are calculated server side instead of the db
-            .ToDictionaryAsync(c => c.ClientId, c => c.DateTime.ToUnixTimeMilliseconds());
-        return new SyncState(dict);
+        //one query, so the count, hash and timestamp can't disagree about which commits exist
+        var simpleCommits = commits.AsNoTracking()
+            .Select(c => new SimpleCommit(c.ClientId, c.Id, c.HybridDateTime.DateTime))
+            .AsAsyncEnumerable();
+
+        return new SyncState(await BuildSyncState(simpleCommits));
+    }
+
+    public static async Task<ClientState[]> BuildSyncState(IAsyncEnumerable<SimpleCommit> simpleCommits)
+    {
+        var builders = new Dictionary<Guid, ClientStateBuilder>();
+        await foreach (var (clientId, commitId, dateTime) in simpleCommits)
+        {
+            if (!builders.TryGetValue(clientId, out var builder))
+                builders[clientId] = builder = new ClientStateBuilder { ClientId = clientId };
+            builder.Add(commitId, dateTime);
+        }
+
+        return builders.Values.Select(b => b.Build()).ToArray();
     }
 
     public static async Task<ChangesResult<TCommit>> GetChanges<TCommit, TChange>(this IQueryable<TCommit> commits,
@@ -18,42 +35,72 @@ public static class QueryHelpers
     {
         var localState = await commits.AsNoTracking().GetSyncState();
         return new ChangesResult<TCommit>(
-            await GetMissingCommits<TCommit, TChange>(commits, localState, remoteState).ToArrayAsync(),
+            await GetCommitsMissingFromRemote<TCommit, TChange>(commits, localState, remoteState).ToArrayAsync(),
             localState);
     }
 
-    public static async IAsyncEnumerable<TCommit> GetMissingCommits<TCommit, TChange>(
+    public static async IAsyncEnumerable<TCommit> GetCommitsMissingFromRemote<TCommit, TChange>(
         this IQueryable<TCommit> commits,
         SyncState localState,
         SyncState remoteState, bool includeChangeEntities = true) where TCommit : CommitBase<TChange>
     {
         commits = commits.AsNoTracking();
         if (includeChangeEntities) commits = commits.Include(c => c.ChangeEntities);
-        foreach (var (clientId, localTimestamp) in localState.ClientHeads)
+        foreach (var localClientState in localState.ClientStates)
         {
-            long? remoteTimestamp = remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp)
-                ? otherTimestamp
-                : null;
-            var clientCommits = commits.Where(c => c.ClientId == clientId);
-            if (remoteTimestamp is null)
+            var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
+            var remoteClientState = remoteState.GetClientState(localClientState.ClientId);
+            switch (PlanFor(localClientState, remoteClientState))
             {
-                await foreach (var commit in clientCommits.DefaultOrder().AsAsyncEnumerable())
-                    yield return commit;
-            }
-            else if (localTimestamp > remoteTimestamp)
-            {
-                var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(remoteTimestamp.Value);
-                await foreach (var commit in clientCommits
-                                   .Where(c => c.HybridDateTime.DateTime > otherDt)
-                                   .DefaultOrder()
-                                   .AsAsyncEnumerable())
-                {
-                    if (commit.DateTime.ToUnixTimeMilliseconds() > remoteTimestamp)
+                case SyncPlan.SendNothing:
+                    break;
+                case SyncPlan.SendAll:
+                    await foreach (var commit in clientCommits.AsAsyncEnumerable())
                         yield return commit;
-                }
+                    break;
+                case SyncPlan.SendAfterRemoteTimestamp:
+                    var after = DateTimeOffset.FromUnixTimeMilliseconds(remoteClientState!.MaxTimestamp);
+                    await foreach (var commit in clientCommits
+                                       .Where(c => c.HybridDateTime.DateTime > after)
+                                       .AsAsyncEnumerable())
+                    {
+                        if (IsAfter(commit, remoteClientState.MaxTimestamp))
+                            yield return commit;
+                    }
+                    break;
             }
         }
     }
+
+    private enum SyncPlan
+    {
+        SendNothing,
+        SendAll,
+        SendAfterRemoteTimestamp
+    }
+
+    private static SyncPlan PlanFor(ClientState local, ClientState? remote)
+    {
+        //the remote has never seen this client, so push everything
+        if (remote is null)
+            return SyncPlan.SendAll;
+        //an older peer reports a head and nothing else, so timestamps are all we can compare
+        if (remote.OnlyHasTimestamp)
+            return local.MaxTimestamp > remote.MaxTimestamp ? SyncPlan.SendAfterRemoteTimestamp : SyncPlan.SendNothing;
+        //local and remote agree on this client, nothing to sync.
+        //the hash alone isn't enough: a commit id stored twice XORs back out of it, so the count has to match too.
+        if (local == remote)
+            return SyncPlan.SendNothing;
+        if (local.MaxTimestamp > remote.MaxTimestamp)
+            return SyncPlan.SendAfterRemoteTimestamp;
+        //same head but different commits: whoever has at least as many pushes everything.
+        //if we have fewer we assume the remote has ours, which may be a false positive we catch next sync.
+        return local.CommitCount >= remote.CommitCount ? SyncPlan.SendAll : SyncPlan.SendNothing;
+    }
+
+    //the db keeps sub-millisecond precision, so re-check against the millisecond value the remote reported
+    private static bool IsAfter(CommitBase commit, long afterMs) =>
+        commit.DateTime.ToUnixTimeMilliseconds() > afterMs;
 
     public static SortedSet<T> ToSortedSet<T>(this IEnumerable<T> queryable) where T : CommitBase
     {
@@ -70,43 +117,27 @@ public static class QueryHelpers
         return set;
     }
 
-    public static IEnumerable<TCommit> GetMissingCommits<TCommit, TChange>(
+    public static IEnumerable<TCommit> GetCommitsMissingFromRemote<TCommit, TChange>(
         this IEnumerable<TCommit> commits,
         SyncState localState,
         SyncState remoteState) where TCommit : CommitBase<TChange>
     {
-        foreach (var (clientId, localTimestamp) in localState.ClientHeads)
+        foreach (var localClientState in localState.ClientStates)
         {
-            long? remoteTimestamp = remoteState.ClientHeads.TryGetValue(clientId, out var otherTimestamp)
-                ? otherTimestamp
-                : null;
-            foreach (var commit in GetMissingCommitsForClient(
-                         commits.Where(c => c.ClientId == clientId), localTimestamp, remoteTimestamp))
+            ClientState? remoteClientState = remoteState.GetClientState(localClientState.ClientId);
+            var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
+            switch (PlanFor(localClientState, remoteClientState))
             {
-                yield return commit;
-            }
-        }
-    }
-
-    private static IEnumerable<TCommit> GetMissingCommitsForClient<TCommit>(
-        IEnumerable<TCommit> clientCommits,
-        long localTimestamp,
-        long? remoteTimestamp) where TCommit : CommitBase
-    {
-        if (remoteTimestamp is null)
-        {
-            foreach (var commit in clientCommits.DefaultOrder())
-                yield return commit;
-        }
-        else if (localTimestamp > remoteTimestamp)
-        {
-            var otherDt = DateTimeOffset.FromUnixTimeMilliseconds(remoteTimestamp.Value);
-            foreach (var commit in clientCommits
-                         .Where(c => c.HybridDateTime.DateTime > otherDt)
-                         .DefaultOrder())
-            {
-                if (commit.DateTime.ToUnixTimeMilliseconds() > remoteTimestamp)
-                    yield return commit;
+                case SyncPlan.SendNothing:
+                    break;
+                case SyncPlan.SendAll:
+                    foreach (var commit in clientCommits)
+                        yield return commit;
+                    break;
+                case SyncPlan.SendAfterRemoteTimestamp:
+                    foreach (var commit in clientCommits.Where(c => IsAfter(c, remoteClientState!.MaxTimestamp)))
+                        yield return commit;
+                    break;
             }
         }
     }

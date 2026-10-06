@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Config;
 using SIL.Harmony.Linq2db;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
@@ -34,57 +35,60 @@ public static class CrdtSampleKernel
             builder.LogTo(s => Debug.WriteLine(s), minimumLevel: LogLevel.Information);
 #endif
         });
-        services.AddCrdtData<SampleDbContext>(config =>
-        {
-            config.EnableProjectedTables = true;
-            config.ChangeTypeListBuilder
-                .Add<NewWordChange>()
-                .Add<NewDefinitionChange>()
-                .Add<NewExampleChange>()
-                .Add<EditExampleChange>()
-                .Add<SetWordTextChange>()
-                .Add<SetWordNoteChange>()
-                .Add<SetAntonymReferenceChange>()
-                .Add<AddWordImageChange>()
-                .Add<SetOrderChange<Definition>>()
-                .Add<SetDefinitionPartOfSpeechChange>()
-                .Add<SetTagChange>()
-                .Add<TagWordChange>()
-                .Add<DeleteChange<Word>>()
-                .Add<DeleteChange<Definition>>()
-                .Add<DeleteChange<Example>>()
-                .Add<DeleteChange<Tag>>()
-                ;
-            config.ObjectTypeListBuilder.DefaultAdapter()
-                .Add<Word>(builder =>
-                {
-                    builder.HasMany(w => w.Tags)
-                        .WithMany()
-                        .UsingEntity<WordTag>();
-                    builder.HasOne((w) => w.Antonym)
-                        .WithMany()
-                        .HasForeignKey(w => w.AntonymId)
-                        .OnDelete(DeleteBehavior.SetNull);
-                })
-                .Add<Definition>(builder =>
-                {
-                    builder.HasOne<Word>()
-                        .WithMany()
-                        .HasForeignKey(d => d.WordId)
-                        .OnDelete(DeleteBehavior.Cascade);
-                })
-                .Add<Example>()
-                .Add<Tag>(builder =>
-                {
-                    builder.HasIndex(tag => tag.Text).IsUnique();
-                })
-                .Add<WordTag>(builder =>
-                {
-                    builder.HasKey(wt => wt.Id);
-                    builder.HasIndex(wt => new { wt.WordId, wt.TagId }).IsUnique();
-                });
-        });
+        services.AddCrdtData<SampleDbContext>(ConfigureSample);
         services.AddCrdtRemoteResources<MediaMetadata>();
         return services;
+    }
+
+    /// <summary>the sample model's registrations, so a test can build the same config without a container</summary>
+    public static void ConfigureSample(HarmonyConfig config)
+    {
+        config.EnableProjectedTables = true;
+        config.ChangeTypeListBuilder
+            .Add<NewWordChange>()
+            .Add<NewDefinitionChange>()
+            .Add<NewExampleChange>()
+            .Add<EditExampleChange>()
+            .Add<SetWordTextChange>()
+            .Add<SetWordNoteChange>()
+            .Add<SetAntonymReferenceChange>()
+            .Add<AddWordImageChange>()
+            .Add<SetOrderChange<Definition>>()
+            .Add<SetDefinitionPartOfSpeechChange>()
+            .Add<SetTagChange>()
+            .Add<TagWordChange>()
+            .Add<DeleteChange<Word>>()
+            .Add<DeleteChange<Definition>>()
+            .Add<DeleteChange<Example>>()
+            .Add<DeleteChange<Tag>>()
+            ;
+        config.ObjectTypeListBuilder.DefaultAdapter()
+            .Add<Word>(builder =>
+            {
+                builder.HasMany(w => w.Tags)
+                    .WithMany()
+                    .UsingEntity<WordTag>();
+                builder.HasOne((w) => w.Antonym)
+                    .WithMany()
+                    .HasForeignKey(w => w.AntonymId)
+                    .OnDelete(DeleteBehavior.SetNull);
+            })
+            .Add<Definition>(builder =>
+            {
+                builder.HasOne<Word>()
+                    .WithMany()
+                    .HasForeignKey(d => d.WordId)
+                    .OnDelete(DeleteBehavior.Cascade);
+            })
+            .Add<Example>()
+            .Add<Tag>(builder =>
+            {
+                builder.HasIndex(tag => tag.Text).IsUnique();
+            })
+            .Add<WordTag>(builder =>
+            {
+                builder.HasKey(wt => wt.Id);
+                builder.HasIndex(wt => new { wt.WordId, wt.TagId }).IsUnique();
+            });
     }
 }

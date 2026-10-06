@@ -128,8 +128,8 @@ public class ModelSnapshotTests : DataModelTestBase
         var addNew = new List<Commit>(changeCount);
         for (var i = 0; i < changeCount; i++)
         {
-            changes.Add(await WriteNextChange(SetWord(entityId, $"change {i}"), false).AsTask());
-            addNew.Add(await WriteNextChange(SetWord(Guid.NewGuid(), $"add {i}"), false).AsTask());
+            changes.Add(NextCommit(SetWord(entityId, $"change {i}")));
+            addNew.Add(NextCommit(SetWord(Guid.NewGuid(), $"add {i}")));
         }
 
         //adding all via sync means there's sparse snapshots
@@ -160,7 +160,7 @@ public class ModelSnapshotTests : DataModelTestBase
         await WriteNextChange(SetWord(entityId, "first"));
         //adding all in one AddRange means there's sparse snapshots
         await AddCommitsViaSync(Enumerable.Range(0, changeCount)
-            .Select(i => WriteNextChange(SetWord(entityId, $"change {i}"), false).Result));
+            .Select(i => NextCommit(SetWord(entityId, $"change {i}"))));
 
         var latestSnapshot = await DataModel.GetLatestSnapshotByObjectId(entityId);
         //delete snapshots so when we get at then we need to re-apply

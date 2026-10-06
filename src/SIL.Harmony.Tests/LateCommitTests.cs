@@ -17,9 +17,9 @@ public class LateCommitTests : DataModelTestBase
     public async Task ALateCommitKeepsAnEditWhoseSnapshotWasPruned()
     {
         var wordId = Guid.NewGuid();
-        var create = await WriteNextChange(SetWord(wordId, "word"), add: false);
-        var setNote = await WriteNextChange(new SetWordNoteChange(wordId, "a note"), add: false);
-        var rename = await WriteNextChange(new SetWordTextChange(wordId, "renamed word"), add: false);
+        var create = NextCommit(SetWord(wordId, "word"));
+        var setNote = NextCommit(new SetWordNoteChange(wordId, "a note"));
+        var rename = NextCommit(new SetWordTextChange(wordId, "renamed word"));
         await AddCommitsViaSync([create, setNote, rename]);
         // the batch keeps the word's snapshots at create and rename, but not the one in the middle
         await AssertSnapshotWasDropped(setNote, wordId);
@@ -38,13 +38,13 @@ public class LateCommitTests : DataModelTestBase
     {
         var wordId = Guid.NewGuid();
         var definitionId = Guid.NewGuid();
-        var create = await WriteNextChange(SetWord(wordId, "word"), add: false);
+        var create = NextCommit(SetWord(wordId, "word"));
         // only here to shift which snapshots the batch keeps, so the definition loses the one below
-        var unrelated = await WriteNextChange(SetWord(Guid.NewGuid(), "another word"), add: false);
-        var newDefinition = await WriteNextChange(NewDefinition(wordId, "a definition", "noun", definitionId: definitionId), add: false);
+        var unrelated = NextCommit(SetWord(Guid.NewGuid(), "another word"));
+        var newDefinition = NextCommit(NewDefinition(wordId, "a definition", "noun", definitionId: definitionId));
         // deleting the word deletes its definition too, but only as a snapshot: no commit records it
-        var delete = await WriteNextChange(DeleteWord(wordId), add: false);
-        var editDefinition = await WriteNextChange(new SetDefinitionPartOfSpeechChange(definitionId, "verb"), add: false);
+        var delete = NextCommit(DeleteWord(wordId));
+        var editDefinition = NextCommit(new SetDefinitionPartOfSpeechChange(definitionId, "verb"));
         await AddCommitsViaSync([create, unrelated, newDefinition, delete, editDefinition]);
         await AssertSnapshotWasDropped(delete, definitionId);
 

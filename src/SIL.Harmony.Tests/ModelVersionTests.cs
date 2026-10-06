@@ -67,19 +67,8 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     /// <summary>a commit authored by another client, with the change version that client's app gave it</summary>
     private static async Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange change, int version)
     {
-        var commit = new Commit
-        {
-            ClientId = Guid.NewGuid(),
-            HybridDateTime = new HybridDateTime(app.NextDate(), 0),
-        };
-        commit.ChangeEntities.Add(new ChangeEntity<IChange>
-        {
-            Change = change,
-            CommitId = commit.Id,
-            EntityId = change.EntityId,
-            Index = 0,
-            Version = version
-        });
+        var commit = BuildCommit(Guid.NewGuid(), app.NextDate(), [change]);
+        commit.ChangeEntities.Single().Version = version;
         await app.AddCommitsViaSync([commit]);
         return commit;
     }
@@ -407,7 +396,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var laterNote = await SyncFromOtherClient(this, new SetWordNoteChange(wordId, "later"), version: 1);
         var tagCommit = await SyncFromOtherClient(this, new SetTagChange(tagId, "tag"), version: 2);
         //added last, but sorts before the other version 1 note
-        var earlierNote = await WriteChangeBefore(laterNote, new SetWordNoteChange(wordId, "earlier"), add: false);
+        var earlierNote = CommitBefore(laterNote, new SetWordNoteChange(wordId, "earlier"));
         earlierNote.ChangeEntities.Single().Version = 1;
         await AddCommitsViaSync([earlierNote]);
         await using var repo = CreateRepository();

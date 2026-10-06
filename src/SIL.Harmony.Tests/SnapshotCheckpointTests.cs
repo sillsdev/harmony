@@ -229,7 +229,7 @@ public class SnapshotCheckpointTests() : DataModelTestBase(configure: UseTestMax
         var commits = new List<Commit>();
         foreach (var planned in plan)
         {
-            commits.Add(await model.WriteChangeAt(planned.Date, planned.Change, add: false));
+            commits.Add(model.CommitAt(planned.Date, planned.Change));
         }
 
         await model.AddCommitsViaSync(commits);

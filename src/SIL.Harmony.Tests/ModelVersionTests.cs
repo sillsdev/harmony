@@ -102,6 +102,15 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             .ToArrayAsync(TestContext.Current.CancellationToken);
     }
 
+    /// <summary>a regenerated snapshot is a new row with a new id, so none of the old ids may be left</summary>
+    private static async Task ShouldBeRegenerated(DataModelTestBase app, Guid[] snapshotIdsBefore)
+    {
+        snapshotIdsBefore.Should().NotBeEmpty();
+        var snapshotIdsAfter = await SnapshotIds(app);
+        snapshotIdsAfter.Should().HaveSameCount(snapshotIdsBefore);
+        snapshotIdsAfter.Should().NotIntersectWith(snapshotIdsBefore, "every snapshot should be recreated");
+    }
+
     private static async Task<int[]> ChangeVersions(DataModelTestBase app, Commit commit)
     {
         return await app.DbContext.Set<ChangeEntity<IChange>>().AsNoTracking()
@@ -229,11 +238,13 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await WriteNextChange(new NewWordChange(Guid.NewGuid(), "world"));
 
         await using var newApp = ForkDatabase(AppWith(versions => versions.AddMajor("Rewrite")));
+        var snapshotIds = await SnapshotIds(newApp);
         var result = await newApp.ModelVersionService.ReconcileModelVersions();
 
         result.FullRegeneration.Should().BeTrue();
         result.ReplayedFrom!.Id.Should().Be(firstCommit.Id);
         result.CurrentVersion.Should().Be(1);
+        await ShouldBeRegenerated(newApp, snapshotIds);
     }
 
     [Fact]
@@ -289,10 +300,12 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await newApp.WriteNextChange(new SetWordNoteChange(wordId, "a note"));
 
         await using var oldApp = newApp.ForkDatabase(OldApp);
+        var snapshotIds = await SnapshotIds(oldApp);
         var result = await oldApp.ModelVersionService.ReconcileModelVersions();
 
         result.Should().Be(new ModelVersionReconcileResult(1, 0, true, result.ReplayedFrom));
         result.ReplayedFrom!.Id.Should().Be(firstCommit.Id);
+        await ShouldBeRegenerated(oldApp, snapshotIds);
         (await NoteOf(oldApp, wordId)).Should().Be("a note");
     }
 
@@ -311,9 +324,11 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             OldApp(services);
             services.Configure<HarmonyConfig>(config => config.ChangeTypeListBuilder.Remove<SetTagChange>());
         });
+        var snapshotIds = await SnapshotIds(oldApp);
         var result = await oldApp.ModelVersionService.ReconcileModelVersions();
 
         result.FullRegeneration.Should().BeTrue();
+        (await SnapshotIds(oldApp)).Should().NotIntersectWith(snapshotIds, "every snapshot should be recreated");
         (await oldApp.DataModel.GetLatest<Tag>(tagId)).Should().BeNull();
         (await oldApp.DbContext.Set<Tag>().AnyAsync(TestContext.Current.CancellationToken)).Should().BeFalse();
         (await oldApp.DataModel.GetLatest<Word>(wordId)).Should().NotBeNull();

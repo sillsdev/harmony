@@ -148,8 +148,9 @@ public class CustomObjectAdapterTests
     [Fact]
     public async Task CanAdaptACustomObject()
     {
-        var services = new ServiceCollection()
-            .AddDbContext<MyDbContext>(builder => builder.UseSqlite("Data Source=test.db"))
+        using var dbFile = new TempDbFile();
+        await using var services = new ServiceCollection()
+            .AddDbContext<MyDbContext>(builder => builder.UseSqlite(dbFile.ConnectionString))
             .AddCrdtData<MyDbContext>(config =>
             {
                 config.AlwaysValidateCommits = true;

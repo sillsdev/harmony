@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet test *)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet format *)",
+      "Bash(dotnet run -c Release --project src/SIL.Harmony.Benchmarks *)",
+      "Bash(gh pr view *)",
+      "Bash(gh run view *)",
+      "Bash(gh api *)"
+    ]
+  }
+}

@@ -12,17 +12,19 @@ internal class JsonSyncable : ISyncable
     private readonly DirectoryInfo _rootDir;
     private readonly JsonSerializerOptions _serializerOptions;
     private readonly ILogger _logger;
+    private readonly SyncService _syncService;
     private static readonly ConcurrentDictionary<Guid, AsyncLock> ClientLocks = new();
 
     public const string FilenamePrefix = "client_";
     public const string FilenameExtension = ".jsonl";
 
-    public JsonSyncable(DirectoryInfo dir, JsonSerializerOptions serializerOptions, ILogger logger)
+    public JsonSyncable(DirectoryInfo dir, JsonSerializerOptions serializerOptions, SyncService syncService, ILogger logger)
     {
         if (!dir.Exists) dir.Create();
         _rootDir = dir;
         _serializerOptions = serializerOptions;
         _logger = logger;
+        _syncService = syncService;
     }
 
     public async Task AddRangeFromSync(IEnumerable<Commit> commits)
@@ -95,12 +97,12 @@ internal class JsonSyncable : ISyncable
 
     public Task<SyncResults> SyncWith(ISyncable remoteModel)
     {
-        return SyncHelper.SyncWith(this, remoteModel, _serializerOptions);
+        return _syncService.SyncWith(this, remoteModel);
     }
 
     public Task SyncMany(ISyncable[] remotes)
     {
-        return SyncHelper.SyncMany(this, remotes, _serializerOptions);
+        return _syncService.SyncMany(this, remotes);
     }
 
     public ValueTask<bool> ShouldSync()

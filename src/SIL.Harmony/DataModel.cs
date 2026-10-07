@@ -25,6 +25,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
     private readonly ModelVersionService _modelVersionService;
+    private readonly SyncService _syncService;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
@@ -32,7 +33,8 @@ public class DataModel : ISyncable, IAsyncDisposable
         IHybridDateTimeProvider timeProvider,
         IOptions<HarmonyConfig> crdtConfig,
         ILogger<DataModel> logger,
-        ModelVersionService modelVersionService)
+        ModelVersionService modelVersionService,
+        SyncService syncService)
     {
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _serializerOptions = serializerOptions;
@@ -40,6 +42,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         _crdtConfig = crdtConfig;
         _logger = logger;
         _modelVersionService = modelVersionService;
+        _syncService = syncService;
     }
 
 
@@ -424,12 +427,12 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<SyncResults> SyncWith(ISyncable remoteModel)
     {
-        return await SyncHelper.SyncWith(this, remoteModel, _serializerOptions);
+        return await _syncService.SyncWith(this, remoteModel);
     }
 
     public async Task SyncMany(ISyncable[] remotes)
     {
-        await SyncHelper.SyncMany(this, remotes, _serializerOptions);
+        await _syncService.SyncMany(this, remotes);
     }
 
     public ValueTask DisposeAsync()

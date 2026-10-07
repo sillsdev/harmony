@@ -11,7 +11,7 @@ public interface IJsonSyncableFactory
     ISyncable Create(DirectoryInfo dir);
 }
 
-internal class JsonSyncableFactory(JsonSerializerOptions serializerOptions, ILogger<JsonSyncable> logger) : IJsonSyncableFactory
+internal class JsonSyncableFactory(JsonSerializerOptions serializerOptions, SyncService syncService, ILogger<JsonSyncable> logger) : IJsonSyncableFactory
 {
-    public ISyncable Create(DirectoryInfo dir) => new JsonSyncable(dir, serializerOptions, logger);
+    public ISyncable Create(DirectoryInfo dir) => new JsonSyncable(dir, serializerOptions, syncService, logger);
 }

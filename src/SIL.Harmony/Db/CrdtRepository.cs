@@ -428,9 +428,16 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     }
 
 
+    /// <summary>
+    /// stores the resource; the caller's instance keeps its absolute path, only the stored row is relativized
+    /// </summary>
     public async Task AddLocalResource(LocalResource localResource)
     {
-        _dbContext.Set<LocalResource>().Add(localResource);
+        _dbContext.Set<LocalResource>().Add(new LocalResource
+        {
+            Id = localResource.Id,
+            LocalPath = LocalResourcePaths.ToStored(_crdtConfig.Value, localResource.LocalPath)
+        });
         await _dbContext.SaveChangesAsync();
     }
 
@@ -441,11 +448,23 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public IAsyncEnumerable<LocalResource> LocalResourcesByIds(IEnumerable<Guid> resourceIds)
     {
-        return _dbContext.Set<LocalResource>().Where(r => resourceIds.Contains(r.Id)).AsAsyncEnumerable();
+        return ResolvePaths(_dbContext.Set<LocalResource>().Where(r => resourceIds.Contains(r.Id)));
     }
     public IAsyncEnumerable<LocalResource> LocalResources()
     {
-        return _dbContext.Set<LocalResource>().AsAsyncEnumerable();
+        return ResolvePaths(_dbContext.Set<LocalResource>());
+    }
+
+    //no tracking so rewriting LocalPath to its absolute form is never flushed back to the database
+    private IAsyncEnumerable<LocalResource> ResolvePaths(IQueryable<LocalResource> query)
+    {
+        return query.AsNoTracking().AsAsyncEnumerable().Select(ResolvePath);
+    }
+
+    private LocalResource ResolvePath(LocalResource resource)
+    {
+        resource.LocalPath = LocalResourcePaths.FromStored(_crdtConfig.Value, resource.LocalPath);
+        return resource;
     }
 
     /// <summary>
@@ -458,7 +477,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task<LocalResource?> GetLocalResource(Guid resourceId)
     {
-        return await _dbContext.Set<LocalResource>().FindAsync(resourceId);
+        var resource = await _dbContext.Set<LocalResource>().AsNoTracking().FirstOrDefaultAsync(r => r.Id == resourceId);
+        return resource is null ? null : ResolvePath(resource);
     }
 
     public void Dispose()

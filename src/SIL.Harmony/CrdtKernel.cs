@@ -75,6 +75,7 @@ public static class CrdtKernel
         services.AddSingleton<FastProjection>();
         services.AddScoped<CrdtRepositoryFactory>();
         services.AddScoped<ModelVersionService>();
+        services.AddSingleton<IJsonSyncableFactory, JsonSyncableFactory>();
         //must use factory method because DataModel constructor is internal
         services.AddScoped<DataModel>(provider => new DataModel(
             provider.GetRequiredService<CrdtRepositoryFactory>(),

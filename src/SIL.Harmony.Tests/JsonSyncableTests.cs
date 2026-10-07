@@ -1,6 +1,4 @@
-using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
@@ -9,10 +7,10 @@ namespace SIL.Harmony.Tests;
 
 public class JsonSyncableTests
 {
-    private static JsonSerializerOptions SerializerOptions { get; } = new ServiceCollection()
+    private static IJsonSyncableFactory Factory { get; } = new ServiceCollection()
         .AddCrdtDataSample(":memory:")
         .BuildServiceProvider()
-        .GetRequiredService<JsonSerializerOptions>();
+        .GetRequiredService<IJsonSyncableFactory>();
 
     [Fact]
     public async Task WritesPerClientFile()
@@ -20,7 +18,7 @@ public class JsonSyncableTests
         var dir = Directory.CreateTempSubdirectory("harmony-json-syncable-test-");
         try
         {
-            var syncable = new JsonSyncable(dir, SerializerOptions, NullLogger<JsonSyncable>.Instance);
+            var syncable = Factory.Create(dir);
             var clientId = Guid.NewGuid();
             var commit = new Commit
             {
@@ -55,7 +53,7 @@ public class JsonSyncableTests
         var dir = Directory.CreateTempSubdirectory("harmony-json-syncable-test-");
         try
         {
-            var syncable = new JsonSyncable(dir, SerializerOptions, NullLogger<JsonSyncable>.Instance);
+            var syncable = Factory.Create(dir);
             var commit = new Commit
             {
                 ClientId = Guid.NewGuid(),

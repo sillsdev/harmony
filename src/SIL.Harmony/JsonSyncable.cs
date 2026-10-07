@@ -7,7 +7,7 @@ using SIL.Harmony.Changes;
 
 namespace SIL.Harmony;
 
-public class JsonSyncable : ISyncable
+internal class JsonSyncable : ISyncable
 {
     private readonly DirectoryInfo _rootDir;
     private readonly JsonSerializerOptions _serializerOptions;

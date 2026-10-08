@@ -129,13 +129,12 @@ public class HarmonyConfig
     private FrozenDictionary<string, int> BuildChangeVersions()
     {
         ModelVersionBuilder.Freeze();
-        return ModelVersions.SelectMany(v => v.ChangeTypes)
-            .CountBy(t => t, StringComparer.Ordinal)
-            .ToFrozenDictionary(StringComparer.Ordinal);
+        return ModelVersionBuilder.ChangeVersions.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     /// <summary>
-    /// The version a change of this type is authored with: how many model versions list the type.
+    /// The version a change of this type is authored with: the version the latest model version that lists the type gave it,
+    /// 0 when none lists it.
     /// </summary>
     /// <param name="discriminator">the change type's discriminator, its <c>$type</c></param>
     public int ChangeVersion(string discriminator)
@@ -158,14 +157,15 @@ public class HarmonyConfig
     public string DescribeModelVersions()
     {
         var builder = new StringBuilder();
-        for (var i = 0; i < ModelVersions.Count; i++)
+        foreach (var version in ModelVersions)
         {
-            var version = ModelVersions[i];
-            builder.Append(i + 1)
+            builder.Append(version.Number)
                 .Append(version.Major ? " major " : " ")
                 .Append(version.Name)
                 .Append(": ")
-                .AppendJoin(", ", version.ChangeTypes)
+                .AppendJoin(", ", version.Changes.Select(c => c.InvalidateFrom == c.Version
+                    ? $"{c.ChangeType} {c.Version}"
+                    : $"{c.ChangeType} {c.Version} invalidates from {c.InvalidateFrom}"))
                 .Append('\n');
         }
         return builder.ToString();

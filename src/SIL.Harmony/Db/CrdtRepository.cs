@@ -394,11 +394,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// The oldest commit with a change whose <c>$type</c> is one of <paramref name="changeVersions"/>
-    /// and whose <see cref="ChangeEntity{TChange}.Version"/> is higher than the stored change version given for that type.
+    /// and whose <see cref="ChangeEntity{TChange}.Version"/> is at least the version given for that type.
     /// Reads every change, so it's slow, only use it for rare operations. SQLite only.
     /// </summary>
     public async Task<Commit?> FindOldestCommitWithChangeVersions(
-        IReadOnlyCollection<(string ChangeType, int StoredChangeVersion)> changeVersions)
+        IReadOnlyCollection<(string ChangeType, int FromVersion)> changeVersions)
     {
         if (changeVersions.Count == 0) return null;
         if (!_dbContext.Database.IsSqlite())
@@ -407,14 +407,14 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         //the key must be quoted in the path, because $ has a special meaning in json paths
         var typeDiscriminatorPath = $"$.\"{CrdtConstants.ChangeDiscriminatorProperty}\"";
         //one json array parameter, so the parameter count doesn't depend on how many types there are
-        var changeVersionsJson = JsonSerializer.Serialize(changeVersions.Select(cv => new { t = cv.ChangeType, v = cv.StoredChangeVersion }));
+        var changeVersionsJson = JsonSerializer.Serialize(changeVersions.Select(cv => new { t = cv.ChangeType, v = cv.FromVersion }));
         var commitIds = await _dbContext.Database.SqlQuery<Guid>($"""
             SELECT c.Id AS Value FROM Commits c
             WHERE EXISTS (
                 SELECT 1 FROM ChangeEntities ce, json_each({changeVersionsJson}) cv
                 WHERE ce.CommitId = c.Id
                   AND json_extract(ce.Change, {typeDiscriminatorPath}) = json_extract(cv.value, '$.t')
-                  AND ce.Version > json_extract(cv.value, '$.v')
+                  AND ce.Version >= json_extract(cv.value, '$.v')
             )
             ORDER BY c.DateTime, c.Counter, c.Id
             LIMIT 1

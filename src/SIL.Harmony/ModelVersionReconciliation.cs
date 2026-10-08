@@ -27,14 +27,14 @@ internal record StoredModelVersions(int Version, StoredModelVersion[] Versions)
     public static StoredModelVersions From(IReadOnlyList<ModelVersion> versions)
     {
         return new StoredModelVersions(versions.Count,
-            versions.Select(v => new StoredModelVersion(v.Major, v.ChangeTypes.ToArray())).ToArray());
+            versions.Select(v => new StoredModelVersion(v.Major, v.Changes.ToArray())).ToArray());
     }
 }
 
-internal record StoredModelVersion(bool Major, string[] ChangeTypes)
+internal record StoredModelVersion(bool Major, ModelVersionChange[] Changes)
 {
     public bool SameAs(ModelVersion version)
     {
-        return Major == version.Major && ChangeTypes.SequenceEqual(version.ChangeTypes, StringComparer.Ordinal);
+        return Major == version.Major && Changes.SequenceEqual(version.Changes);
     }
 }

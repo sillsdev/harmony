@@ -181,21 +181,29 @@ It's that easy. All the heavy lifting is done by the interface which is fairly s
 ### Model versions
 Clients on different app versions sync with each other. When a newer app adds a change type, an older app stores those changes as `OpaqueChange` (with `UnknownChangeHandling.Fallback`) and skips them. When a newer app changes how a change type applies, an older app applies those changes with its old code. In both cases the snapshots must be rebuilt when the older app upgrades.
 
-To make this possible, declare a model version each time a release adds a change type, or changes how one applies. Only add versions at the end, never modify a released version:
+To make this possible, declare a model version each time a release adds a change type, or changes how one applies. Number the versions 1, 2, 3 and so on. Each version lists the change types it added or modified, with the type's new version number. A type's version starts at 1 and goes up by one each time it is listed. Only add versions at the end, never modify a released version:
 ```C#
 services.AddCrdtData<AppDbContext>(config =>
 {
     config.ModelVersionBuilder
-        .Add("Word notes", v => v.Change<SetWordNoteChange>())
+        .Add(1, "Word notes", v => v.Change<SetWordNoteChange>(1))
         //a major version regenerates all snapshots on upgrade
-        .AddMajor("Reference rewrite", v => v.Change<SetAntonymReferenceChange>());
+        .AddMajor(2, "Reference rewrite", v => v.Change<SetAntonymReferenceChange>(1));
 });
 ```
-Every change is stored with the version of its type when it was authored: how many model versions list that type. Changes from before model versions existed are version 0.
+Every change is stored with the version of its type when it was authored: the version the latest model version that lists the type gave it. Changes from before model versions existed, or of types no model version lists, are version 0.
 
-Call `ReconcileModelVersions` when you open a database, before you use it. It compares the model versions stored in the database with the current ones, and replays only the changes that were authored by a newer app than the one that applied them. A major version, or a downgrade, regenerates all snapshots. It throws if a model version that was already applied to the database was modified. Querying changes by type is supported on SQLite only.
+Call `ReconcileModelVersions` when you open a database, before you use it. It compares the model versions stored in the database with the current ones. For each change type that a new model version lists, it replays the changes of that type with the listed version or higher, which are the changes authored by a newer app than the one that applied them. A major version, or a downgrade, regenerates all snapshots. It throws if a model version that was already applied to the database was modified. Querying changes by type is supported on SQLite only.
 ```C#
 await dataModel.ReconcileModelVersions();
+```
+If a released version forgot to list a change type that it added or modified, its apps authored those changes with the type's previous version number, the same as the apps before them. To fix it, list the type in a new version with `invalidateFrom` set to that previous number. Upgrading to the new version then replays every change of the type with that number or higher:
+```C#
+config.ModelVersionBuilder
+    .Add(1, "Word notes", v => v.Change<SetWordNoteChange>(1))
+    //forgot to list SetTagChange, so its changes are still authored as version 0
+    .Add(2, "Tags", v => v.Change<SetWordNoteChange>(2))
+    .Add(3, "Fix tags", v => v.Change<SetTagChange>(1, invalidateFrom: 0));
 ```
 To make sure a released version is not modified by accident, add a snapshot test of `HarmonyConfig.DescribeModelVersions()` to your app. A new version only adds a line at the end of the snapshot.
 

@@ -18,7 +18,7 @@ internal class ModelVersionService(
     /// Brings the snapshots up to date with the model versions of the current config, see <see cref="ModelVersionBuilder"/>.
     /// Changes authored by a newer app are applied with the old code by an older app, or skipped as
     /// <see cref="OpaqueChange"/> when the older app doesn't know their type. After an upgrade those changes are replayed,
-    /// from the oldest commit with a change authored with a version this database didn't have yet.
+    /// from the oldest commit with a change whose version a new model version invalidates.
     /// A major version, or a downgrade, regenerates all snapshots.
     /// Call this when opening a database, before using it. Querying changes by type is SQLite only.
     /// </summary>
@@ -79,18 +79,16 @@ internal class ModelVersionService(
     }
 
     /// <summary>
-    /// For each change type in the versions after <paramref name="storedVersion"/>, the change version that type had
-    /// at the stored model version. A change of that type with a higher version was authored by a newer app than the
-    /// app that applied it.
+    /// For each change type in the versions after <paramref name="storedVersion"/>, the lowest change version to replay:
+    /// the lowest <see cref="ModelVersionChange.InvalidateFrom"/> those versions give the type.
     /// </summary>
-    internal static (string ChangeType, int StoredChangeVersion)[] ChangeVersionsToReplay(int storedVersion,
+    internal static (string ChangeType, int FromVersion)[] ChangeVersionsToReplay(int storedVersion,
         IReadOnlyList<ModelVersion> versions)
     {
-        var appliedVersions = versions.Take(storedVersion).ToArray();
         return versions.Skip(storedVersion)
-            .SelectMany(v => v.ChangeTypes)
-            .Distinct(StringComparer.Ordinal)
-            .Select(type => (type, appliedVersions.Count(v => v.ChangeTypes.Contains(type, StringComparer.Ordinal))))
+            .SelectMany(v => v.Changes)
+            .GroupBy(c => c.ChangeType, StringComparer.Ordinal)
+            .Select(changes => (changes.Key, changes.Min(c => c.InvalidateFrom)))
             .ToArray();
     }
 }

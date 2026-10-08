@@ -1,0 +1,4 @@
+﻿1 Notes: SetWordNoteChange 1
+2 major Rewrite: 
+3 Tags and notes: SetTagChange 1, SetWordNoteChange 2
+4 Fix tags: SetTagChange 2 invalidates from 1, SetWordNoteChange 3

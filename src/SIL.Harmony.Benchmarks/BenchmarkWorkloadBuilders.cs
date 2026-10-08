@@ -20,7 +20,14 @@ public static class BenchmarkWorkloadBuilders
         };
         for (var i = 0; i < changes.Length; i++)
         {
-            commit.ChangeEntities.Add(DataModel.ToChangeEntity(changes[i], i, commit.Id));
+            //the sample declares no model versions, so every change is version 0
+            commit.ChangeEntities.Add(new ChangeEntity<IChange>
+            {
+                Change = changes[i],
+                CommitId = commit.Id,
+                EntityId = changes[i].EntityId,
+                Index = i
+            });
         }
         return commit;
     }

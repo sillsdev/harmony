@@ -63,12 +63,18 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
 
     public DataModelTestBase ForkDatabase(bool alwaysValidate = true)
     {
+        //the fork has to be configured like its source, otherwise it replays under different settings
+        return ForkDatabase(_configure, alwaysValidate);
+    }
+
+    /// <summary>a copy of this database opened with a different config, like a newer or older version of the app</summary>
+    public DataModelTestBase ForkDatabase(Action<IServiceCollection>? configure, bool alwaysValidate = true)
+    {
         var connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
         if (DbContext.Database.GetDbConnection() is not SqliteConnection existingConnection) throw new InvalidOperationException("Database is not SQLite");
         existingConnection.BackupDatabase(connection);
-        //the fork has to be configured like its source, otherwise it replays under different settings
-        var newTestBase = new DataModelTestBase(connection, alwaysValidate, _configure, _performanceTest);
+        var newTestBase = new DataModelTestBase(connection, alwaysValidate, configure, _performanceTest);
         newTestBase.SetCurrentDate(CurrentDate);
         return newTestBase;
     }
@@ -81,6 +87,8 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
         _services.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
 
     internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
+
+    internal ModelVersionService ModelVersionService => _services.GetRequiredService<ModelVersionService>();
 
     public async ValueTask<Commit> WriteNextChange(IChange change)
     {

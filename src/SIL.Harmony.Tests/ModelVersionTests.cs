@@ -157,6 +157,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var oldNote = await WriteNextChange(new SetWordNoteChange(wordId, "old note"));
         var newerNote = await SyncFromOtherClient(this, new SetWordNoteChange(wordId, "newer note"), version: 1);
         (await ChangeVersions(this, oldNote)).Should().Equal(0);
+        (await NoteOf(this, wordId)).Should().Be("newer note", "the old app applies a newer app's change with its own code");
 
         await using var newApp = ForkDatabase(NewApp);
         var result = await newApp.ModelVersionService.ReconcileModelVersions();

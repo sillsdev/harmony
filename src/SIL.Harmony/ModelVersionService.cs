@@ -32,13 +32,14 @@ internal class ModelVersionService(
         var stored = await repo.GetLocalState<StoredModelVersions>(StoredModelVersions.LocalStateKey)
                      ?? StoredModelVersions.None;
         var current = Config.ModelVersions;
+        var currentVersion = Config.CurrentModelVersion;
         EnsureAppliedVersionsUnchanged(stored, current);
-        if (stored.Version == current.Count)
-            return new ModelVersionReconcileResult(stored.Version, current.Count, false, null);
+        if (stored.Version == currentVersion)
+            return new ModelVersionReconcileResult(stored.Version, currentVersion, false, null);
 
         var fullRegeneration = false;
         Commit? replayFrom;
-        if (current.Count < stored.Version || current.Skip(stored.Version).Any(v => v.Major))
+        if (currentVersion < stored.Version || current.Skip(stored.Version).Any(v => v.Major))
         {
             //a downgrade is rare and the snapshots were made by newer code, so start over
             fullRegeneration = true;
@@ -58,12 +59,12 @@ internal class ModelVersionService(
         {
             logger.LogInformation(
                 "Model version changed from {StoredVersion} to {CurrentVersion}, replayed from commit {CommitId}, full regeneration: {FullRegeneration}",
-                stored.Version, current.Count, replayFrom.Id, fullRegeneration);
+                stored.Version, currentVersion, replayFrom.Id, fullRegeneration);
         }
 
         await repo.SetLocalState(StoredModelVersions.LocalStateKey, StoredModelVersions.From(current));
         await transaction.CommitAsync();
-        return new ModelVersionReconcileResult(stored.Version, current.Count, fullRegeneration, replayFrom);
+        return new ModelVersionReconcileResult(stored.Version, currentVersion, fullRegeneration, replayFrom);
     }
 
     private static void EnsureAppliedVersionsUnchanged(StoredModelVersions stored, IReadOnlyList<ModelVersion> current)

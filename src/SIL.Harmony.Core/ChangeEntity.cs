@@ -17,5 +17,5 @@ public class ChangeEntity<TChange>
     /// The version of the change type when the change was authored: how many model versions list its type.
     /// Changes from before model versions existed are version 0.
     /// </summary>
-    public int Version { get; set; }
+    public int ChangeVersion { get; set; }
 }

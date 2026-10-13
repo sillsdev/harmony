@@ -394,7 +394,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     /// <summary>
     /// The oldest commit with a change whose <c>$type</c> is one of <paramref name="changeVersions"/>
-    /// and whose <see cref="ChangeEntity{TChange}.Version"/> is at least the version given for that type.
+    /// and whose <see cref="ChangeEntity{TChange}.ChangeVersion"/> is at least the version given for that type.
     /// Reads every change, so it's slow, only use it for rare operations. SQLite only.
     /// </summary>
     public async Task<Commit?> FindOldestCommitWithChangeVersions(
@@ -414,7 +414,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                 SELECT 1 FROM ChangeEntities ce, json_each({changeVersionsJson}) cv
                 WHERE ce.CommitId = c.Id
                   AND json_extract(ce.Change, {typeDiscriminatorPath}) = json_extract(cv.value, '$.t')
-                  AND ce.Version >= json_extract(cv.value, '$.v')
+                  AND ce.ChangeVersion >= json_extract(cv.value, '$.v')
             )
             ORDER BY c.DateTime, c.Counter, c.Id
             LIMIT 1

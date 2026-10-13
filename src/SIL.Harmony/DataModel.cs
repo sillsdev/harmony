@@ -130,7 +130,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             CommitId = commitId,
             EntityId = change.EntityId,
             Index = index,
-            Version = config.ChangeVersion(change)
+            ChangeVersion = config.ChangeVersion(change)
         };
     }
 

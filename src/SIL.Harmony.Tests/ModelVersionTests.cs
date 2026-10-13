@@ -68,7 +68,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     private static async Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange change, int version)
     {
         var commit = BuildCommit(Guid.NewGuid(), app.NextDate(), [change]);
-        commit.ChangeEntities.Single().Version = version;
+        commit.ChangeEntities.Single().ChangeVersion = version;
         await app.AddCommitsViaSync([commit]);
         return commit;
     }
@@ -105,7 +105,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         return await app.DbContext.Set<ChangeEntity<IChange>>().AsNoTracking()
             .Where(ce => ce.CommitId == commit.Id)
             .OrderBy(ce => ce.Index)
-            .Select(ce => ce.Version)
+            .Select(ce => ce.ChangeVersion)
             .ToArrayAsync(TestContext.Current.CancellationToken);
     }
 
@@ -123,11 +123,11 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             new SetWordNoteChange(wordId, "note")
         ]);
 
-        commit.ChangeEntities.Select(ce => ce.Version).Should().Equal(0, 1, 2);
+        commit.ChangeEntities.Select(ce => ce.ChangeVersion).Should().Equal(0, 1, 2);
         (await ChangeVersions(app, commit)).Should().Equal(0, 1, 2);
         var json = JsonSerializer.Serialize(commit, app.CrdtConfig.JsonSerializerOptions);
         JsonSerializer.Deserialize<Commit>(json, app.CrdtConfig.JsonSerializerOptions)!
-            .ChangeEntities.Select(ce => ce.Version).Should().Equal(0, 1, 2);
+            .ChangeEntities.Select(ce => ce.ChangeVersion).Should().Equal(0, 1, 2);
     }
 
     [Fact]
@@ -499,7 +499,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var tagCommit = await SyncFromOtherClient(this, new SetTagChange(tagId, "tag"), version: 2);
         //added last, but sorts before the other version 1 note
         var earlierNote = CommitBefore(laterNote, new SetWordNoteChange(wordId, "earlier"));
-        earlierNote.ChangeEntities.Single().Version = 1;
+        earlierNote.ChangeEntities.Single().ChangeVersion = 1;
         await AddCommitsViaSync([earlierNote]);
         await using var repo = CreateRepository();
 

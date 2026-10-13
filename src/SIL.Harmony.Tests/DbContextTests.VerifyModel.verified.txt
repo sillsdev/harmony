@@ -39,10 +39,10 @@
       Change (IChange)
         Annotations: 
           Relational:ColumnType: jsonb
-      EntityId (Guid) Required
-      Version (int) Required ValueGenerated.OnAdd
+      ChangeVersion (int) Required ValueGenerated.OnAdd
         Annotations: 
           Relational:DefaultValue: 0
+      EntityId (Guid) Required
     Keys: 
       CommitId, Index PK
     Foreign keys: 

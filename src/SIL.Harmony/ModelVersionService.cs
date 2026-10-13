@@ -38,33 +38,33 @@ internal class ModelVersionService(
             return new ModelVersionReconcileResult(stored.Version, currentVersion, false, null);
 
         var fullRegeneration = false;
-        Commit? replayFrom;
+        Commit? oldestInvalidated;
         if (currentVersion < stored.Version || current.Skip(stored.Version).Any(v => v.Major))
         {
             //a downgrade is rare and the snapshots were made by newer code, so start over
             fullRegeneration = true;
-            replayFrom = await repo.CurrentCommits().FirstOrDefaultAsync();
+            oldestInvalidated = await repo.CurrentCommits().FirstOrDefaultAsync();
             await SnapshotReplay.RegenerateAll(repo, Config);
         }
         else
         {
-            replayFrom = await repo.FindOldestCommitWithChangeVersions(ChangeVersionsToReplay(stored.Version, current));
-            if (replayFrom is not null)
+            oldestInvalidated = await repo.FindOldestCommitWithChangeVersions(ChangeVersionsToReplay(stored.Version, current));
+            if (oldestInvalidated is not null)
             {
-                await SnapshotReplay.UpdateSnapshots(repo, await repo.ReplayWindowFrom(replayFrom), Config);
+                await SnapshotReplay.UpdateSnapshots(repo, await repo.ReplayWindowFrom(oldestInvalidated), Config);
             }
         }
 
-        if (replayFrom is not null)
+        if (oldestInvalidated is not null)
         {
             logger.LogInformation(
-                "Model version changed from {StoredVersion} to {CurrentVersion}, replayed from commit {CommitId}, full regeneration: {FullRegeneration}",
-                stored.Version, currentVersion, replayFrom.Id, fullRegeneration);
+                "Model version changed from {StoredVersion} to {CurrentVersion}, oldest invalidated commit {CommitId}, full regeneration: {FullRegeneration}",
+                stored.Version, currentVersion, oldestInvalidated.Id, fullRegeneration);
         }
 
         await repo.SetLocalState(StoredModelVersions.LocalStateKey, StoredModelVersions.From(current));
         await transaction.CommitAsync();
-        return new ModelVersionReconcileResult(stored.Version, currentVersion, fullRegeneration, replayFrom);
+        return new ModelVersionReconcileResult(stored.Version, currentVersion, fullRegeneration, oldestInvalidated);
     }
 
     private static void EnsureAppliedVersionsUnchanged(StoredModelVersions stored, IReadOnlyList<ModelVersion> current)

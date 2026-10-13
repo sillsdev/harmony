@@ -5,12 +5,15 @@ namespace SIL.Harmony;
 /// <param name="StoredVersion">the model version stored in the database before the call, 0 when none was stored</param>
 /// <param name="CurrentVersion">the model version of the current config, which is now stored</param>
 /// <param name="FullRegeneration">true when all snapshots were regenerated, because of a major version or a downgrade</param>
-/// <param name="ReplayedFrom">the oldest commit snapshots were rebuilt from, null when nothing was replayed</param>
+/// <param name="OldestInvalidatedCommit">
+/// the oldest commit with a change the upgrade invalidated, snapshots were rebuilt from the checkpoint before it.
+/// The first commit on a full regeneration, null when nothing was replayed
+/// </param>
 public record ModelVersionReconcileResult(
     int StoredVersion,
     int CurrentVersion,
     bool FullRegeneration,
-    Commit? ReplayedFrom)
+    Commit? OldestInvalidatedCommit)
 {
     public bool Changed => StoredVersion != CurrentVersion;
 }

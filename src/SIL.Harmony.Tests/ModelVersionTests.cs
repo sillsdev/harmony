@@ -143,8 +143,8 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await using var newApp = oldApp.ForkDatabase(NewApp);
         var result = await newApp.ModelVersionService.ReconcileModelVersions();
 
-        result.Should().Be(new ModelVersionReconcileResult(0, 1, false, result.ReplayedFrom));
-        result.ReplayedFrom!.Id.Should().Be(noteCommit.Id);
+        result.Should().Be(new ModelVersionReconcileResult(0, 1, false, result.OldestInvalidatedCommit));
+        result.OldestInvalidatedCommit!.Id.Should().Be(noteCommit.Id);
         (await NoteOf(newApp, wordId)).Should().Be("a note");
     }
 
@@ -161,7 +161,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await using var newApp = ForkDatabase(NewApp);
         var result = await newApp.ModelVersionService.ReconcileModelVersions();
 
-        result.ReplayedFrom!.Id.Should().Be(newerNote.Id,
+        result.OldestInvalidatedCommit!.Id.Should().Be(newerNote.Id,
             "the old note was authored and applied by the old app, so it doesn't need a replay");
         result.FullRegeneration.Should().BeFalse();
         (await NoteOf(newApp, wordId)).Should().Be("newer note");
@@ -210,7 +210,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await using var fixedApp = beforeFix.ForkDatabase(AppThatFixedForgottenNotes);
         var result = await fixedApp.ModelVersionService.ReconcileModelVersions();
 
-        (result.ReplayedFrom?.Id).Should().Be(noteCommit.Id);
+        (result.OldestInvalidatedCommit?.Id).Should().Be(noteCommit.Id);
         (await NoteOf(fixedApp, wordId)).Should().Be("a note");
         fixedApp.CrdtConfig.ChangeVersion(NoteChangeType).Should().Be(1, "notes authored after the fix can be told apart");
     }
@@ -254,7 +254,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
 
         var result = await newApp.ModelVersionService.ReconcileModelVersions();
 
-        result.ReplayedFrom!.Id.Should().Be(noteCommit.Id);
+        result.OldestInvalidatedCommit!.Id.Should().Be(noteCommit.Id);
         (await SnapshotIds(newApp)).Should().Contain(snapshotsUpToCheckpoint, "snapshots before the checkpoint should not be rebuilt");
         var word = await newApp.DataModel.GetLatest<Word>(wordId);
         word!.Note.Should().Be("a note");
@@ -279,7 +279,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var result = await newApp.ModelVersionService.ReconcileModelVersions();
 
         result.FullRegeneration.Should().BeTrue();
-        result.ReplayedFrom!.Id.Should().Be(firstCommit.Id);
+        result.OldestInvalidatedCommit!.Id.Should().Be(firstCommit.Id);
         result.CurrentVersion.Should().Be(1);
         await ShouldBeRegenerated(newApp, snapshotIds);
     }
@@ -340,8 +340,8 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var snapshotIds = await SnapshotIds(oldApp);
         var result = await oldApp.ModelVersionService.ReconcileModelVersions();
 
-        result.Should().Be(new ModelVersionReconcileResult(1, 0, true, result.ReplayedFrom));
-        result.ReplayedFrom!.Id.Should().Be(firstCommit.Id);
+        result.Should().Be(new ModelVersionReconcileResult(1, 0, true, result.OldestInvalidatedCommit));
+        result.OldestInvalidatedCommit!.Id.Should().Be(firstCommit.Id);
         await ShouldBeRegenerated(oldApp, snapshotIds);
         (await NoteOf(oldApp, wordId)).Should().Be("a note");
     }

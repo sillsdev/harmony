@@ -451,9 +451,10 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             .Versions;
 
         ModelVersionService.ChangeVersionsToReplay(0, versions)
-            .Should().BeEquivalentTo([(NoteChangeType, 1), (nameof(SetTagChange), 0)]);
+            .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 1), (nameof(SetTagChange), 0)],
+                "a database at 0 applied version 0 notes as authored, but C replays all tags because B forgot them");
         ModelVersionService.ChangeVersionsToReplay(2, versions)
-            .Should().BeEquivalentTo([(NoteChangeType, 3), (nameof(SetTagChange), 0)],
+            .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 3), (nameof(SetTagChange), 0)],
                 "the apps with versions A and B authored tags with version 0");
         ModelVersionService.ChangeVersionsToReplay(3, versions)
             .Should().BeEquivalentTo([(nameof(SetTagChange), 2)], "the fix was already applied");

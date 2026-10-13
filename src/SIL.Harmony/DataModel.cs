@@ -405,7 +405,6 @@ public class DataModel : ISyncable, IAsyncDisposable
         return (repo.SnapshotViewAsOf(checkpoint), commitsToReplay);
     }
 
-    /// <summary>one query for every entity the commits touch beats a lookup per entity only for large batches</summary>
     public async Task<SyncState> GetSyncState()
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();

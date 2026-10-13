@@ -47,6 +47,7 @@ internal static class SnapshotReplay
         else await UpdateSnapshots(repo, wholeHistory, config);
     }
 
+    /// <summary>one query for every entity the commits touch beats a lookup per entity only for large batches</summary>
     public static async Task PreloadTouched(ISnapshotView baseline, IEnumerable<Commit> commits, HarmonyConfig config)
     {
         var entityIds = commits.SelectMany(c => c.ChangeEntities.Select(ce => ce.EntityId)).ToHashSet();

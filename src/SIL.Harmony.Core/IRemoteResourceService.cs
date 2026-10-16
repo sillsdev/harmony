@@ -3,7 +3,7 @@ namespace SIL.Harmony.Core;
 /// <summary>
 /// interface to facilitate downloading of resources, typically implemented in application code
 /// the remote Id is opaque to the CRDT lib and could be a URL or some other identifier provided by the backend
-/// the local path returned for the application code to use as required, it could be a URL if needed also.
+/// the local path returned is a file path, either absolute or relative to the cache path passed to <see cref="DownloadResource"/>
 /// </summary>
 public interface IRemoteResourceService<TMetadata> where TMetadata : class
 {
@@ -13,7 +13,8 @@ public interface IRemoteResourceService<TMetadata> where TMetadata : class
     /// </summary>
     /// <param name="remoteId">ID used to identify the remote resource, could be a URL</param>
     /// <param name="localResourceCachePath">path defined by the CRDT config where the resource should be stored</param>
-    /// <returns>download result containing the path to the downloaded file, this is stored in the local db and not synced</returns>
+    /// <returns>download result containing the path to the downloaded file, this is stored in the local db and not synced.
+    /// A relative path is resolved against <paramref name="localResourceCachePath"/>; the file must exist when this returns</returns>
     Task<DownloadResult> DownloadResource(string remoteId, string localResourceCachePath);
 
     /// <summary>

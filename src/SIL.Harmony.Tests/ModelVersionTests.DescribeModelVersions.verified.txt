@@ -1,0 +1,5 @@
+﻿0 Before model versions: AddWordImageChange, EditExampleChange, NewDefinitionChange, NewExampleChange, NewWordChange, SetAntonymReferenceChange, SetDefinitionPartOfSpeechChange, SetTagChange, SetWordNoteChange, SetWordTextChange, TagWordChange, create:pendingUpload, create:remote-resource, delete:Definition, delete:Example, delete:RemoteResource, delete:Tag, delete:Word, set:remote-resource-metadata, setOrder:Definition, uploaded:RemoteResource
+1 Notes: SetWordNoteChange
+2 major Rewrite: 
+3 Tags and notes: SetTagChange, SetWordNoteChange
+4 Fix tags: SetTagChange invalidates from 1, SetWordNoteChange

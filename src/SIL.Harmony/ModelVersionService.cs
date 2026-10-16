@@ -52,7 +52,7 @@ internal class ModelVersionService(
         }
         else
         {
-            oldestInvalidated = await repo.FindOldestCommitWithChangeVersions(ChangeVersionsToReplay(storedVersion, current));
+            oldestInvalidated = await repo.FindOldestCommitWithChangeVersions(ChangeVersionsToInvalidate(storedVersion, current));
             if (oldestInvalidated is not null)
             {
                 await SnapshotReplay.UpdateSnapshots(repo, await repo.ReplayWindowFrom(oldestInvalidated), Config);
@@ -90,10 +90,10 @@ internal class ModelVersionService(
     }
 
     /// <summary>
-    /// For each change type in the versions after <paramref name="storedVersion"/>, the lowest change version to replay:
+    /// For each change type in the versions after <paramref name="storedVersion"/>, the lowest change version to invalidate:
     /// the lowest <see cref="ModelVersionChange.InvalidateFrom"/> those versions give the type.
     /// </summary>
-    internal static (string ChangeType, int FromVersion)[] ChangeVersionsToReplay(int storedVersion,
+    internal static (string ChangeType, int FromVersion)[] ChangeVersionsToInvalidate(int storedVersion,
         IReadOnlyList<ModelVersion> versions)
     {
         return NewVersions(storedVersion, versions)

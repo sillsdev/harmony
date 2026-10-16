@@ -135,7 +135,7 @@ public class HarmonyConfig
     }
 
     /// <summary>
-    /// The version a change of this type is authored with: the version the latest model version that lists the type gave it,
+    /// The version a change of this type is authored with: the number of the latest model version that lists the type,
     /// 0 when none lists it.
     /// </summary>
     /// <param name="discriminator">the change type's discriminator, its <c>$type</c></param>
@@ -165,9 +165,9 @@ public class HarmonyConfig
                 .Append(version.Major ? " major " : " ")
                 .Append(version.Name)
                 .Append(": ")
-                .AppendJoin(", ", version.Changes.Select(c => c.InvalidateFrom == c.Version
-                    ? $"{c.ChangeType} {c.Version}"
-                    : $"{c.ChangeType} {c.Version} invalidates from {c.InvalidateFrom}"))
+                .AppendJoin(", ", version.Changes.Select(c => c.InvalidateFrom == version.Number
+                    ? c.ChangeType
+                    : $"{c.ChangeType} invalidates from {c.InvalidateFrom}"))
                 .Append('\n');
         }
         return builder.ToString();

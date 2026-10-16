@@ -156,8 +156,8 @@ public class CustomObjectAdapterTests
                 config.AlwaysValidateCommits = true;
                 config.ChangeTypeListBuilder.Add<CreateMyClassChange>().Add<CreateMyClass2Change>();
                 config.ModelVersionBuilder.Add(0, "Before model versions", v => v
-                    .Change<CreateMyClassChange>(0)
-                    .Change<CreateMyClass2Change>(0));
+                    .Change<CreateMyClassChange>()
+                    .Change<CreateMyClass2Change>());
                 config.ObjectTypeListBuilder
                     .CustomAdapter<IMyCustomInterface, MyClassAdapter>()
                     .Add<MyClass>(builder => builder.HasKey(o => o.Identifier))

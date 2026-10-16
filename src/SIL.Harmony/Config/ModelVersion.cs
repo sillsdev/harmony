@@ -22,11 +22,14 @@ public sealed record ModelVersion(int Number, string Name, bool Major, IReadOnly
     }
 }
 
-/// <summary>a change type that a model version added or modified</summary>
+/// <summary>
+/// A change type that a model version added or modified. Changes of the type are authored with that version's number
+/// from then on, see <see cref="ChangeEntity{TChange}.ChangeVersion"/>.
+/// </summary>
 /// <param name="ChangeType">the discriminator of the change type, its <c>$type</c></param>
-/// <param name="Version">the version changes of this type are authored with, from this model version on</param>
 /// <param name="InvalidateFrom">
-/// on upgrade, changes of this type with this version or higher are replayed.
-/// Usually <paramref name="Version"/>, lower when an earlier model version forgot to list the type.
+/// on upgrade, changes of this type authored with this model version or later are invalidated, and the snapshots
+/// are rebuilt from the checkpoint before the oldest of them. Usually the version's own number, lower when changes
+/// authored by earlier versions must be invalidated too.
 /// </param>
-public sealed record ModelVersionChange(string ChangeType, int Version, int InvalidateFrom);
+public sealed record ModelVersionChange(string ChangeType, int InvalidateFrom);

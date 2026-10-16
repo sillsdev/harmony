@@ -64,24 +64,24 @@ public static class CrdtSampleKernel
             ;
         config.ModelVersionBuilder
             .Add(0, "Before model versions", v => v
-                .Change<NewWordChange>(0)
-                .Change<NewDefinitionChange>(0)
-                .Change<NewExampleChange>(0)
-                .Change<EditExampleChange>(0)
-                .Change<SetWordTextChange>(0)
-                .Change<SetWordNoteChange>(0)
-                .Change<SetAntonymReferenceChange>(0)
-                .Change<AddWordImageChange>(0)
-                .Change<SetOrderChange<Definition>>(0)
-                .Change<SetDefinitionPartOfSpeechChange>(0)
-                .Change<SetTagChange>(0)
-                .Change<TagWordChange>(0)
-                .Change<DeleteChange<Word>>(0)
-                .Change<DeleteChange<Definition>>(0)
-                .Change<DeleteChange<Example>>(0)
-                .Change<DeleteChange<Tag>>(0)
+                .Change<NewWordChange>()
+                .Change<NewDefinitionChange>()
+                .Change<NewExampleChange>()
+                .Change<EditExampleChange>()
+                .Change<SetWordTextChange>()
+                .Change<SetWordNoteChange>()
+                .Change<SetAntonymReferenceChange>()
+                .Change<AddWordImageChange>()
+                .Change<SetOrderChange<Definition>>()
+                .Change<SetDefinitionPartOfSpeechChange>()
+                .Change<SetTagChange>()
+                .Change<TagWordChange>()
+                .Change<DeleteChange<Word>>()
+                .Change<DeleteChange<Definition>>()
+                .Change<DeleteChange<Example>>()
+                .Change<DeleteChange<Tag>>()
                 //registered by AddCrdtRemoteResources
-                .RemoteResourceChanges<MediaMetadata>(0));
+                .RemoteResourceChanges<MediaMetadata>());
         config.ObjectTypeListBuilder.DefaultAdapter()
             .Add<Word>(builder =>
             {

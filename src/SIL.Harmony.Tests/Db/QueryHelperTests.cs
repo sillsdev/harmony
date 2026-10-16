@@ -234,6 +234,78 @@ public class QueryHelperTests
     }
 
     [Fact]
+    public void WhereAfterCommitInclusive_FiltersOnDate()
+    {
+        var filterCommit = Commit(Guid.NewGuid(), Time(2, 0));
+        var commits = Commits([
+            Commit(id1, Time(1, 0)),
+            Commit(id2, Time(3, 0)),
+            Commit(id3, Time(4, 0)),
+            filterCommit
+        ]);
+        commits.WhereAfter(filterCommit, inclusive: true).Select(c => c.Id).Should().BeEquivalentTo([
+            filterCommit.Id,
+            id2,
+            id3
+        ]);
+    }
+
+    [Fact]
+    public void WhereAfterCommitInclusive_FiltersOnCounter()
+    {
+        var filterCommit = Commit(Guid.NewGuid(), Time(1, 2));
+        var commits = Commits([
+            Commit(id1, Time(1, 1)),
+            Commit(id2, Time(1, 3)),
+            Commit(id3, Time(1, 4)),
+            filterCommit
+        ]);
+        commits.WhereAfter(filterCommit, inclusive: true).Select(c => c.Id).Should().BeEquivalentTo([
+            filterCommit.Id,
+            id2,
+            id3
+        ]);
+    }
+
+    [Fact]
+    public void WhereAfterCommitInclusive_FiltersOnId()
+    {
+        var hybridDateTime = Time(1, 1);
+        Guid[] ids = OrderedIds(4);
+        var commitId1 = ids[0];
+        var filterCommit = Commit(ids[1], hybridDateTime);
+        var commitId2 = ids[2];
+        var commitId3 = ids[3];
+        var commits = Commits([
+            Commit(commitId1, hybridDateTime),
+            filterCommit,
+            Commit(commitId2, hybridDateTime),
+            Commit(commitId3, hybridDateTime),
+        ]);
+        commits.WhereAfter(filterCommit, inclusive: true).Select(c => c.Id).Should().BeEquivalentTo([
+            filterCommit.Id,
+            commitId2,
+            commitId3
+        ]);
+    }
+
+    [Fact]
+    public void CommitDefaultOrder_InMemory_SortsByDateThenCounterThenId()
+    {
+        //the IEnumerable overload is a separate implementation from the IQueryable one the other tests use
+        Guid[] ids = OrderedIds(2);
+        Commit[] expected =
+        [
+            Commit(ids[1], Time(1, 0)),
+            Commit(ids[0], Time(1, 1)),
+            Commit(ids[1], Time(1, 1)),
+            Commit(ids[0], Time(2, 0)),
+        ];
+
+        Enumerable.Reverse(expected).DefaultOrder().Should().Equal(expected);
+    }
+
+    [Fact]
     public void WhereAfterSnapshot_FiltersOnDate()
     {
         var filterCommit = Commit(Guid.NewGuid(), Time(2, 0));

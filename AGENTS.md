@@ -66,6 +66,7 @@ Harmony is the substrate other apps sync through, so a bug here corrupts every c
 - **Hash chain.** `Commit.Hash` chains over `ParentHash` in commit order; `AlwaysValidateCommits` (on in tests) checks it after every write.
 - **Serialized changes are forever.** Commits written by old clients must still deserialize. Keep every change type's `$type` discriminator and JSON property names stable; a rename or removal needs a migration path. `PeekThenConcreteChangeConverter` owns `IChange` discrimination and needs `$type` first; unknown types become `OpaqueChange` when configured.
 - **JSON options come from `HarmonyConfig.JsonSerializerOptions`**, never a fresh `JsonSerializerOptions`, so registered change and object types resolve.
+- **Model versions are append-only.** Adding a change type, or changing how one applies, means appending a model version to `ModelVersionBuilder` that lists the type at its next change version (1 for a new type); options validation fails while a registered type is unlisted. A released version, the sample's version 0 included, stays untouched: reconcile throws on an edited one. To fix a release that changed a type's behavior without listing it, list the type in a new version with `invalidateFrom` set to the change version that release authored. A test that needs a different history calls the internal `ModelVersionBuilder.Clear()`, as `ModelVersionTests` does.
 
 ## Review
 

@@ -53,8 +53,10 @@ public class HarmonyConfig
     /// </summary>
     public ModelVersionBuilder ModelVersionBuilder { get; } = new();
     public IReadOnlyList<ModelVersion> ModelVersions => ModelVersionBuilder.Versions;
-    /// <summary>the number of model versions, 0 when the app declares none</summary>
-    public int CurrentModelVersion => ModelVersions.Count;
+    /// <summary>the number of the last model version</summary>
+    public int CurrentModelVersion => ModelVersions.Count == 0
+        ? throw new InvalidOperationException("No model versions are declared, see " + nameof(ModelVersionBuilder))
+        : ModelVersions[^1].Number;
     private readonly Lazy<FrozenDictionary<string, int>> _lazyChangeVersions;
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));

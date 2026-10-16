@@ -25,11 +25,9 @@ public record ModelVersionReconcileResult(
 internal record StoredModelVersions(int Version, StoredModelVersion[] Versions)
 {
     public const string LocalStateKey = "harmony:modelVersions";
-    public static readonly StoredModelVersions None = new(0, []);
-
     public static StoredModelVersions From(IReadOnlyList<ModelVersion> versions)
     {
-        return new StoredModelVersions(versions.Count,
+        return new StoredModelVersions(versions[^1].Number,
             versions.Select(v => new StoredModelVersion(v.Major, v.Changes.ToArray())).ToArray());
     }
 }

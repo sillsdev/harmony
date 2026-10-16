@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
+using SIL.Harmony.Entities;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
@@ -12,8 +13,8 @@ using SIL.Harmony.Sample.Models;
 namespace SIL.Harmony.Tests;
 
 /// <summary>
-/// The database starts out written by an "old app" that has no model versions,
-/// and is then opened by a "new app" with model versions, by forking it with a different config.
+/// The database starts out written by an "old app" that only has the sample's model version 0,
+/// and is then opened by a "new app" with more model versions, by forking it with a different config.
 /// </summary>
 public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
 {
@@ -25,13 +26,48 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         services.Configure<HarmonyConfig>(config => config.UnknownChangeHandling = UnknownChangeHandling.Fallback);
     }
 
-    /// <summary>doesn't know <see cref="SetWordNoteChange"/> at all</summary>
-    private static void OldAppWithoutNotes(IServiceCollection services)
+    /// <summary>replaces the sample's versions with a version 0 that lists every registered change type except <paramref name="newTypes"/></summary>
+    private static void VersionZeroWithout(HarmonyConfig config, params string[] newTypes)
     {
-        OldApp(services);
-        services.Configure<HarmonyConfig>(config => config.ChangeTypeListBuilder.Remove<SetWordNoteChange>());
+        config.ModelVersionBuilder.Clear();
+        config.ModelVersionBuilder.Add(0, "Before model versions", v =>
+        {
+            foreach (var changeType in config.ChangeTypes.Where(ct => !newTypes.Contains(ct.Discriminator)))
+            {
+                v.Change(changeType.Discriminator, 0);
+            }
+        });
     }
 
+    /// <summary>an old app that doesn't know <typeparamref name="T"/> at all</summary>
+    private static void WithoutChangeType<T>(IServiceCollection services) where T : IChange, IPolyType
+    {
+        OldApp(services);
+        services.Configure<HarmonyConfig>(config =>
+        {
+            config.ChangeTypeListBuilder.Remove<T>();
+            VersionZeroWithout(config);
+        });
+    }
+
+    /// <summary>the app that adds <typeparamref name="T"/> in version 1</summary>
+    private static void AddingChangeType<T>(IServiceCollection services) where T : IChange, IPolyType
+    {
+        OldApp(services);
+        services.Configure<HarmonyConfig>(config =>
+        {
+            VersionZeroWithout(config, T.TypeName);
+            config.ModelVersionBuilder.Add(1, "Added " + T.TypeName, v => v.Change<T>(1));
+        });
+    }
+
+    /// <summary>doesn't know <see cref="SetWordNoteChange"/> at all</summary>
+    private static void OldAppWithoutNotes(IServiceCollection services) => WithoutChangeType<SetWordNoteChange>(services);
+
+    /// <summary>adds <see cref="SetWordNoteChange"/>, which <see cref="OldAppWithoutNotes"/> doesn't know</summary>
+    private static void NewAppAddingNotes(IServiceCollection services) => AddingChangeType<SetWordNoteChange>(services);
+
+    /// <summary>changes how <see cref="SetWordNoteChange"/> applies</summary>
     private static void NewApp(IServiceCollection services)
     {
         OldApp(services);
@@ -39,6 +75,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<SetWordNoteChange>(1)));
     }
 
+    /// <summary>the sample's version 0, then <paramref name="versions"/></summary>
     private static Action<IServiceCollection> AppWith(Action<ModelVersionBuilder> versions)
     {
         return services =>
@@ -140,7 +177,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var noteCommit = await SyncFromOtherClient(oldApp, OpaqueNote(oldApp, wordId, "a note"), version: 1);
         (await NoteOf(oldApp, wordId)).Should().BeNull("the old app can't apply the note change");
 
-        await using var newApp = oldApp.ForkDatabase(NewApp);
+        await using var newApp = oldApp.ForkDatabase(NewAppAddingNotes);
         var result = await newApp.ModelVersionService.ReconcileModelVersions();
 
         result.Should().Be(new ModelVersionReconcileResult(0, 1, false, result.OldestInvalidatedCommit));
@@ -168,7 +205,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         (await NoteOf(newApp, wordId)).Should().Be("newer note");
     }
 
-    /// <summary>the app that added notes was released, but forgot to list them in its model version</summary>
+    /// <summary>the app that changed how notes apply was released, but forgot to list them in its model version</summary>
     private static void AppThatForgotNotes(IServiceCollection services)
     {
         OldApp(services);
@@ -189,29 +226,26 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     [InlineData(true)]
     public async Task ForgottenTypeIsReplayedByTheVersionThatFixesIt(bool upgradedToTheAppThatForgot)
     {
-        await using var oldApp = ForkDatabase(OldAppWithoutNotes);
-        await oldApp.ModelVersionService.ReconcileModelVersions();
+        await DataModel.ReconcileModelVersions();
         var wordId = Guid.NewGuid();
-        await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
-        await using var appThatForgot = oldApp.ForkDatabase(AppThatForgotNotes);
-        var forgottenVersion = appThatForgot.CrdtConfig.ChangeVersion(NoteChangeType);
-        forgottenVersion.Should().Be(0, "the app that forgot notes authors them like the old app did");
-        var noteCommit = await SyncFromOtherClient(oldApp, OpaqueNote(oldApp, wordId, "a note"), forgottenVersion);
-        (await NoteOf(oldApp, wordId)).Should().BeNull("the old app can't apply the note change");
+        await WriteNextChange(new NewWordChange(wordId, "hello"));
+        //the app that forgot notes authors them with version 0, the same as the old app
+        var forgottenNote = await SyncFromOtherClient(this, new SetWordNoteChange(wordId, "a note"), version: 0);
 
-        var beforeFix = oldApp;
-        await using var upgraded = upgradedToTheAppThatForgot ? oldApp.ForkDatabase(AppThatForgotNotes) : null;
+        var beforeFix = (DataModelTestBase)this;
+        await using var upgraded = upgradedToTheAppThatForgot ? ForkDatabase(AppThatForgotNotes) : null;
         if (upgraded is not null)
         {
-            await upgraded.ModelVersionService.ReconcileModelVersions();
-            (await NoteOf(upgraded, wordId)).Should().BeNull("the app that forgot notes doesn't know to replay them");
+            var forgotResult = await upgraded.ModelVersionService.ReconcileModelVersions();
+            forgotResult.OldestInvalidatedCommit.Should().BeNull("the app that forgot notes doesn't know to replay them");
             beforeFix = upgraded;
         }
 
         await using var fixedApp = beforeFix.ForkDatabase(AppThatFixedForgottenNotes);
         var result = await fixedApp.ModelVersionService.ReconcileModelVersions();
 
-        (result.OldestInvalidatedCommit?.Id).Should().Be(noteCommit.Id);
+        (result.OldestInvalidatedCommit?.Id).Should().Be(forgottenNote.Id);
+        result.FullRegeneration.Should().BeFalse();
         (await NoteOf(fixedApp, wordId)).Should().Be("a note");
         fixedApp.CrdtConfig.ChangeVersion(NoteChangeType).Should().Be(1, "notes authored after the fix can be told apart");
     }
@@ -238,7 +272,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
 
         await using var newApp = oldApp.ForkDatabase(services =>
         {
-            NewApp(services);
+            NewAppAddingNotes(services);
             SmallCheckpoints(services);
         });
         var checkpoint = await newApp.DbContext.Commits.AsNoTracking()
@@ -329,6 +363,18 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     [Fact]
+    public async Task VersionZeroIsStoredSoItCantBeModifiedLater()
+    {
+        var result = await ModelVersionService.ReconcileModelVersions();
+
+        result.Should().Be(new ModelVersionReconcileResult(0, 0, false, null));
+        (await DataModel.GetLocalState<JsonElement?>("harmony:modelVersions")).Should().NotBeNull();
+        await using var withoutTags = ForkDatabase(WithoutChangeType<SetTagChange>);
+        var act = () => withoutTags.ModelVersionService.ReconcileModelVersions();
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Model version 0 (Before model versions) was modified*");
+    }
+
+    [Fact]
     public async Task DowngradeRegeneratesAllSnapshots()
     {
         await using var newApp = ForkDatabase(NewApp);
@@ -350,18 +396,14 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     [Fact]
     public async Task DowngradeToAnAppWithoutAChangeTypeRemovesItsEntities()
     {
-        await using var newApp = ForkDatabase(AppWith(versions => versions.Add(1, "Tags", v => v.Change<SetTagChange>(1))));
+        await using var newApp = ForkDatabase(AddingChangeType<SetTagChange>);
         await newApp.ModelVersionService.ReconcileModelVersions();
         var wordId = Guid.NewGuid();
         var tagId = Guid.NewGuid();
         await newApp.WriteNextChange(new NewWordChange(wordId, "hello"));
         await newApp.WriteNextChange(new SetTagChange(tagId, "tag"));
 
-        await using var oldApp = newApp.ForkDatabase(services =>
-        {
-            OldApp(services);
-            services.Configure<HarmonyConfig>(config => config.ChangeTypeListBuilder.Remove<SetTagChange>());
-        });
+        await using var oldApp = newApp.ForkDatabase(WithoutChangeType<SetTagChange>);
         var snapshotIds = await SnapshotIds(oldApp);
         var result = await oldApp.ModelVersionService.ReconcileModelVersions();
 
@@ -424,18 +466,47 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     [Fact]
+    public void NoModelVersionsFailsValidation()
+    {
+        using var services = new ServiceCollection()
+            .AddCrdtDataSample(":memory:")
+            .Configure<HarmonyConfig>(config => config.ModelVersionBuilder.Clear())
+            .BuildServiceProvider();
+
+        var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
+
+        act.Should().Throw<OptionsValidationException>().WithMessage("Declare model versions*");
+    }
+
+    [Fact]
+    public void ChangeTypeNotListedByAModelVersionFailsValidation()
+    {
+        using var services = new ServiceCollection()
+            .AddCrdtDataSample(":memory:")
+            .Configure<HarmonyConfig>(config => VersionZeroWithout(config, NoteChangeType, nameof(SetTagChange)))
+            .BuildServiceProvider();
+
+        var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
+
+        act.Should().Throw<OptionsValidationException>()
+            .WithMessage($"*aren't listed by a model version: {nameof(SetTagChange)}, {NoteChangeType}.*");
+    }
+
+    [Fact]
     public void ChangeVersionsToReplayStartAtTheFirstNewVersion()
     {
         var versions = new ModelVersionBuilder()
+            .Add(0, "Before", v => v.Change<SetWordNoteChange>(0).Change<SetTagChange>(0))
             .Add(1, "A", v => v.Change<SetWordNoteChange>(1))
             .Add(2, "B", v => v.Change<SetTagChange>(1).Change<SetWordNoteChange>(2))
             .Add(3, "C", v => v.Change<SetTagChange>(2))
             .Versions;
 
         ModelVersionService.ChangeVersionsToReplay(1, versions)
-            .Should().BeEquivalentTo([(nameof(SetTagChange), 1), (NoteChangeType, 2)]);
+            .Should().BeEquivalentTo([(nameof(SetTagChange), 1), (nameof(SetWordNoteChange), 2)]);
         ModelVersionService.ChangeVersionsToReplay(0, versions)
-            .Should().BeEquivalentTo([(NoteChangeType, 1), (nameof(SetTagChange), 1)]);
+            .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 1), (nameof(SetTagChange), 1)],
+                "version 0 is the state before model versions, so its changes were applied as authored");
         ModelVersionService.ChangeVersionsToReplay(3, versions).Should().BeEmpty();
     }
 
@@ -443,8 +514,9 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     public void ChangeVersionsToReplayStartAtTheInvalidatedVersion()
     {
         var versions = new ModelVersionBuilder()
+            .Add(0, "Before", v => v.Change<SetWordNoteChange>(0).Change<SetTagChange>(0))
             .Add(1, "A", v => v.Change<SetWordNoteChange>(1))
-            //forgot to list tags
+            //changed how tags apply, but forgot to list them
             .Add(2, "B", v => v.Change<SetWordNoteChange>(2))
             .Add(3, "C", v => v.Change<SetTagChange>(1, invalidateFrom: 0).Change<SetWordNoteChange>(3))
             .Add(4, "D", v => v.Change<SetTagChange>(2))
@@ -455,39 +527,43 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
                 "a database at 0 applied version 0 notes as authored, but C replays all tags because B forgot them");
         ModelVersionService.ChangeVersionsToReplay(2, versions)
             .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 3), (nameof(SetTagChange), 0)],
-                "the apps with versions A and B authored tags with version 0");
+                "the apps with versions 0 to 2 authored tags with version 0");
         ModelVersionService.ChangeVersionsToReplay(3, versions)
             .Should().BeEquivalentTo([(nameof(SetTagChange), 2)], "the fix was already applied");
     }
 
     [Fact]
-    public void ModelVersionsMustBeNumberedInOrder()
+    public void ModelVersionsMustBeNumberedInOrderFromZero()
     {
-        var builder = new ModelVersionBuilder().Add(1, "A", v => v.Change<SetWordNoteChange>(1));
+        new ModelVersionBuilder().Invoking(b => b.Add(1, "A", _ => { })).Should().Throw<ArgumentOutOfRangeException>();
+        new ModelVersionBuilder().Invoking(b => b.AddMajor(0, "Before"))
+            .Should().Throw<ArgumentException>().WithMessage("Model version 0 (Before) can't be major*");
+        var builder = new ModelVersionBuilder().Add(0, "Before", v => v.Change<SetWordNoteChange>(0));
 
-        builder.Invoking(b => b.Add(3, "C", _ => { })).Should().Throw<ArgumentOutOfRangeException>();
-        builder.Invoking(b => b.AddMajor(1, "A again")).Should().Throw<ArgumentOutOfRangeException>();
+        builder.Invoking(b => b.Add(2, "B", _ => { })).Should().Throw<ArgumentOutOfRangeException>();
+        builder.Invoking(b => b.AddMajor(0, "Before again")).Should().Throw<ArgumentException>();
         builder.Versions.Should().ContainSingle();
     }
 
     [Fact]
     public void ChangeVersionsMustBeValid()
     {
-        new ModelVersionBuilder().Invoking(b => b.Add(1, "A", v => v.Change<SetWordNoteChange>(2)))
-            .Should().Throw<ArgumentException>().WithMessage("*must be 1, one more than its previous version 0");
-        var builder = new ModelVersionBuilder().Add(1, "A", v => v.Change<SetWordNoteChange>(1).Change<SetTagChange>(1));
+        new ModelVersionBuilder().Invoking(b => b.Add(0, "Before", v => v.Change<SetWordNoteChange>(1)))
+            .Should().Throw<ArgumentException>().WithMessage("*in model version 0 (Before) must be 0*");
+        var builder = new ModelVersionBuilder().Add(0, "Before", v => v.Change<SetWordNoteChange>(0).Change<SetTagChange>(0));
 
-        builder.Invoking(b => b.Add(2, "B", v => v.Change<SetWordNoteChange>(1)))
-            .Should().Throw<ArgumentException>().WithMessage("*must be 2, one more than its previous version 1");
-        builder.Invoking(b => b.Add(2, "B", v => v.Change<SetWordNoteChange>(3)))
-            .Should().Throw<ArgumentException>().WithMessage("*must be 2, one more than its previous version 1");
-        builder.Invoking(b => b.Add(2, "B", v => v.Change<SetTagChange>(0))).Should().Throw<ArgumentOutOfRangeException>();
-        builder.Invoking(b => b.Add(2, "B", v => v.Change<SetTagChange>(2, invalidateFrom: 3))).Should().Throw<ArgumentOutOfRangeException>();
-        builder.Invoking(b => b.Add(2, "B", v => v.Change<SetTagChange>(2, invalidateFrom: -1))).Should().Throw<ArgumentOutOfRangeException>();
-        builder.Invoking(b => b.Add(2, "B", v => v.Change<SetTagChange>(2).Change<SetTagChange>(2)))
+        builder.Invoking(b => b.Add(1, "A", v => v.Change<SetWordNoteChange>(0)))
+            .Should().Throw<ArgumentException>().WithMessage("*must be 1, one more than its previous version 0");
+        builder.Invoking(b => b.Add(1, "A", v => v.Change<SetWordNoteChange>(2)))
+            .Should().Throw<ArgumentException>().WithMessage("*must be 1, one more than its previous version 0");
+        builder.Invoking(b => b.Add(1, "A", v => v.Change<SetTagChange>(-1))).Should().Throw<ArgumentOutOfRangeException>();
+        builder.Invoking(b => b.Add(1, "A", v => v.Change<SetTagChange>(1, invalidateFrom: 2))).Should().Throw<ArgumentOutOfRangeException>();
+        builder.Invoking(b => b.Add(1, "A", v => v.Change<SetTagChange>(1, invalidateFrom: -1))).Should().Throw<ArgumentOutOfRangeException>();
+        builder.Invoking(b => b.Add(1, "A", v => v.Change<SetTagChange>(1).Change<SetTagChange>(1)))
             .Should().Throw<ArgumentException>().WithMessage("*more than once*");
         builder.Versions.Should().ContainSingle("a version that failed validation isn't added");
-        builder.Add(2, "B", v => v.Change<SetWordNoteChange>(2)).Versions.Should().HaveCount(2);
+        builder.Add(1, "A", v => v.Change<SetWordNoteChange>(1).Change<EditExampleChange>(1))
+            .Versions.Should().HaveCount(2, "a type new in this version starts at 1");
     }
 
     [Fact]

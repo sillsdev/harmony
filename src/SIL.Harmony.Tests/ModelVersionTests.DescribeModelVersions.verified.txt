@@ -1,4 +1,5 @@
-﻿1 Notes: SetWordNoteChange 1
+﻿0 Before model versions: AddWordImageChange 0, EditExampleChange 0, NewDefinitionChange 0, NewExampleChange 0, NewWordChange 0, SetAntonymReferenceChange 0, SetDefinitionPartOfSpeechChange 0, SetTagChange 0, SetWordNoteChange 0, SetWordTextChange 0, TagWordChange 0, create:pendingUpload 0, create:remote-resource 0, delete:Definition 0, delete:Example 0, delete:RemoteResource 0, delete:Tag 0, delete:Word 0, set:remote-resource-metadata 0, setOrder:Definition 0, uploaded:RemoteResource 0
+1 Notes: SetWordNoteChange 1
 2 major Rewrite: 
 3 Tags and notes: SetTagChange 1, SetWordNoteChange 2
 4 Fix tags: SetTagChange 2 invalidates from 1, SetWordNoteChange 3

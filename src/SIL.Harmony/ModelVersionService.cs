@@ -29,17 +29,21 @@ internal class ModelVersionService(
         using var locked = await repo.Lock();
         repo.ClearChangeTracker();
         await using var transaction = await repo.BeginTransactionAsync();
-        var stored = await repo.GetLocalState<StoredModelVersions>(StoredModelVersions.LocalStateKey)
-                     ?? StoredModelVersions.None;
+        //nothing stored means the snapshots were made before model versions, which is version 0
+        var stored = await repo.GetLocalState<StoredModelVersions>(StoredModelVersions.LocalStateKey);
+        var storedVersion = stored?.Version ?? 0;
         var current = Config.ModelVersions;
         var currentVersion = Config.CurrentModelVersion;
-        EnsureAppliedVersionsUnchanged(stored, current);
-        if (stored.Version == currentVersion)
-            return new ModelVersionReconcileResult(stored.Version, currentVersion, false, null);
+        if (stored is not null)
+        {
+            EnsureAppliedVersionsUnchanged(stored, current);
+            if (storedVersion == currentVersion)
+                return new ModelVersionReconcileResult(storedVersion, currentVersion, false, null);
+        }
 
         var fullRegeneration = false;
         Commit? oldestInvalidated;
-        if (currentVersion < stored.Version || current.Skip(stored.Version).Any(v => v.Major))
+        if (currentVersion < storedVersion || NewVersions(storedVersion, current).Any(v => v.Major))
         {
             //a downgrade is rare and the snapshots were made by newer code, so start over
             fullRegeneration = true;
@@ -48,7 +52,7 @@ internal class ModelVersionService(
         }
         else
         {
-            oldestInvalidated = await repo.FindOldestCommitWithChangeVersions(ChangeVersionsToReplay(stored.Version, current));
+            oldestInvalidated = await repo.FindOldestCommitWithChangeVersions(ChangeVersionsToReplay(storedVersion, current));
             if (oldestInvalidated is not null)
             {
                 await SnapshotReplay.UpdateSnapshots(repo, await repo.ReplayWindowFrom(oldestInvalidated), Config);
@@ -59,12 +63,12 @@ internal class ModelVersionService(
         {
             logger.LogInformation(
                 "Model version changed from {StoredVersion} to {CurrentVersion}, oldest invalidated commit {CommitId}, full regeneration: {FullRegeneration}",
-                stored.Version, currentVersion, oldestInvalidated.Id, fullRegeneration);
+                storedVersion, currentVersion, oldestInvalidated.Id, fullRegeneration);
         }
 
         await repo.SetLocalState(StoredModelVersions.LocalStateKey, StoredModelVersions.From(current));
         await transaction.CommitAsync();
-        return new ModelVersionReconcileResult(stored.Version, currentVersion, fullRegeneration, oldestInvalidated);
+        return new ModelVersionReconcileResult(storedVersion, currentVersion, fullRegeneration, oldestInvalidated);
     }
 
     private static void EnsureAppliedVersionsUnchanged(StoredModelVersions stored, IReadOnlyList<ModelVersion> current)
@@ -74,9 +78,15 @@ internal class ModelVersionService(
         {
             if (stored.Versions[i].SameAs(current[i])) continue;
             throw new InvalidOperationException(
-                $"Model version {i + 1} ({current[i].Name}) was modified after it was applied to this database. " +
+                $"Model version {current[i].Number} ({current[i].Name}) was modified after it was applied to this database. " +
                 "Released model versions must not change, add a new version instead.");
         }
+    }
+
+    /// <summary>the versions after <paramref name="storedVersion"/>, versions are numbered from 0</summary>
+    private static IEnumerable<ModelVersion> NewVersions(int storedVersion, IReadOnlyList<ModelVersion> versions)
+    {
+        return versions.Skip(storedVersion + 1);
     }
 
     /// <summary>
@@ -86,7 +96,7 @@ internal class ModelVersionService(
     internal static (string ChangeType, int FromVersion)[] ChangeVersionsToReplay(int storedVersion,
         IReadOnlyList<ModelVersion> versions)
     {
-        return versions.Skip(storedVersion)
+        return NewVersions(storedVersion, versions)
             .SelectMany(v => v.Changes)
             .GroupBy(c => c.ChangeType, StringComparer.Ordinal)
             .Select(changes => (changes.Key, changes.Min(c => c.InvalidateFrom)))

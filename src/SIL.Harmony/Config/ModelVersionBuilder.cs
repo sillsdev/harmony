@@ -17,6 +17,7 @@ public class ModelVersionBuilder
     private readonly List<ModelVersion> _versions = [];
     private readonly HashSet<Type> _changeTypes = [];
     private readonly Dictionary<string, int> _changeVersions = new(StringComparer.Ordinal);
+    private bool _remoteResourcesListed;
 
     public IReadOnlyList<ModelVersion> Versions => _versions.AsReadOnly();
 
@@ -25,6 +26,9 @@ public class ModelVersionBuilder
 
     /// <summary>the latest version of each change type listed by a model version</summary>
     internal IReadOnlyDictionary<string, int> ChangeVersions => _changeVersions;
+
+    /// <summary>whether a version called <see cref="ModelVersionChanges.RemoteResourceChanges{TMetadata}"/></summary>
+    internal bool RemoteResourcesListed => _remoteResourcesListed;
 
     /// <summary>
     /// Adds a version. Changes of the listed types are replayed when upgrading to it,
@@ -58,6 +62,7 @@ public class ModelVersionBuilder
             throw new ArgumentException($"Model version 0 ({name}) can't be major, it is the state before model versions");
         var changes = new ModelVersionChanges();
         configure?.Invoke(changes);
+        _remoteResourcesListed |= changes.RemoteResourcesListed;
         foreach (var change in changes.Changes.Values)
         {
             if (number == 0)
@@ -91,6 +96,7 @@ public class ModelVersionBuilder
         _versions.Clear();
         _changeTypes.Clear();
         _changeVersions.Clear();
+        _remoteResourcesListed = false;
     }
 
     internal void Freeze()
@@ -108,6 +114,7 @@ public class ModelVersionChanges
 {
     internal Dictionary<string, ModelVersionChange> Changes { get; } = new(StringComparer.Ordinal);
     internal List<Type> Types { get; } = [];
+    internal bool RemoteResourcesListed { get; private set; }
 
     /// <summary>
     /// The change type was added or modified in this version, or existed before model versions when this is version 0.
@@ -130,11 +137,13 @@ public class ModelVersionChanges
 
     /// <summary>
     /// The change types registered by <see cref="CrdtKernel.AddCrdtRemoteResources{TMetadata}"/>, all with the same version.
-    /// List them again only if they change, with their next version.
+    /// Options validation requires it when remote resources are enabled. Harmony doesn't version these types yet,
+    /// see https://github.com/sillsdev/harmony/issues/141.
     /// </summary>
     public ModelVersionChanges RemoteResourceChanges<TMetadata>(int version, int? invalidateFrom = null)
         where TMetadata : class
     {
+        RemoteResourcesListed = true;
         return Change<RemoteResourceUploadedChange<TMetadata>>(version, invalidateFrom)
             .Change<CreateRemoteResourceChange<TMetadata>>(version, invalidateFrom)
             .Change<CreateRemoteResourcePendingUploadChange<TMetadata>>(version, invalidateFrom)

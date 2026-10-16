@@ -32,10 +32,9 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         config.ModelVersionBuilder.Clear();
         config.ModelVersionBuilder.Add(0, "Before model versions", v =>
         {
-            foreach (var changeType in config.ChangeTypes.Where(ct => !newTypes.Contains(ct.Discriminator)))
-            {
-                v.Change(changeType.Discriminator, 0);
-            }
+            v.RemoteResourceChanges<MediaMetadata>(0);
+            var others = config.ChangeTypes.Select(ct => ct.Discriminator).Except(v.Changes.Keys).Except(newTypes);
+            foreach (var discriminator in others) v.Change(discriminator, 0);
         });
     }
 
@@ -564,6 +563,27 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         builder.Versions.Should().ContainSingle("a version that failed validation isn't added");
         builder.Add(1, "A", v => v.Change<SetWordNoteChange>(1).Change<EditExampleChange>(1))
             .Versions.Should().HaveCount(2, "a type new in this version starts at 1");
+    }
+
+    [Fact]
+    public void RemoteResourceChangesMustBeListed()
+    {
+        using var services = new ServiceCollection()
+            .AddCrdtDataSample(":memory:")
+            .Configure<HarmonyConfig>(config =>
+            {
+                config.ModelVersionBuilder.Clear();
+                config.ModelVersionBuilder.Add(0, "Before model versions", v =>
+                {
+                    foreach (var changeType in config.ChangeTypes) v.Change(changeType.Discriminator, 0);
+                });
+            })
+            .BuildServiceProvider();
+
+        var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
+
+        act.Should().Throw<OptionsValidationException>()
+            .WithMessage("Call RemoteResourceChanges<MediaMetadata> in a model version*");
     }
 
     [Fact]

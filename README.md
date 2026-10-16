@@ -198,11 +198,11 @@ services.AddCrdtData<AppDbContext>(config =>
 ```
 Every change is stored with the version of its type when it was authored: the version the latest model version that lists the type gave it.
 
-Call `ReconcileModelVersions` when you open a database, before you use it. A database that has no model versions stored yet is at version 0. It compares the model versions stored in the database with the current ones. For each change type that a new model version lists, it replays the changes of that type with the listed version or higher, which are the changes authored by a newer app than the one that applied them. A major version, or a downgrade, regenerates all snapshots. It throws if a model version that was already applied to the database was modified. Querying changes by type is supported on SQLite only.
+Call `ReconcileModelVersions` when you open a database, before you use it. A database that has no model versions stored yet is at version 0. It compares the model versions stored in the database with the current ones. For each change type that a new model version lists, it invalidates the changes of that type with the listed version or higher, the ones authored by a newer app than the one that applied them, and rebuilds the snapshots from the checkpoint before the oldest of them. A major version, or a downgrade, regenerates all snapshots. It throws if a model version that was already applied to the database was modified. Querying changes by type is supported on SQLite only.
 ```C#
 await dataModel.ReconcileModelVersions();
 ```
-If a released version changed how a change type applies but forgot to list it, its apps authored those changes with the type's previous version number, the same as the apps before them. To fix it, list the type in a new version with `invalidateFrom` set to that previous number. Upgrading to the new version then replays every change of the type with that number or higher:
+Listing a type invalidates only the changes authored with its new change version or later, the ones from apps on the new version. When the new behavior must also apply to older changes, pass `invalidateFrom` with the change version to invalidate from. That covers a released version that changed how a type applies but forgot to list it, since its apps kept authoring the type with the previous number:
 ```C#
 config.ModelVersionBuilder
     .Add(0, "Before model versions", v => v.Change<SetWordNoteChange>(0).Change<SetTagChange>(0))

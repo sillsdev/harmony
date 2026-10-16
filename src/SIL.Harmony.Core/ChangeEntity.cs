@@ -14,8 +14,8 @@ public class ChangeEntity<TChange>
     public required Guid EntityId { get; set; }
     public required TChange Change { get; set; }
     /// <summary>
-    /// The version of the change type when the change was authored: how many model versions list its type.
-    /// Changes from before model versions existed are version 0.
+    /// The version of the change type when the change was authored: the version the latest model version that lists
+    /// its type gave it. Changes from before model versions existed are version 0.
     /// </summary>
     public int ChangeVersion { get; set; }
 }

@@ -243,7 +243,10 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// <inheritdoc cref="GetLocalState{T}"/>
     public async Task SetLocalState<T>(string key, T value)
     {
-        await _crdtRepositoryFactory.Execute(repo => repo.SetLocalState(key, value));
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        //the write is read-then-add, so two first writes to a key would both add it
+        using var locked = await repo.Lock();
+        await repo.SetLocalState(key, value);
     }
 
     /// <summary>
@@ -252,7 +255,9 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// <inheritdoc cref="GetLocalState{T}"/>
     public async Task RemoveLocalState(string key)
     {
-        await _crdtRepositoryFactory.Execute(repo => repo.RemoveLocalState(key));
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
+        await repo.RemoveLocalState(key);
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)

@@ -235,10 +235,33 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             //VACUUM rewrites the whole file: freed pages go back to the OS and the rows written in replay order get
             //laid out contiguously. Expensive, but so was the rewrite that made it worthwhile
             await _dbContext.Database.ExecuteSqlRawAsync("VACUUM;");
+            await TruncateWal();
         }
         catch (Exception e)
         {
             _logger.LogWarning(e, "Failed to compact the database after regenerating snapshots, the data is intact but the file may be larger than it needs to be");
+        }
+    }
+
+    /// <summary>
+    /// In WAL mode VACUUM writes the whole new file through the write ahead log, so the log is now about as big as
+    /// the database. The automatic checkpoint after the commit copies it back but never shrinks the file, only a
+    /// TRUNCATE checkpoint does. Nothing to do in any other journal mode
+    /// </summary>
+    private async Task TruncateWal()
+    {
+        var connection = _dbContext.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA journal_mode;";
+        var journalMode = await command.ExecuteScalarAsync() as string;
+        if (!string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase)) return;
+
+        //returns one row: busy (1 when it couldn't wait out the readers), log pages, checkpointed pages
+        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync() && reader.GetInt64(0) == 1)
+        {
+            _logger.LogWarning("Could not truncate the write ahead log after regenerating snapshots because another connection is reading, {LogPages} pages stay in it until the next checkpoint", reader.GetInt64(1));
         }
     }
 

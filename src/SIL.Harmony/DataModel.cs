@@ -142,18 +142,17 @@ public class DataModel : ISyncable, IAsyncDisposable
             var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
             //no changes added
             if (oldestChange is null || newCommits is []) return;
-            //the first sync into an empty database pulls the whole project, so it's the one big replay the
-            //snapshots are ever built by. Has to be asked before the add, afterwards there are always commits
-            var firstSync = !await repo.HasAnyCommits();
-
+            CrdtRepository.ReplayWindow replayWindow;
             await using (var transaction = await repo.BeginTransactionAsync())
             {
-                var replayWindow = await repo.AddCommits(newCommits);
+                replayWindow = await repo.AddCommits(newCommits);
                 await UpdateSnapshots(repo, replayWindow);
                 if (AlwaysValidate) await ValidateCommits(repo);
                 await transaction.CommitAsync();
             }
-            if (firstSync) await repo.CompactDatabase();
+            //a window resuming from nothing rebuilt every snapshot, the first sync into an empty database is the
+            //big one, since it pulls the whole project. Any later full rebuild is small, so compacting after it is cheap
+            if (replayWindow.ResumeFrom is null) await repo.CompactDatabase();
         }
         catch (DbUpdateException e)
         {

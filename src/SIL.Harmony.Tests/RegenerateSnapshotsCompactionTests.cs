@@ -44,7 +44,7 @@ public class RegenerateSnapshotsCompactionTests : DataModelTestBase
     }
 
     [Fact]
-    public async Task LaterSyncs_LeaveTheFileAlone()
+    public async Task SyncsResumingFromACheckpoint_LeaveTheFileAlone()
     {
         var entityId = Guid.NewGuid();
         await WriteNextChange(SetWord(entityId, "test root"));

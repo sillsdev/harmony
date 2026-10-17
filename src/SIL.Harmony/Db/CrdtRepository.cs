@@ -133,11 +133,6 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     public bool IsInTransaction => _dbContext.Database.CurrentTransaction is not null;
 
 
-    public async Task<bool> HasAnyCommits()
-    {
-        return await Commits.AnyAsync();
-    }
-
     public async Task<bool> HasCommit(Guid commitId)
     {
         return await Commits.AnyAsync(c => c.Id == commitId);

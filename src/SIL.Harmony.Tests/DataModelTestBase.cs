@@ -144,9 +144,8 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
         return ValueTask.CompletedTask;
     }
 
-    public async ValueTask DisposeAsync()
+    public virtual async ValueTask DisposeAsync()
     {
-
         await _services.DisposeAsync();
     }
 

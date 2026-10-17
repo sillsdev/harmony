@@ -217,6 +217,31 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await Snapshots.ExecuteDeleteAsync();
     }
 
+    /// <summary>
+    /// Reclaims the space a mass delete left behind and refreshes the query planner statistics. SQLite only: on every
+    /// other provider it does nothing. Best effort: it only ever runs after the work it cleans up for has committed,
+    /// so a failure here (disk full, another connection holding the file) is logged and never surfaced.
+    /// Can't run inside a transaction, VACUUM refuses to.
+    /// </summary>
+    public async Task CompactDatabase()
+    {
+        if (_dbContext.Database.ProviderName != FastProjection.SqliteProviderName) return;
+        if (IsInTransaction) throw new InvalidOperationException("The database can't be compacted inside a transaction");
+        try
+        {
+            //optimize first: it's cheap, and VACUUM keeps the statistics it refreshes.
+            //see https://gist.github.com/phiresky/978d8e204f77feaa0ab5cca08d2d5b27
+            await _dbContext.Database.ExecuteSqlRawAsync("PRAGMA optimize;");
+            //VACUUM rewrites the whole file: freed pages go back to the OS and the rows written in replay order get
+            //laid out contiguously. Expensive, but so was the rewrite that made it worthwhile
+            await _dbContext.Database.ExecuteSqlRawAsync("VACUUM;");
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "Failed to compact the database after regenerating snapshots, the data is intact but the file may be larger than it needs to be");
+        }
+    }
+
     private static readonly MethodInfo deleteProjectedTableMethod = new Func<ICrdtDbContext, Task>(DeleteProjectedTable<object>).Method.GetGenericMethodDefinition();
 
     private static async Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class

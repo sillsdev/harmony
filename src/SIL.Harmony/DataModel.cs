@@ -237,12 +237,17 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         using var locked = await repo.Lock();
         repo.ClearChangeTracker();
-        await using var transaction = await repo.BeginTransactionAsync();
-        var wholeHistory = await repo.WholeHistory();
-        //Replay does nothing without commits, which would leave snapshots with no history behind them in place
-        if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
-        else await UpdateSnapshots(repo, wholeHistory);
-        await transaction.CommitAsync();
+        await using (var transaction = await repo.BeginTransactionAsync())
+        {
+            var wholeHistory = await repo.WholeHistory();
+            //Replay does nothing without commits, which would leave snapshots with no history behind them in place
+            if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
+            else await UpdateSnapshots(repo, wholeHistory);
+            await transaction.CommitAsync();
+        }
+        //every snapshot and projected row was just deleted and rewritten, so the file is mostly free pages now.
+        //Still under the lock so nothing writes between the rebuild and the cleanup
+        await repo.CompactDatabase();
     }
 
     public async Task<ObjectSnapshot> GetLatestSnapshotByObjectId(Guid entityId)

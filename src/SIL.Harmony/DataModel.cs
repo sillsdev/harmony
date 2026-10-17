@@ -142,12 +142,18 @@ public class DataModel : ISyncable, IAsyncDisposable
             var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
             //no changes added
             if (oldestChange is null || newCommits is []) return;
+            //the first sync into an empty database pulls the whole project, so it's the one big replay the
+            //snapshots are ever built by. Has to be asked before the add, afterwards there are always commits
+            var firstSync = !await repo.HasAnyCommits();
 
-            await using var transaction = await repo.BeginTransactionAsync();
-            var replayWindow = await repo.AddCommits(newCommits);
-            await UpdateSnapshots(repo, replayWindow);
-            if (AlwaysValidate) await ValidateCommits(repo);
-            await transaction.CommitAsync();
+            await using (var transaction = await repo.BeginTransactionAsync())
+            {
+                var replayWindow = await repo.AddCommits(newCommits);
+                await UpdateSnapshots(repo, replayWindow);
+                if (AlwaysValidate) await ValidateCommits(repo);
+                await transaction.CommitAsync();
+            }
+            if (firstSync) await repo.CompactDatabase();
         }
         catch (DbUpdateException e)
         {
@@ -247,6 +253,19 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
         //every snapshot and projected row was just deleted and rewritten, so the file is mostly free pages now.
         //Still under the lock so nothing writes between the rebuild and the cleanup
+        await repo.CompactDatabase();
+    }
+
+    /// <summary>
+    /// Reclaims the space a mass delete left behind and refreshes the query planner statistics, SQLite only.
+    /// Runs on its own after <see cref="RegenerateSnapshots"/> and after the first sync into an empty database;
+    /// call it after any other bulk delete the application does. Expensive: it rewrites the whole file and
+    /// holds the write lock while it does, so not something to run after every sync
+    /// </summary>
+    public async Task CompactDatabase()
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
         await repo.CompactDatabase();
     }
 

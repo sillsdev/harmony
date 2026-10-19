@@ -102,11 +102,11 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         return change.Should().BeOfType<OpaqueChange>().Subject;
     }
 
-    /// <summary>a commit authored by another client, with the change version that client's app gave it</summary>
+    /// <summary>a commit authored by another client, with the model version that client's app authored it with</summary>
     private static async Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange change, int version)
     {
         var commit = BuildCommit(Guid.NewGuid(), app.NextDate(), [change]);
-        commit.ChangeEntities.Single().ChangeVersion = version;
+        commit.ChangeEntities.Single().AuthoredModelVersion = version;
         await app.AddCommitsViaSync([commit]);
         return commit;
     }
@@ -138,12 +138,12 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         snapshotIdsAfter.Should().NotIntersectWith(snapshotIdsBefore, "every snapshot should be recreated");
     }
 
-    private static async Task<int[]> ChangeVersions(DataModelTestBase app, Commit commit)
+    private static async Task<int[]> AuthoredModelVersions(DataModelTestBase app, Commit commit)
     {
         return await app.DbContext.Set<ChangeEntity<IChange>>().AsNoTracking()
             .Where(ce => ce.CommitId == commit.Id)
             .OrderBy(ce => ce.Index)
-            .Select(ce => ce.ChangeVersion)
+            .Select(ce => ce.AuthoredModelVersion)
             .ToArrayAsync(TestContext.Current.CancellationToken);
     }
 
@@ -161,12 +161,12 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             new SetWordNoteChange(wordId, "note")
         ]);
 
-        commit.ChangeEntities.Select(ce => ce.ChangeVersion).Should().Equal([2, 2, 2],
+        commit.ChangeEntities.Select(ce => ce.AuthoredModelVersion).Should().Equal([2, 2, 2],
             "every change gets the latest version, even NewWordChange, which no later version lists");
-        (await ChangeVersions(app, commit)).Should().Equal(2, 2, 2);
+        (await AuthoredModelVersions(app, commit)).Should().Equal(2, 2, 2);
         var json = JsonSerializer.Serialize(commit, app.CrdtConfig.JsonSerializerOptions);
         JsonSerializer.Deserialize<Commit>(json, app.CrdtConfig.JsonSerializerOptions)!
-            .ChangeEntities.Select(ce => ce.ChangeVersion).Should().Equal(2, 2, 2);
+            .ChangeEntities.Select(ce => ce.AuthoredModelVersion).Should().Equal(2, 2, 2);
     }
 
     [Fact]
@@ -195,7 +195,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await WriteNextChange(new NewWordChange(wordId, "hello"));
         var oldNote = await WriteNextChange(new SetWordNoteChange(wordId, "old note"));
         var newerNote = await SyncFromOtherClient(this, new SetWordNoteChange(wordId, "newer note"), version: 1);
-        (await ChangeVersions(this, oldNote)).Should().Equal(0);
+        (await AuthoredModelVersions(this, oldNote)).Should().Equal(0);
         (await NoteOf(this, wordId)).Should().Be("newer note", "the old app applies a newer app's change with its own code");
 
         await using var newApp = ForkDatabase(NewApp);
@@ -232,7 +232,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var wordId = Guid.NewGuid();
         await WriteNextChange(new NewWordChange(wordId, "hello"));
         var oldNote = await WriteNextChange(new SetWordNoteChange(wordId, "old note"));
-        (await ChangeVersions(this, oldNote)).Should().Equal(0);
+        (await AuthoredModelVersions(this, oldNote)).Should().Equal(0);
         //the app that forgot notes authors them with its own version, 1, though it doesn't list them
         var forgottenNote = await SyncFromOtherClient(this, new SetWordNoteChange(wordId, "a note"), version: 1);
 
@@ -497,7 +497,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     [Fact]
-    public void ChangeVersionsToInvalidateStartAtTheFirstNewVersion()
+    public void ModelVersionsToInvalidateStartAtTheFirstNewVersion()
     {
         var versions = new ModelVersionBuilder()
             .Add(0, "Before", v => v.Change<SetWordNoteChange>().Change<SetTagChange>())
@@ -506,16 +506,16 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             .Add(3, "C", v => v.Change<SetTagChange>())
             .Versions;
 
-        ModelVersionService.ChangeVersionsToInvalidate(1, versions)
+        ModelVersionService.ModelVersionsToInvalidate(1, versions)
             .Should().BeEquivalentTo([(nameof(SetTagChange), 2), (nameof(SetWordNoteChange), 2)]);
-        ModelVersionService.ChangeVersionsToInvalidate(0, versions)
+        ModelVersionService.ModelVersionsToInvalidate(0, versions)
             .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 1), (nameof(SetTagChange), 2)],
                 "version 0 is the state before model versions, so its changes were applied as authored");
-        ModelVersionService.ChangeVersionsToInvalidate(3, versions).Should().BeEmpty();
+        ModelVersionService.ModelVersionsToInvalidate(3, versions).Should().BeEmpty();
     }
 
     [Fact]
-    public void ChangeVersionsToInvalidateStartAtTheInvalidatedVersion()
+    public void ModelVersionsToInvalidateStartAtTheInvalidatedVersion()
     {
         var versions = new ModelVersionBuilder()
             .Add(0, "Before", v => v.Change<SetWordNoteChange>().Change<SetTagChange>())
@@ -526,13 +526,13 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             .Add(4, "D", v => v.Change<SetTagChange>())
             .Versions;
 
-        ModelVersionService.ChangeVersionsToInvalidate(0, versions)
+        ModelVersionService.ModelVersionsToInvalidate(0, versions)
             .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 1), (nameof(SetTagChange), 2)],
                 "a database at 0 applied version 0 notes as authored, and C replays the tags B's apps authored because B forgot them");
-        ModelVersionService.ChangeVersionsToInvalidate(2, versions)
+        ModelVersionService.ModelVersionsToInvalidate(2, versions)
             .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 3), (nameof(SetTagChange), 2)],
                 "B's apps authored tags with version 2, tags from earlier apps still apply the way they did");
-        ModelVersionService.ChangeVersionsToInvalidate(3, versions)
+        ModelVersionService.ModelVersionsToInvalidate(3, versions)
             .Should().BeEquivalentTo([(nameof(SetTagChange), 4)], "the fix was already applied");
     }
 
@@ -588,7 +588,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     [Fact]
-    public async Task FindOldestCommitWithChangeVersionsUsesCommitOrderAndVersion()
+    public async Task FindOldestCommitWithModelVersionsUsesCommitOrderAndVersion()
     {
         var wordId = Guid.NewGuid();
         var tagId = Guid.NewGuid();
@@ -598,17 +598,17 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var tagCommit = await SyncFromOtherClient(this, new SetTagChange(tagId, "tag"), version: 2);
         //added last, but sorts before the other version 1 note
         var earlierNote = CommitBefore(laterNote, new SetWordNoteChange(wordId, "earlier"));
-        earlierNote.ChangeEntities.Single().ChangeVersion = 1;
+        earlierNote.ChangeEntities.Single().AuthoredModelVersion = 1;
         await AddCommitsViaSync([earlierNote]);
         await using var repo = CreateRepository();
 
-        (await repo.FindOldestCommitWithChangeVersions([(NoteChangeType, 1)]))!.Id.Should().Be(earlierNote.Id);
-        (await repo.FindOldestCommitWithChangeVersions([(NoteChangeType, 0)]))!.Id.Should().Be(versionZeroNote.Id);
-        (await repo.FindOldestCommitWithChangeVersions([(NoteChangeType, 2)])).Should().BeNull();
-        (await repo.FindOldestCommitWithChangeVersions([(nameof(SetTagChange), 2)]))!.Id.Should().Be(tagCommit.Id);
-        (await repo.FindOldestCommitWithChangeVersions([(nameof(SetTagChange), 2), (NoteChangeType, 1)]))!.Id.Should().Be(earlierNote.Id);
-        (await repo.FindOldestCommitWithChangeVersions([(nameof(EditExampleChange), 1)])).Should().BeNull();
-        (await repo.FindOldestCommitWithChangeVersions([])).Should().BeNull();
+        (await repo.FindOldestCommitWithModelVersions([(NoteChangeType, 1)]))!.Id.Should().Be(earlierNote.Id);
+        (await repo.FindOldestCommitWithModelVersions([(NoteChangeType, 0)]))!.Id.Should().Be(versionZeroNote.Id);
+        (await repo.FindOldestCommitWithModelVersions([(NoteChangeType, 2)])).Should().BeNull();
+        (await repo.FindOldestCommitWithModelVersions([(nameof(SetTagChange), 2)]))!.Id.Should().Be(tagCommit.Id);
+        (await repo.FindOldestCommitWithModelVersions([(nameof(SetTagChange), 2), (NoteChangeType, 1)]))!.Id.Should().Be(earlierNote.Id);
+        (await repo.FindOldestCommitWithModelVersions([(nameof(EditExampleChange), 1)])).Should().BeNull();
+        (await repo.FindOldestCommitWithModelVersions([])).Should().BeNull();
     }
 
     [Fact]

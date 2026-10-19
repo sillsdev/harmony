@@ -393,28 +393,28 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// The oldest commit with a change whose <c>$type</c> is one of <paramref name="changeVersions"/>
-    /// and whose <see cref="ChangeEntity{TChange}.ChangeVersion"/> is at least the version given for that type.
+    /// The oldest commit with a change whose <c>$type</c> is one of <paramref name="fromVersions"/>
+    /// and whose <see cref="ChangeEntity{TChange}.AuthoredModelVersion"/> is at least the model version given for that type.
     /// Reads every change, so it's slow, only use it for rare operations. SQLite only.
     /// </summary>
-    public async Task<Commit?> FindOldestCommitWithChangeVersions(
-        IReadOnlyCollection<(string ChangeType, int FromVersion)> changeVersions)
+    public async Task<Commit?> FindOldestCommitWithModelVersions(
+        IReadOnlyCollection<(string ChangeType, int FromVersion)> fromVersions)
     {
-        if (changeVersions.Count == 0) return null;
+        if (fromVersions.Count == 0) return null;
         if (!_dbContext.Database.IsSqlite())
             throw new NotSupportedException(
                 $"Querying changes by type is only supported on SQLite, not {_dbContext.Database.ProviderName}");
         //the key must be quoted in the path, because $ has a special meaning in json paths
         var typeDiscriminatorPath = $"$.\"{CrdtConstants.ChangeDiscriminatorProperty}\"";
         //one json array parameter, so the parameter count doesn't depend on how many types there are
-        var changeVersionsJson = JsonSerializer.Serialize(changeVersions.Select(cv => new { t = cv.ChangeType, v = cv.FromVersion }));
+        var fromVersionsJson = JsonSerializer.Serialize(fromVersions.Select(cv => new { t = cv.ChangeType, v = cv.FromVersion }));
         var commitIds = await _dbContext.Database.SqlQuery<Guid>($"""
             SELECT c.Id AS Value FROM Commits c
             WHERE EXISTS (
-                SELECT 1 FROM ChangeEntities ce, json_each({changeVersionsJson}) cv
+                SELECT 1 FROM ChangeEntities ce, json_each({fromVersionsJson}) cv
                 WHERE ce.CommitId = c.Id
                   AND json_extract(ce.Change, {typeDiscriminatorPath}) = json_extract(cv.value, '$.t')
-                  AND ce.ChangeVersion >= json_extract(cv.value, '$.v')
+                  AND ce.AuthoredModelVersion >= json_extract(cv.value, '$.v')
             )
             ORDER BY c.DateTime, c.Counter, c.Id
             LIMIT 1

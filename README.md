@@ -212,7 +212,7 @@ config.ModelVersionBuilder
 To make sure a released version is not modified by accident, add a snapshot test of `HarmonyConfig.DescribeModelVersions()` to your app. A new version only adds a line at the end of the snapshot.
 
 > [!NOTE]
-> Model versions add a `ChangeVersion` column to `ChangeEntities` and a `LocalState` table, so an EF migration is required.
+> Model versions add a `AuthoredModelVersion` column to `ChangeEntities` and a `LocalState` table, so an EF migration is required.
 
 ## Development
 

@@ -229,7 +229,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     /// is about to delete: those with a snapshot after it, or every entity when it is null.
     /// Every other entity's current snapshot survives the delete, so the replay's baseline still has it.
     /// </summary>
-    public async Task<IReadOnlyDictionary<Guid, ObjectSnapshot>> CurrentSnapshotsRewoundBy(CheckpointCommit? resumeFrom)
+    public async Task<Dictionary<Guid, ObjectSnapshot>> CurrentSnapshotsRewoundBy(CheckpointCommit? resumeFrom)
     {
         var current = CurrentSnapshots();
         if (resumeFrom is not null)

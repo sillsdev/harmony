@@ -102,8 +102,10 @@ Once you have created your change types, you need to tell Harmony about them. Ag
 ```C#
 services.AddCrdtData<SampleDbContext>(config =>
 {
-// add the following line
+// add the following lines
     config.ChangeTypeListBuilder.Add<SetWordTextChange>();
+    //every change type must be listed by a model version, see Model versions below
+    config.ModelVersionBuilder.Add(0, "Before model versions", v => v.Change<SetWordTextChange>());
     config.ObjectTypeListBuilder
         .Add<Word>()
         .Add<Definition>()
@@ -183,8 +185,13 @@ Clients on different app versions sync with each other, so an older app receives
 
 Model versions make that possible. Declare them in order, numbered from 0, each listing the change types it added or changed. Version 0 lists every change type that existed before model versions. Every change is stored with the number of the authoring app's latest version, whether or not that version lists the change's type, so a change authored by a newer app carries a number the older app doesn't have yet. Startup fails if no versions are declared, a registered change type isn't listed, or remote resources are enabled without `RemoteResourceChanges`. Only add versions at the end, never modify a released one:
 ```C#
+services.AddCrdtRemoteResources<MediaMetadata>();
 services.AddCrdtData<AppDbContext>(config =>
 {
+    config.ChangeTypeListBuilder
+        .Add<NewWordChange>()
+        .Add<SetWordTextChange>()
+        .Add<SetWordNoteChange>();
     config.ModelVersionBuilder
         .Add(0, "Before model versions", v => v
             .Change<NewWordChange>()

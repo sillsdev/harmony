@@ -333,18 +333,6 @@ public class RemoteResourcesTests : DataModelTestBase
     }
 
     [Fact]
-    public async Task AddLocalCopy_StoresTheFullPath()
-    {
-        var resourceId = await SetupSyncedPendingUploadResource();
-        var file = CreateFile("relative-copy");
-        var relativePath = Path.GetRelativePath(Directory.GetCurrentDirectory(), file);
-
-        var localResource = await _resourceService.AddLocalCopy(resourceId, relativePath);
-
-        localResource.LocalPath.Should().Be(file);
-    }
-
-    [Fact]
     public async Task AddLocalCopy_ThrowsEntityNotFound_WhenResourceIdUnknown()
     {
         var file = CreateFile("unknown-copy");

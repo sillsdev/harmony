@@ -135,6 +135,34 @@ public class LocalResourcePathTests : DataModelTestBase
         (await ResourceService.GetLocalResource(resourceId)).Should().BeNull();
     }
 
+    [Fact]
+    public async Task RelativeLocalCopyResolvesAgainstCache()
+    {
+        var resourceId = Guid.NewGuid();
+        await DataModel.AddChange(_clientId, new CreateRemoteResourcePendingUploadChange<MediaMetadata>(resourceId));
+        var file = CreateFile(Path.Combine(_cacheRoot, "sub"), "copy.txt");
+
+        var local = await ResourceService.AddLocalCopy(resourceId, Path.Combine("sub", "copy.txt"));
+
+        local.LocalPath.Should().Be(file);
+        (await StoredPath(resourceId)).Should().Be("sub/copy.txt");
+    }
+
+    [Fact]
+    public async Task ReplacedLocalCopyIsStoredRelativeToCache()
+    {
+        var staleFile = CreateFile(_outsideRoot);
+        var resource = await ResourceService.AddLocalResource(staleFile, _clientId, resourceService: null);
+        File.Delete(staleFile);
+        var file = CreateFile(Path.Combine(_cacheRoot, "sub"), "copy.txt");
+
+        var local = await ResourceService.AddLocalCopy(resource.Id, file);
+
+        local.LocalPath.Should().Be(file);
+        (await StoredPath(resource.Id)).Should().Be("sub/copy.txt");
+        (await ResourceService.GetLocalResource(resource.Id))!.LocalPath.Should().Be(file);
+    }
+
     private class PathReturningRemoteService(string path) : IRemoteResourceService<MediaMetadata>
     {
         public Task<DownloadResult> DownloadResource(string remoteId, string localResourceCachePath) =>

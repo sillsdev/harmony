@@ -443,8 +443,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task UpdateLocalResource(LocalResource localResource)
     {
-        _dbContext.Set<LocalResource>().Update(localResource);
-        await _dbContext.SaveChangesAsync();
+        var storedPath = LocalResourcePaths.ToStored(_crdtConfig.Value, localResource.LocalPath);
+        await _dbContext.Set<LocalResource>()
+            .Where(r => r.Id == localResource.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.LocalPath, storedPath));
     }
 
     public async Task DeleteLocalResource(Guid id)

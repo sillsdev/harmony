@@ -229,15 +229,14 @@ public class ResourceService<TMetadata> where TMetadata : class
     /// and <paramref name="localPath"/> is ignored. If the recorded file is missing, the path is replaced.
     /// </remarks>
     /// <param name="resourceId">id of an existing, non-deleted <see cref="RemoteResource{TMetadata}"/></param>
-    /// <param name="localPath">path to the file on the local machine</param>
+    /// <param name="localPath">path to the file on the local machine; a relative path is relative to the cache directory</param>
     /// <returns>the local resource now recorded for <paramref name="resourceId"/></returns>
     /// <exception cref="FileNotFoundException">the file at <paramref name="localPath"/> does not exist</exception>
     /// <exception cref="EntityNotFoundException">no non-deleted resource with <paramref name="resourceId"/> exists</exception>
     public async Task<LocalResource> AddLocalCopy(Guid resourceId, string localPath)
     {
         ValidateResourcesSetup();
-        var fullPath = Path.GetFullPath(localPath);
-        if (!File.Exists(fullPath)) throw new FileNotFoundException(fullPath);
+        var localResource = NewLocalResource(resourceId, localPath);
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         var remoteResource = await repo.GetCurrent<RemoteResource<TMetadata>>(resourceId);
         if (remoteResource is null or { DeletedAt: not null })
@@ -247,12 +246,10 @@ public class ResourceService<TMetadata> where TMetadata : class
         if (existing is not null)
         {
             if (existing.FileExists()) return existing;
-            existing.LocalPath = fullPath;
-            await repo.UpdateLocalResource(existing);
-            return existing;
+            await repo.UpdateLocalResource(localResource);
+            return localResource;
         }
 
-        var localResource = new LocalResource { Id = resourceId, LocalPath = fullPath };
         await repo.AddLocalResource(localResource);
         return localResource;
     }

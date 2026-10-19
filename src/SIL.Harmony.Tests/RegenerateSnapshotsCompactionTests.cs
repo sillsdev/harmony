@@ -1,17 +1,12 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
 
-/// <summary>
-/// Compaction only shows up on a file database, the shared test.db is used by other tests, so this one gets its own file
-/// </summary>
+/// <summary>Compaction only shows up on a file database</summary>
 public class RegenerateSnapshotsCompactionTests : DataModelTestBase
 {
-    private static readonly string DbPath = Path.Combine(Path.GetTempPath(), $"harmony-compaction-{Guid.NewGuid():N}.db");
-
-    public RegenerateSnapshotsCompactionTests() : base(new SqliteConnection($"Data Source={DbPath}"))
+    public RegenerateSnapshotsCompactionTests() : base(saveToDisk: true)
     {
     }
 
@@ -82,12 +77,5 @@ public class RegenerateSnapshotsCompactionTests : DataModelTestBase
         await using var command = connection.CreateCommand();
         command.CommandText = "PRAGMA freelist_count;";
         return (long)(await command.ExecuteScalarAsync(TestContext.Current.CancellationToken))!;
-    }
-
-    public override async ValueTask DisposeAsync()
-    {
-        await base.DisposeAsync();
-        SqliteConnection.ClearAllPools();
-        File.Delete(DbPath);
     }
 }

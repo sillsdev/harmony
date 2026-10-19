@@ -1,4 +1,3 @@
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Sample.Models;
 
@@ -10,41 +9,34 @@ namespace SIL.Harmony.Tests;
 /// </summary>
 public class RegenerateSnapshotsWalCompactionTests : DataModelTestBase
 {
-    private static readonly string DbPath = Path.Combine(Path.GetTempPath(), $"harmony-wal-compaction-{Guid.NewGuid():N}.db");
-
-    public RegenerateSnapshotsWalCompactionTests() : base(new SqliteConnection($"Data Source={DbPath}"))
+    public RegenerateSnapshotsWalCompactionTests() : base(saveToDisk: true)
     {
         DbContext.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
     }
+
+    private string WalPath => DbContext.Database.GetDbConnection().DataSource + "-wal";
 
     [Fact]
     public async Task RegenerateSnapshots_TruncatesTheWriteAheadLog()
     {
         var token = TestContext.Current.CancellationToken;
-        var entityId = Guid.NewGuid();
-        await WriteNextChange(SetWord(entityId, "test root"));
-        await WriteNextChange(SetWord(entityId, "test1"));
-        //some bulk so the WAL VACUUM writes is clearly bigger than nothing
-        await DbContext.Database.ExecuteSqlRawAsync("CREATE TABLE Filler (Id INTEGER PRIMARY KEY, Payload TEXT);", token);
-        await DbContext.Database.ExecuteSqlRawAsync(
-            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000) INSERT INTO Filler (Payload) SELECT hex(randomblob(256)) FROM n;", token);
-        var walPath = DbPath + "-wal";
-        new FileInfo(walPath).Length.Should().BeGreaterThan(0);
+        await WriteNextChange(SetWord(Guid.NewGuid(), "test root"));
+        await FillTheWal();
         var beforeRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync(token);
 
         await DataModel.RegenerateSnapshots();
 
-        new FileInfo(walPath).Length.Should().Be(0);
+        new FileInfo(WalPath).Length.Should().Be(0);
         var afterRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync(token);
         afterRegenerate.Should().BeEquivalentTo(beforeRegenerate);
     }
 
-    public override async ValueTask DisposeAsync()
+    private async Task FillTheWal()
     {
-        await base.DisposeAsync();
-        SqliteConnection.ClearAllPools();
-        File.Delete(DbPath);
-        File.Delete(DbPath + "-wal");
-        File.Delete(DbPath + "-shm");
+        var token = TestContext.Current.CancellationToken;
+        await DbContext.Database.ExecuteSqlRawAsync("CREATE TABLE Filler (Id INTEGER PRIMARY KEY, Payload TEXT);", token);
+        await DbContext.Database.ExecuteSqlRawAsync(
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000) INSERT INTO Filler (Payload) SELECT hex(randomblob(256)) FROM n;", token);
+        new FileInfo(WalPath).Length.Should().BeGreaterThan(0);
     }
 }

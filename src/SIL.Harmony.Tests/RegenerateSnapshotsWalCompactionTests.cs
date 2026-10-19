@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using SIL.Harmony.Sample.Models;
 
@@ -29,6 +30,28 @@ public class RegenerateSnapshotsWalCompactionTests : DataModelTestBase
         new FileInfo(WalPath).Length.Should().Be(0);
         var afterRegenerate = await DataModel.QueryLatest<Word>().ToArrayAsync(token);
         afterRegenerate.Should().BeEquivalentTo(beforeRegenerate);
+    }
+
+    [Fact]
+    public async Task RegenerateSnapshots_TruncatesTheWriteAheadLog_WhenEfManagesTheConnection()
+    {
+        await WriteNextChange(SetWord(Guid.NewGuid(), "test root"));
+        await FillTheWal();
+        //EF closes the DbContext's connection after each command, so TruncateWal runs on a closed connection.
+        //In the app the pool still holds the file open, so the WAL stays; this connection stands in for the pool
+        await using var pooled = new SqliteConnection(DbContext.Database.GetDbConnection().ConnectionString);
+        await pooled.OpenAsync(TestContext.Current.CancellationToken);
+        //SQLite opens lazily, the connection only joins the WAL once it reads
+        await using (var read = pooled.CreateCommand())
+        {
+            read.CommandText = "SELECT count(*) FROM sqlite_master;";
+            await read.ExecuteScalarAsync(TestContext.Current.CancellationToken);
+        }
+        await DbContext.Database.CloseConnectionAsync();
+
+        await DataModel.RegenerateSnapshots();
+
+        new FileInfo(WalPath).Length.Should().Be(0);
     }
 
     private async Task FillTheWal()

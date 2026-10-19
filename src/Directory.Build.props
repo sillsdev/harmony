@@ -2,7 +2,8 @@
     <PropertyGroup>
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
-        <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
         <Nullable>enable</Nullable>
         <WarningsAsErrors>Nullable</WarningsAsErrors>
         <UseArtifactsOutput>true</UseArtifactsOutput>

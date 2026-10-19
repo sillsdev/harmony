@@ -22,12 +22,20 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
     public readonly SampleDbContext DbContext;
     protected readonly MockTimeProvider MockTimeProvider = new();
     protected readonly HarmonyConfig HarmonyConfig;
+    private readonly TempDbFile? _dbFile;
 
     public DataModelTestBase(bool saveToDisk = false, bool alwaysValidate = true,
-        Action<IServiceCollection>? configure = null, bool performanceTest = false) : this(saveToDisk
-        ? new SqliteConnection("Data Source=test.db")
-        : new SqliteConnection("Data Source=:memory:"), alwaysValidate, configure, performanceTest)
+        Action<IServiceCollection>? configure = null, bool performanceTest = false)
+        : this(saveToDisk ? new TempDbFile() : null, alwaysValidate, configure, performanceTest)
     {
+    }
+
+    private DataModelTestBase(TempDbFile? dbFile, bool alwaysValidate, Action<IServiceCollection>? configure,
+        bool performanceTest)
+        : this(new SqliteConnection(dbFile?.ConnectionString ?? "Data Source=:memory:"), alwaysValidate, configure,
+            performanceTest)
+    {
+        _dbFile = dbFile;
     }
 
     public DataModelTestBase() : this(new SqliteConnection("Data Source=:memory:"))
@@ -146,8 +154,8 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-
         await _services.DisposeAsync();
+        _dbFile?.Dispose();
     }
 
     protected IEnumerable<object> AllData()

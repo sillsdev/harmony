@@ -20,6 +20,8 @@ internal class SnapshotWorker : ISnapshotView
     private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
     /// <summary>superseded snapshots the policy says must still be persisted</summary>
     private readonly List<ObjectSnapshot> _keptSupersededSnapshots = [];
+    /// <summary>each entity's snapshot in the baseline, for every entity this replay records a snapshot of</summary>
+    private readonly Dictionary<Guid, ObjectSnapshot?> _baselineSnapshots = [];
 
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
     private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
@@ -46,13 +48,29 @@ internal class SnapshotWorker : ISnapshotView
     /// The snapshots to persist, and which of the batch commits a later replay can resume from.
     /// Persisting both is the caller's job.
     /// </summary>
-    internal static async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeNewSnapshotsAndCheckpoints(
+    internal static async Task<ReplayResult> ComputeNewSnapshotsAndCheckpoints(
         ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
         var worker = new SnapshotWorker(baseline, commits, crdtConfig);
         await worker.ApplyCommitChanges();
         IReadOnlyList<ObjectSnapshot> snapshots = [.. worker._keptSupersededSnapshots, .. worker._latestSnapshots.Values];
-        return (snapshots, worker._policy.CheckpointFlags());
+        return new ReplayResult(snapshots, worker._policy.CheckpointFlags(), worker._baselineSnapshots);
+    }
+
+    /// <param name="Snapshots">the snapshots to persist</param>
+    /// <param name="CheckpointFlags">which of the batch commits a later replay can resume from</param>
+    /// <param name="BaselineSnapshots">for every entity in <paramref name="Snapshots"/>, its snapshot in the baseline;
+    /// null when the baseline didn't have it</param>
+    internal sealed record ReplayResult(
+        IReadOnlyList<ObjectSnapshot> Snapshots,
+        CheckpointFlag[] CheckpointFlags,
+        IReadOnlyDictionary<Guid, ObjectSnapshot?> BaselineSnapshots)
+    {
+        public void Deconstruct(out IReadOnlyList<ObjectSnapshot> snapshots, out CheckpointFlag[] checkpointFlags)
+        {
+            snapshots = Snapshots;
+            checkpointFlags = CheckpointFlags;
+        }
     }
 
     private async ValueTask ApplyCommitChanges()
@@ -142,6 +160,9 @@ internal class SnapshotWorker : ISnapshotView
         var newSnapshot = new ObjectSnapshot(entity, context.Commit, isRoot);
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
+
+        //nothing recorded yet means prevSnapshot came from the baseline
+        if (!_latestSnapshots.ContainsKey(newSnapshot.EntityId)) _baselineSnapshots[newSnapshot.EntityId] = prevSnapshot;
 
         if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.Supersede(superseded, by: newSnapshot))
         {

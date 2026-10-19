@@ -221,7 +221,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// </summary>
     private static Dictionary<Guid, ObjectSnapshot?> PreBatchSnapshots(
         SnapshotWorker.ReplayResult replay,
-        Dictionary<Guid, ObjectSnapshot> rewound)
+        IReadOnlyDictionary<Guid, ObjectSnapshot> rewound)
     {
         var preBatch = new Dictionary<Guid, ObjectSnapshot?>(replay.BaselineSnapshots);
         foreach (var entityId in replay.BaselineSnapshots.Keys)

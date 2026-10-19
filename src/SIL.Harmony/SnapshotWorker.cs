@@ -161,13 +161,12 @@ internal class SnapshotWorker : ISnapshotView
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        //nothing recorded yet means prevSnapshot came from the baseline
-        if (!_latestSnapshots.ContainsKey(newSnapshot.EntityId)) _baselineSnapshots[newSnapshot.EntityId] = prevSnapshot;
-
-        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.Supersede(superseded, by: newSnapshot))
+        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded))
         {
-            _keptSupersededSnapshots.Add(superseded);
+            if (_policy.Supersede(superseded, by: newSnapshot)) _keptSupersededSnapshots.Add(superseded);
         }
+        //nothing recorded yet means prevSnapshot came from the baseline
+        else _baselineSnapshots[newSnapshot.EntityId] = prevSnapshot;
 
         _latestSnapshots[newSnapshot.EntityId] = newSnapshot;
     }

@@ -407,14 +407,14 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         //the key must be quoted in the path, because $ has a special meaning in json paths
         var typeDiscriminatorPath = $"$.\"{CrdtConstants.ChangeDiscriminatorProperty}\"";
         //one json array parameter, so the parameter count doesn't depend on how many types there are
-        var fromVersionsJson = JsonSerializer.Serialize(fromVersions.Select(cv => new { t = cv.ChangeType, v = cv.FromVersion }));
+        var fromVersionsJson = JsonSerializer.Serialize(fromVersions.Select(fv => new { t = fv.ChangeType, v = fv.FromVersion }));
         var commitIds = await _dbContext.Database.SqlQuery<Guid>($"""
             SELECT c.Id AS Value FROM Commits c
             WHERE EXISTS (
-                SELECT 1 FROM ChangeEntities ce, json_each({fromVersionsJson}) cv
+                SELECT 1 FROM ChangeEntities ce, json_each({fromVersionsJson}) fv
                 WHERE ce.CommitId = c.Id
-                  AND json_extract(ce.Change, {typeDiscriminatorPath}) = json_extract(cv.value, '$.t')
-                  AND ce.AuthoredModelVersion >= json_extract(cv.value, '$.v')
+                  AND json_extract(ce.Change, {typeDiscriminatorPath}) = json_extract(fv.value, '$.t')
+                  AND ce.AuthoredModelVersion >= json_extract(fv.value, '$.v')
             )
             ORDER BY c.DateTime, c.Counter, c.Id
             LIMIT 1

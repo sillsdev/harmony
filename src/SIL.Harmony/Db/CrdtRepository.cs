@@ -224,6 +224,23 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await dbContext.Set<T>().ExecuteDeleteAsync();
     }
 
+    /// <summary>
+    /// The current snapshot of every entity whose current snapshot a replay resuming from <paramref name="resumeFrom"/>
+    /// is about to delete: those with a snapshot after it, or every entity when it is null.
+    /// Every other entity's current snapshot survives the delete, so the replay's baseline still has it.
+    /// </summary>
+    public async Task<Dictionary<Guid, ObjectSnapshot>> CurrentSnapshotsRewoundBy(CheckpointCommit? resumeFrom)
+    {
+        var current = CurrentSnapshots();
+        if (resumeFrom is not null)
+        {
+            var staleCommitIds = Commits.WhereAfter(resumeFrom.Commit).Select(c => c.Id);
+            var rewoundEntityIds = Snapshots.Where(s => staleCommitIds.Contains(s.CommitId)).Select(s => s.EntityId);
+            current = current.Where(s => rewoundEntityIds.Contains(s.EntityId));
+        }
+        return await current.ToDictionaryAsync(s => s.EntityId);
+    }
+
     public IQueryable<Commit> CurrentCommits()
     {
         return Commits.DefaultOrder();
@@ -332,7 +349,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     /// <summary>
     /// Saves the snapshots and, with them, which commits a later replay can resume from.
     /// </summary>
-    public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots, IReadOnlyList<CheckpointFlag> checkpointFlags)
+    /// <param name="preBatchSnapshots">each entity's snapshot from before the batch, which becomes
+    /// <see cref="ProjectedEntityChange.Previous"/>; null leaves it null</param>
+    public Task AddSnapshots(IEnumerable<ObjectSnapshot> snapshots,
+        IReadOnlyList<CheckpointFlag> checkpointFlags,
+        IReadOnlyDictionary<Guid, ObjectSnapshot?>? preBatchSnapshots = null)
     {
         //the commits are tracked, so this rides along on the save below
         foreach (var (commit, isCheckpoint) in checkpointFlags)
@@ -344,10 +365,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return _fastProjection.AddSnapshotsRawAsync(
             _dbContext,
             snapshotList,
-            notify ? NotifyProjectedChanges : null);
+            notify ? latest => NotifyProjectedChanges(latest, preBatchSnapshots) : null);
     }
 
-    private bool ShouldNotifyProjectedChanges()
+    internal bool ShouldNotifyProjectedChanges()
     {
         if (!_crdtConfig.Value.EnableProjectedTables) return false;
         if (_interceptors.Length > 0) return true;
@@ -356,7 +377,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
             HarmonyConfig.DefaultOnProjectedEntitiesChanged);
     }
 
-    private async ValueTask NotifyProjectedChanges(IReadOnlyCollection<ObjectSnapshot> latest)
+    private async ValueTask NotifyProjectedChanges(IReadOnlyCollection<ObjectSnapshot> latest,
+        IReadOnlyDictionary<Guid, ObjectSnapshot?>? preBatchSnapshots)
     {
         var changes = new List<ProjectedEntityChange>(latest.Count);
         foreach (var snapshot in latest)
@@ -368,7 +390,10 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
                 EntityId = snapshot.EntityId,
                 ClrType = entity.GetType(),
                 Kind = snapshot.EntityIsDeleted ? ProjectedChangeKind.Delete : ProjectedChangeKind.Upsert,
-                Snapshot = snapshot
+                Snapshot = snapshot,
+                Previous = preBatchSnapshots?.GetValueOrDefault(snapshot.EntityId) is { EntityIsDeleted: false } previous
+                    ? previous.Entity.DbObject
+                    : null
             });
         }
 

@@ -191,6 +191,9 @@ public class DataModel : ISyncable, IAsyncDisposable
         var (checkpoint, commitsToApply) = window;
         if (commitsToApply.Count == 0) return;
 
+        //the deletes below rewind these entities to the checkpoint, so capture what was projected before the batch first
+        var rewound = repo.ShouldNotifyProjectedChanges() ? await repo.CurrentSnapshotsRewoundBy(checkpoint) : null;
+
         ISnapshotView baseline;
         // A database with no checkpoints replays all of history,
         // which is what we want, because it will trigger creating checkpoints
@@ -208,8 +211,24 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
 
         await PreloadTouched(baseline, commitsToApply);
-        var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, _crdtConfig.Value);
-        await repo.AddSnapshots(newSnapshots, checkpoints);
+        var replay = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, _crdtConfig.Value);
+        await repo.AddSnapshots(replay.Snapshots, replay.CheckpointFlags, rewound is null ? null : PreBatchSnapshots(replay, rewound));
+    }
+
+    /// <summary>
+    /// Each replayed entity's snapshot from before the batch: the replay's baseline already holds it, unless the rewind
+    /// deleted it, in which case it was captured beforehand.
+    /// </summary>
+    private static Dictionary<Guid, ObjectSnapshot?> PreBatchSnapshots(
+        SnapshotWorker.ReplayResult replay,
+        Dictionary<Guid, ObjectSnapshot> rewound)
+    {
+        var preBatch = new Dictionary<Guid, ObjectSnapshot?>(replay.BaselineSnapshots);
+        foreach (var entityId in replay.BaselineSnapshots.Keys)
+        {
+            if (rewound.TryGetValue(entityId, out var snapshot)) preBatch[entityId] = snapshot;
+        }
+        return preBatch;
     }
 
     private async Task ValidateCommits(CrdtRepository repo)

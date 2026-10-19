@@ -229,6 +229,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         if (IsInTransaction) throw new InvalidOperationException("The database can't be compacted inside a transaction");
         try
         {
+            //TruncateWal uses the raw connection, which EF closes after each command it opened it for
+            await _dbContext.Database.OpenConnectionAsync();
             //optimize first: it's cheap, and VACUUM keeps the statistics it refreshes.
             //see https://gist.github.com/phiresky/978d8e204f77feaa0ab5cca08d2d5b27
             await _dbContext.Database.ExecuteSqlRawAsync("PRAGMA optimize;");
@@ -239,7 +241,11 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         }
         catch (Exception e)
         {
-            _logger.LogWarning(e, "Failed to compact the database after regenerating snapshots, the data is intact but the file may be larger than it needs to be");
+            _logger.LogWarning(e, "Failed to compact the database, the data is intact but the file may be larger than it needs to be");
+        }
+        finally
+        {
+            await _dbContext.Database.CloseConnectionAsync();
         }
     }
 
@@ -261,7 +267,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await using var reader = await command.ExecuteReaderAsync();
         if (await reader.ReadAsync() && reader.GetInt64(0) == 1)
         {
-            _logger.LogWarning("Could not truncate the write ahead log after regenerating snapshots because another connection is reading, {LogPages} pages stay in it until the next checkpoint", reader.GetInt64(1));
+            _logger.LogWarning("Could not truncate the write ahead log after compacting because another connection is reading, {LogPages} pages stay in it until the next checkpoint", reader.GetInt64(1));
         }
     }
 

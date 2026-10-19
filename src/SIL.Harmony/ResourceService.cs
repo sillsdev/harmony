@@ -38,12 +38,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
-        var localResource = new LocalResource
-        {
-            Id = resourceId,
-            LocalPath = Path.GetFullPath(resourcePath)
-        };
-        if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
+        var localResource = NewLocalResource(resourceId, resourcePath);
 
         await _dataModel.AddChange(clientId,
             new CreateRemoteResourceChange<TMetadata>(localResource.Id, remoteId, metadata),
@@ -70,12 +65,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
-        var localResource = new LocalResource
-        {
-            Id = id == default ? Guid.NewGuid() : id,
-            LocalPath = Path.GetFullPath(resourcePath)
-        };
-        if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
+        var localResource = NewLocalResource(id == default ? Guid.NewGuid() : id, resourcePath);
         UploadResult<TMetadata>? uploadResult = null;
         if (resourceService is not null)
         {
@@ -209,12 +199,23 @@ public class ResourceService<TMetadata> where TMetadata : class
         ArgumentNullException.ThrowIfNull(remoteResource.RemoteId);
         var downloadResult = await remoteResourceService.DownloadResource(remoteResource.RemoteId,
             _crdtConfig.Value.LocalResourceCachePath);
+        var localResource = NewLocalResource(remoteResource.Id, downloadResult.LocalPath);
+        await repo.AddLocalResource(localResource);
+        return localResource;
+    }
+
+    /// <summary>
+    /// the single place a path enters Harmony: resolved to an absolute path (relative input is relative to the cache
+    /// directory) and required to exist, whether it came from the caller or from a download
+    /// </summary>
+    private LocalResource NewLocalResource(Guid id, string path)
+    {
         var localResource = new LocalResource
         {
-            Id = remoteResource.Id,
-            LocalPath = downloadResult.LocalPath
+            Id = id,
+            LocalPath = LocalResourcePaths.Normalize(_crdtConfig.Value, path)
         };
-        await repo.AddLocalResource(localResource);
+        if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
         return localResource;
     }
 

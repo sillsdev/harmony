@@ -148,7 +148,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     [Fact]
-    public async Task AuthoredChangesGetTheVersionOfTheirType()
+    public async Task AuthoredChangesGetTheLatestModelVersion()
     {
         await using var app = ForkDatabase(AppWith(versions => versions
             .Add(1, "Notes", v => v.Change<SetWordNoteChange>())
@@ -161,11 +161,12 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             new SetWordNoteChange(wordId, "note")
         ]);
 
-        commit.ChangeEntities.Select(ce => ce.ChangeVersion).Should().Equal([0, 2, 2], "the latest version that lists a type");
-        (await ChangeVersions(app, commit)).Should().Equal(0, 2, 2);
+        commit.ChangeEntities.Select(ce => ce.ChangeVersion).Should().Equal([2, 2, 2],
+            "every change gets the latest version, even NewWordChange, which no later version lists");
+        (await ChangeVersions(app, commit)).Should().Equal(2, 2, 2);
         var json = JsonSerializer.Serialize(commit, app.CrdtConfig.JsonSerializerOptions);
         JsonSerializer.Deserialize<Commit>(json, app.CrdtConfig.JsonSerializerOptions)!
-            .ChangeEntities.Select(ce => ce.ChangeVersion).Should().Equal(0, 2, 2);
+            .ChangeEntities.Select(ce => ce.ChangeVersion).Should().Equal(2, 2, 2);
     }
 
     [Fact]
@@ -219,7 +220,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         OldApp(services);
         services.Configure<HarmonyConfig>(config => config.ModelVersionBuilder
             .Add(1, "Tags", v => v.Change<SetTagChange>())
-            .Add(2, "Forgotten notes", v => v.Change<SetWordNoteChange>(invalidateFrom: 0)));
+            .Add(2, "Forgotten notes", v => v.Change<SetWordNoteChange>(invalidateFrom: 1)));
     }
 
     [Theory]
@@ -230,8 +231,10 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await DataModel.ReconcileModelVersions();
         var wordId = Guid.NewGuid();
         await WriteNextChange(new NewWordChange(wordId, "hello"));
-        //the app that forgot notes authors them with version 0, the same as the old app
-        var forgottenNote = await SyncFromOtherClient(this, new SetWordNoteChange(wordId, "a note"), version: 0);
+        var oldNote = await WriteNextChange(new SetWordNoteChange(wordId, "old note"));
+        (await ChangeVersions(this, oldNote)).Should().Equal(0);
+        //the app that forgot notes authors them with its own version, 1, though it doesn't list them
+        var forgottenNote = await SyncFromOtherClient(this, new SetWordNoteChange(wordId, "a note"), version: 1);
 
         var beforeFix = (DataModelTestBase)this;
         await using var upgraded = upgradedToTheAppThatForgot ? ForkDatabase(AppThatForgotNotes) : null;
@@ -245,10 +248,10 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await using var fixedApp = beforeFix.ForkDatabase(AppThatFixedForgottenNotes);
         var result = await fixedApp.ModelVersionService.ReconcileModelVersions();
 
-        (result.OldestInvalidatedCommit?.Id).Should().Be(forgottenNote.Id);
+        (result.OldestInvalidatedCommit?.Id).Should().Be(forgottenNote.Id,
+            "the old app authored the old note and applied it the old way, so only notes from the app that forgot are replayed");
         result.FullRegeneration.Should().BeFalse();
         (await NoteOf(fixedApp, wordId)).Should().Be("a note");
-        fixedApp.CrdtConfig.ChangeVersion(NoteChangeType).Should().Be(2, "notes authored after the fix can be told apart");
     }
 
     [Fact]
@@ -519,16 +522,16 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             .Add(1, "A", v => v.Change<SetWordNoteChange>())
             //changed how tags apply, but forgot to list them
             .Add(2, "B", v => v.Change<SetWordNoteChange>())
-            .Add(3, "C", v => v.Change<SetTagChange>(invalidateFrom: 0).Change<SetWordNoteChange>())
+            .Add(3, "C", v => v.Change<SetTagChange>(invalidateFrom: 2).Change<SetWordNoteChange>())
             .Add(4, "D", v => v.Change<SetTagChange>())
             .Versions;
 
         ModelVersionService.ChangeVersionsToInvalidate(0, versions)
-            .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 1), (nameof(SetTagChange), 0)],
-                "a database at 0 applied version 0 notes as authored, but C replays all tags because B forgot them");
+            .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 1), (nameof(SetTagChange), 2)],
+                "a database at 0 applied version 0 notes as authored, and C replays the tags B's apps authored because B forgot them");
         ModelVersionService.ChangeVersionsToInvalidate(2, versions)
-            .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 3), (nameof(SetTagChange), 0)],
-                "the apps with versions 0 to 2 authored tags with version 0");
+            .Should().BeEquivalentTo([(nameof(SetWordNoteChange), 3), (nameof(SetTagChange), 2)],
+                "B's apps authored tags with version 2, tags from earlier apps still apply the way they did");
         ModelVersionService.ChangeVersionsToInvalidate(3, versions)
             .Should().BeEquivalentTo([(nameof(SetTagChange), 4)], "the fix was already applied");
     }

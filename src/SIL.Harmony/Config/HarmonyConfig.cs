@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Collections.Frozen;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -53,11 +52,10 @@ public class HarmonyConfig
     /// </summary>
     public ModelVersionBuilder ModelVersionBuilder { get; } = new();
     public IReadOnlyList<ModelVersion> ModelVersions => ModelVersionBuilder.Versions;
-    /// <summary>the number of the last model version</summary>
+    /// <summary>the number of the last model version, which every change this app authors is stored with</summary>
     public int CurrentModelVersion => ModelVersions.Count == 0
         ? throw new InvalidOperationException("No model versions are declared, see " + nameof(ModelVersionBuilder))
         : ModelVersions[^1].Number;
-    private readonly Lazy<FrozenDictionary<string, int>> _lazyChangeVersions;
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
@@ -78,7 +76,6 @@ public class HarmonyConfig
     public HarmonyConfig()
     {
         _lazyChangeDiscriminatorMaps = new Lazy<ChangeDiscriminatorMaps>(BuildChangeDiscriminatorMaps);
-        _lazyChangeVersions = new Lazy<FrozenDictionary<string, int>>(BuildChangeVersions);
         _lazyJsonSerializerOptions = new Lazy<JsonSerializerOptions>(CreateJsonSerializerOptions);
     }
 
@@ -126,30 +123,6 @@ public class HarmonyConfig
         }
 
         return new ChangeDiscriminatorMaps(knownChanges, discriminators);
-    }
-
-    private FrozenDictionary<string, int> BuildChangeVersions()
-    {
-        ModelVersionBuilder.Freeze();
-        return ModelVersionBuilder.ChangeVersions.ToFrozenDictionary(StringComparer.Ordinal);
-    }
-
-    /// <summary>
-    /// The version a change of this type is authored with: the number of the latest model version that lists the type,
-    /// 0 when none lists it.
-    /// </summary>
-    /// <param name="discriminator">the change type's discriminator, its <c>$type</c></param>
-    public int ChangeVersion(string discriminator)
-    {
-        return _lazyChangeVersions.Value.GetValueOrDefault(discriminator);
-    }
-
-    internal int ChangeVersion(IChange change)
-    {
-        var discriminator = change is OpaqueChange opaque
-            ? opaque.TypeName
-            : _lazyChangeDiscriminatorMaps.Value.ByType.GetValueOrDefault(change.GetType());
-        return discriminator is null ? 0 : ChangeVersion(discriminator);
     }
 
     /// <summary>

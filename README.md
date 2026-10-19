@@ -181,7 +181,7 @@ It's that easy. All the heavy lifting is done by the interface which is fairly s
 ### Model versions
 Clients on different app versions sync with each other, so an older app receives changes a newer app authored. It skips the ones whose type it doesn't know (stored as `OpaqueChange` with `UnknownChangeHandling.Fallback`) and applies the rest with its old code. When the older app upgrades, those changes must be replayed.
 
-Model versions make that possible. Declare them in order, numbered from 0, each listing the change types it added or changed. Version 0 lists every change type that existed before model versions. A change is stored with the number of the latest version that lists its type, so a change authored by a newer app carries a number the older app doesn't have yet. Startup fails if no versions are declared, a registered change type isn't listed, or remote resources are enabled without `RemoteResourceChanges`. Only add versions at the end, never modify a released one:
+Model versions make that possible. Declare them in order, numbered from 0, each listing the change types it added or changed. Version 0 lists every change type that existed before model versions. Every change is stored with the number of the authoring app's latest version, whether or not that version lists the change's type, so a change authored by a newer app carries a number the older app doesn't have yet. Startup fails if no versions are declared, a registered change type isn't listed, or remote resources are enabled without `RemoteResourceChanges`. Only add versions at the end, never modify a released one:
 ```C#
 services.AddCrdtData<AppDbContext>(config =>
 {
@@ -200,14 +200,14 @@ Call `ReconcileModelVersions` when you open a database, before you use it. A dat
 ```C#
 await dataModel.ReconcileModelVersions();
 ```
-Listing a type invalidates only the changes authored by apps on the new version or later. When the new behavior must also apply to older changes, pass `invalidateFrom` with the model version to invalidate from. That covers a released version that changed how a type applies but forgot to list it, since its apps kept authoring the type with the earlier number:
+Listing a type invalidates only the changes authored by apps on the new version or later. When the new behavior must also apply to older changes, pass `invalidateFrom` with the model version to invalidate from. That covers a released version that changed how a type applies but forgot to list it: its apps still stamped their changes with its own number, so invalidating from that version replays only the changes those apps and later ones authored:
 ```C#
 config.ModelVersionBuilder
     .Add(0, "Before model versions", v => v.Change<SetWordNoteChange>().Change<SetTagChange>())
     .Add(1, "Word notes", v => v.Change<SetWordNoteChange>())
-    //changed how SetTagChange applies but forgot to list it, so tags are still authored as version 0
+    //changed how SetTagChange applies but forgot to list it, its apps authored tags as version 2
     .Add(2, "Notes again", v => v.Change<SetWordNoteChange>())
-    .Add(3, "Fix tags", v => v.Change<SetTagChange>(invalidateFrom: 0));
+    .Add(3, "Fix tags", v => v.Change<SetTagChange>(invalidateFrom: 2));
 ```
 To make sure a released version is not modified by accident, add a snapshot test of `HarmonyConfig.DescribeModelVersions()` to your app. A new version only adds a line at the end of the snapshot.
 

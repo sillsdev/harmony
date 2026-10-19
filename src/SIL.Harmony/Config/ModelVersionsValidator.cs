@@ -20,10 +20,10 @@ internal class ModelVersionsValidator : IValidateOptions<HarmonyConfig>
             return ValidateOptionsResult.Fail(
                 $"Call {nameof(ModelVersionChanges.RemoteResourceChanges)}<{options.RemoteResourceMetadataType!.Name}> in a model version, " +
                 "it lists the change types AddCrdtRemoteResources registers");
-        var listed = options.ModelVersionBuilder.ChangeVersions;
+        var listed = options.ModelVersionBuilder.ListedChangeTypes;
         var unlisted = options.ChangeTypes
             .Select(ct => ct.Discriminator)
-            .Where(discriminator => !listed.ContainsKey(discriminator))
+            .Where(discriminator => !listed.Contains(discriminator))
             .Order(StringComparer.Ordinal)
             .ToArray();
         if (unlisted.Length > 0)

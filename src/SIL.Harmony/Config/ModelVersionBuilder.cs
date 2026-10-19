@@ -8,8 +8,8 @@ namespace SIL.Harmony.Config;
 /// Declares the ordered list of model versions, which is required. Version 0 lists every change type that existed
 /// before model versions. Add a version when a release adds a change type, or changes how an existing change type
 /// applies. Every registered change type must be listed by a version. A change is authored with the number of the
-/// latest version that lists its type, and changes authored by a newer app are replayed when an older app upgrades,
-/// see <see cref="DataModel.ReconcileModelVersions"/>.
+/// latest version, whether or not it lists the change's type, and changes authored by a newer app are replayed when
+/// an older app upgrades, see <see cref="DataModel.ReconcileModelVersions"/>.
 /// Released versions must never be modified, use <see cref="HarmonyConfig.DescribeModelVersions"/> in a snapshot test to make sure.
 /// </summary>
 public class ModelVersionBuilder
@@ -17,7 +17,7 @@ public class ModelVersionBuilder
     private bool _frozen;
     private readonly List<ModelVersion> _versions = [];
     private readonly HashSet<Type> _changeTypes = [];
-    private readonly Dictionary<string, int> _changeVersions = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _listedChangeTypes = new(StringComparer.Ordinal);
     private bool _remoteResourcesListed;
 
     public IReadOnlyList<ModelVersion> Versions => _versions.AsReadOnly();
@@ -25,8 +25,8 @@ public class ModelVersionBuilder
     /// <summary>change types added with <see cref="ModelVersionChanges.Change{T}"/>, which must be registered</summary>
     internal IReadOnlyCollection<Type> ChangeTypes => _changeTypes;
 
-    /// <summary>for each change type, the number of the latest model version that lists it</summary>
-    internal IReadOnlyDictionary<string, int> ChangeVersions => _changeVersions;
+    /// <summary>the discriminators of the change types listed by a model version</summary>
+    internal IReadOnlySet<string> ListedChangeTypes => _listedChangeTypes;
 
     /// <summary>whether a version called <see cref="ModelVersionChanges.RemoteResourceChanges{TMetadata}"/></summary>
     internal bool RemoteResourcesListed => _remoteResourcesListed;
@@ -43,7 +43,6 @@ public class ModelVersionBuilder
 
     /// <summary>
     /// Adds a version that regenerates all snapshots when upgrading to it. Version 0 can't be major.
-    /// The listed change types are still authored with the new number.
     /// </summary>
     /// <param name="number">the next number: versions are numbered 0, 1, 2 and so on</param>
     public ModelVersionBuilder AddMajor(int number, string name, Action<ModelVersionChanges>? changes = null)
@@ -61,12 +60,9 @@ public class ModelVersionBuilder
                 $"Model version {name} must be number {expectedNumber}, versions are numbered 0, 1, 2 and so on");
         if (major && number == 0)
             throw new ArgumentException($"Model version 0 ({name}) can't be major, it is the state before model versions");
-        var changes = new ModelVersionChanges(number, this);
+        var changes = new ModelVersionChanges(number);
         configure?.Invoke(changes);
-        foreach (var change in changes.Changes.Keys)
-        {
-            _changeVersions[change] = number;
-        }
+        _listedChangeTypes.UnionWith(changes.Changes.Keys);
         _changeTypes.UnionWith(changes.Types);
         _remoteResourcesListed |= changes.RemoteResourcesListed;
         _versions.Add(new ModelVersion(number, name, major,
@@ -80,7 +76,7 @@ public class ModelVersionBuilder
         CheckFrozen();
         _versions.Clear();
         _changeTypes.Clear();
-        _changeVersions.Clear();
+        _listedChangeTypes.Clear();
         _remoteResourcesListed = false;
     }
 
@@ -98,12 +94,10 @@ public class ModelVersionBuilder
 public class ModelVersionChanges
 {
     private readonly int _number;
-    private readonly ModelVersionBuilder _builder;
 
-    internal ModelVersionChanges(int number, ModelVersionBuilder builder)
+    internal ModelVersionChanges(int number)
     {
         _number = number;
-        _builder = builder;
     }
 
     internal Dictionary<string, ModelVersionChange> Changes { get; } = new(StringComparer.Ordinal);
@@ -112,13 +106,13 @@ public class ModelVersionChanges
 
     /// <summary>
     /// The change type was added or modified in this version, or existed before model versions when this is version 0.
-    /// Changes of the type are authored with this version's number from now on.
     /// </summary>
     /// <param name="invalidateFrom">
     /// on upgrade, changes of this type authored with this model version or later are invalidated, so only changes
     /// authored by this app or a newer one. Pass an earlier version to invalidate the changes its apps authored too:
     /// when the new behavior must be applied to older changes, or when that version changed how the type applies
-    /// but forgot to list it.
+    /// but forgot to list it. Every change is authored with the app's latest version, so passing the version that
+    /// forgot invalidates only the changes its apps and later ones authored.
     /// </param>
     public ModelVersionChanges Change<T>(int? invalidateFrom = null) where T : IChange, IPolyType
     {

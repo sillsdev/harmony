@@ -154,7 +154,6 @@ public class CustomObjectAdapterTests
             .AddCrdtData<MyDbContext>(config =>
             {
                 config.AlwaysValidateCommits = true;
-                config.ChangeTypeListBuilder.Add<CreateMyClassChange>().Add<CreateMyClass2Change>();
                 config.ModelVersionBuilder.Add(0, "Before model versions", v => v
                     .Change<CreateMyClassChange>()
                     .Change<CreateMyClass2Change>());

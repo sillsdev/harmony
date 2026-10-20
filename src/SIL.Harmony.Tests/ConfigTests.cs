@@ -1,6 +1,9 @@
 using System.Text.Json;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
+using SIL.Harmony.Entities;
+using SIL.Harmony.Resource;
+using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
 using SIL.Harmony.Tests.Adapter;
@@ -24,18 +27,22 @@ public class ConfigTests
     }
 
     [Fact]
-    public void CanGetChangeTypes()
+    public void ChangeTypesAreTheTypesListedByModelVersions()
     {
         var config = new HarmonyConfig();
-        config.ChangeTypeListBuilder.Add<NewDefinitionChange>();
-        config.ChangeTypeListBuilder.Add<SetWordTextChange>();
-        config.ChangeTypeListBuilder.Add<DeleteChange<Word>>();
-        var types = config.ChangeTypes.ToArray();
-        types.Should().BeEquivalentTo([
+        config.ModelVersionBuilder
+            .Add(0, "Before", v => v
+                .Change<NewDefinitionChange>()
+                .Change<SetWordTextChange>())
+            .Add(1, "Delete", v => v
+                .Change<DeleteChange<Word>>()
+                .Change<SetWordTextChange>()
+                .Change("RemovedChange"));
+
+        config.ChangeTypes.Should().Equal(
             new RegisteredChangeType(typeof(NewDefinitionChange), nameof(NewDefinitionChange)),
             new RegisteredChangeType(typeof(SetWordTextChange), nameof(SetWordTextChange)),
-            new RegisteredChangeType(typeof(DeleteChange<Word>), "delete:Word"),
-        ]);
+            new RegisteredChangeType(typeof(DeleteChange<Word>), "delete:Word"));
     }
 
     [Fact]
@@ -71,25 +78,69 @@ public class ConfigTests
     }
 
     [Fact]
-    public void ChangeTypeListBuilder_DuplicateAdd_IsIdempotent()
+    public void RemoteResourceDiscriminatorsDontDependOnTheMetadataType()
     {
-        var config = new HarmonyConfig();
-        config.ChangeTypeListBuilder.Add<SetWordTextChange>();
-        config.ChangeTypeListBuilder.Add<SetWordTextChange>();
-
-        config.ChangeTypes.Should().ContainSingle(t => t.Type == typeof(SetWordTextChange));
+        HarmonyConfig.RemoteResourceChangeTypes<MediaMetadata>().Select(t => t.Discriminator)
+            .Should().Equal(HarmonyConfig.RemoteResourceChangeTypes<NoMetadata>().Select(t => t.Discriminator));
     }
 
     [Fact]
-    public void ChangeTypeListBuilder_AddAfterFreeze_Throws()
+    public void TwoTypesWithOneDiscriminator_Throws()
     {
         var config = new HarmonyConfig();
-        //building the serializer options freezes the change type builder
+        config.ModelVersionBuilder
+            .Add(0, "Before", v => v.Change<SetWordTextChange>())
+            .Add(1, "Same name", v => v.Change<OtherSetWordTextChange>());
+
+        var act = () => config.JsonSerializerOptions;
+
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*both use the discriminator {nameof(SetWordTextChange)}");
+    }
+
+    [Fact]
+    public void AnAppTypeWithARemoteResourceDiscriminator_Throws()
+    {
+        var config = new HarmonyConfig();
+        config.ModelVersionBuilder.Add(0, "Before", v => v.Change<FakeCreateRemoteResourceChange>());
+        config.AddRemoteResourceEntity<NoMetadata>();
+
+        var act = () => config.JsonSerializerOptions;
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*both use the discriminator create:remote-resource");
+    }
+
+    private class OtherSetWordTextChange(Guid entityId, string text) : SetWordTextChange(entityId, text), IPolyType
+    {
+        public static string TypeName => nameof(SetWordTextChange);
+    }
+
+    private class FakeCreateRemoteResourceChange(Guid entityId, string text) : SetWordTextChange(entityId, text), IPolyType
+    {
+        public static string TypeName => "create:remote-resource";
+    }
+
+    [Fact]
+    public void ModelVersionBuilder_AddAfterFreeze_Throws()
+    {
+        var config = new HarmonyConfig();
+        //building the serializer options freezes the model versions
         _ = config.JsonSerializerOptions;
 
-        var act = () => config.ChangeTypeListBuilder.Add<SetWordTextChange>();
+        var act = () => config.ModelVersionBuilder.Add(0, "Before", v => v.Change<SetWordTextChange>());
 
-        act.Should().Throw<InvalidOperationException>().WithMessage("*ChangeTypeListBuilder*frozen*");
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ModelVersionBuilder*frozen*");
+    }
+
+    [Fact]
+    public void AddRemoteResourceEntity_AfterJsonOptionsAreBuilt_Throws()
+    {
+        var config = new HarmonyConfig();
+        _ = config.JsonSerializerOptions;
+
+        var act = () => config.AddRemoteResourceEntity<NoMetadata>();
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*ModelVersionBuilder*frozen*");
+        config.RemoteResourcesEnabled.Should().BeFalse();
     }
 
     [Fact]

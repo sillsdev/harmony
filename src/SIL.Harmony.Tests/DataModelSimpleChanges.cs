@@ -22,6 +22,32 @@ public class DataModelSimpleChanges : DataModelTestBase
     }
 
     [Fact]
+    public async Task AddManyChanges_SplitsChangesIntoCommitsOfMaxSize()
+    {
+        var wordIds = Enumerable.Range(0, 7).Select(_ => Guid.NewGuid()).ToArray();
+        await DataModel.AddManyChanges(_localClientId,
+            wordIds.Select(id => SetWord(id, "word")),
+            () => null,
+            changesPerCommitMax: 3);
+
+        var commits = DbContext.Commits.Include(c => c.ChangeEntities).ToArray();
+        commits.Select(c => c.ChangeEntities.Count).Should().BeEquivalentTo([3, 3, 1]);
+        foreach (var id in wordIds)
+        {
+            (await DataModel.GetLatest<Word>(id)).Should().NotBeNull();
+        }
+    }
+
+    [Fact]
+    public async Task AddManyChanges_WithNoChangesDoesNothing()
+    {
+        await DataModel.AddManyChanges(_localClientId, [], () => null);
+
+        DbContext.Commits.Should().BeEmpty();
+        DbContext.Snapshots.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task CanUpdateTheNoteField()
     {
         await WriteNextChange(SetWord(_entity1Id, "test-value"));

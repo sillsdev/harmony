@@ -62,6 +62,26 @@ public static class CrdtSampleKernel
             .Add<DeleteChange<Example>>()
             .Add<DeleteChange<Tag>>()
             ;
+        config.ModelVersionBuilder
+            .Add(0, "Before model versions", v => v
+                .Change<NewWordChange>()
+                .Change<NewDefinitionChange>()
+                .Change<NewExampleChange>()
+                .Change<EditExampleChange>()
+                .Change<SetWordTextChange>()
+                .Change<SetWordNoteChange>()
+                .Change<SetAntonymReferenceChange>()
+                .Change<AddWordImageChange>()
+                .Change<SetOrderChange<Definition>>()
+                .Change<SetDefinitionPartOfSpeechChange>()
+                .Change<SetTagChange>()
+                .Change<TagWordChange>()
+                .Change<DeleteChange<Word>>()
+                .Change<DeleteChange<Definition>>()
+                .Change<DeleteChange<Example>>()
+                .Change<DeleteChange<Tag>>()
+                //registered by AddCrdtRemoteResources
+                .RemoteResourceChanges<MediaMetadata>());
         config.ObjectTypeListBuilder.DefaultAdapter()
             .Add<Word>(builder =>
             {

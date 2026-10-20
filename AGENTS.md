@@ -43,6 +43,7 @@ dotnet run -c Release --project src/SIL.Harmony.Benchmarks -- --filter '*GetSync
 - Tests that need a real file use `TempDbFile` (unique temp path, deleted on dispose); the rest use in-memory SQLite.
 - Benchmark classes declare `[SimpleJob]`, so `--job short` adds a ShortRun job beside the default one instead of replacing it: the `GetSyncState` run above takes about 4 minutes. List names with `-- --list flat`.
 - CI runs `dotnet test --configuration Release` plus `dotnet format --verify-no-changes`; both are required checks.
+- Mutation testing (Stryker.NET): the setup, the flags this repo needs, and how to triage survivors are in `MUTATION_TESTING.md`.
 
 ## Line endings
 

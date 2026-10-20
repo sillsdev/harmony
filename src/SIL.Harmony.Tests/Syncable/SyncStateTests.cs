@@ -95,4 +95,57 @@ public class SyncStateTests
         clientState.Hash.Should().Be(0);
         clientState.CommitCount.Should().Be(0);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RoundTripsThroughJson(bool camelCase)
+    {
+        var options = new JsonSerializerOptions { PropertyNamingPolicy = camelCase ? JsonNamingPolicy.CamelCase : null };
+        var clientId = Guid.NewGuid();
+        var syncState = new SyncState([new ClientState(clientId, MaxTimestamp: 5, CommitCount: 2, Hash: 123)]);
+
+        var json = JsonSerializer.Serialize(syncState, options);
+        var roundTripped = JsonSerializer.Deserialize<SyncState>(json, options);
+
+        var propertyNames = JsonDocument.Parse(json).RootElement.EnumerateObject().Select(p => p.Name);
+        propertyNames.Should().Equal(camelCase
+            ? ["clientHeads", "clientStates"]
+            : ["ClientHeads", "ClientStates"]);
+        roundTripped.Should().NotBeNull();
+        roundTripped.ClientHeads.Should().Equal(new Dictionary<Guid, long> { [clientId] = 5 });
+        roundTripped.ClientStates.Should().Equal(syncState.ClientStates);
+    }
+
+    [Fact]
+    public async Task GetCommitsMissingFromRemote_SendsOnlyNewerCommitsToARemoteThatIsBehind()
+    {
+        var clientId = Guid.NewGuid();
+        Commit[] commits = [.. Enumerable.Range(1, 3).Select(i => NewCommit(clientId, DateTimeOffset.UnixEpoch.AddMilliseconds(i)))];
+        var localState = new SyncState(await BuildSyncState(commits));
+        //the remote has the same commits up to the first one, so it is not missing that one
+        var remoteState = new SyncState(await BuildSyncState(commits[0]));
+
+        commits.GetCommitsMissingFromRemote<Commit, IChange>(localState, remoteState)
+            .Should().Equal(commits[1], commits[2]);
+    }
+
+    [Theory]
+    [InlineData(0, new[] { 1, 2 })]
+    [InlineData(1, new[] { 2 })]
+    [InlineData(2, new int[0])]
+    public async Task GetCommitsMissingFromRemote_SendsCommitsAfterTheHeadOfAPeerThatOnlyReportsHeads(int remoteHeadIndex, int[] expectedIndexes)
+    {
+        var clientId = Guid.NewGuid();
+        Commit[] commits = [.. Enumerable.Range(1, 3).Select(i => NewCommit(clientId, DateTimeOffset.UnixEpoch.AddMilliseconds(i)))];
+        var localState = new SyncState(await BuildSyncState(commits));
+        //an older peer only sends ClientHeads, so it has no commit count or hash to compare
+        var remoteState = new SyncState(new Dictionary<Guid, long>
+        {
+            [clientId] = commits[remoteHeadIndex].DateTime.ToUnixTimeMilliseconds()
+        });
+
+        commits.GetCommitsMissingFromRemote<Commit, IChange>(localState, remoteState)
+            .Should().Equal(expectedIndexes.Select(i => commits[i]));
+    }
 }

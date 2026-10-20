@@ -39,6 +39,16 @@ public class SnapshotCheckpointPolicyTests : CommitTestBase
         policy.Supersede(SnapshotAt(commits[snapshotPosition]), by: SnapshotAt(commits[newSnapshotPosition])).Should().Be(mustKeep);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void RejectsAMaxChangesBelowOne(int maxChangesBetweenCheckpoints)
+    {
+        var commits = SingleChangeCommits(3);
+        var act = () => PolicyFor(commits, maxChangesBetweenCheckpoints);
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName("maxChangesBetweenCheckpoints");
+    }
+
     [Fact]
     public void ABigCommitIsARequiredCheckpointOfItsOwn()
     {

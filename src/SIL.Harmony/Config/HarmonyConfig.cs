@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +47,15 @@ public class HarmonyConfig
     public UnknownChangeHandling UnknownChangeHandling { get; set; } = UnknownChangeHandling.Throw;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public IReadOnlyList<RegisteredChangeType> ChangeTypes => ChangeTypeListBuilder.Types;
+    /// <summary>
+    /// The ordered list of model versions, see <see cref="ModelVersionBuilder"/>.
+    /// </summary>
+    public ModelVersionBuilder ModelVersionBuilder { get; } = new();
+    public IReadOnlyList<ModelVersion> ModelVersions => ModelVersionBuilder.Versions;
+    /// <summary>the number of the last model version, which every change this app authors is stored with</summary>
+    public int CurrentModelVersion => ModelVersions.Count == 0
+        ? throw new InvalidOperationException("No model versions are declared, see " + nameof(ModelVersionBuilder))
+        : ModelVersions[^1].Number;
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
@@ -113,6 +123,27 @@ public class HarmonyConfig
         }
 
         return new ChangeDiscriminatorMaps(knownChanges, discriminators);
+    }
+
+    /// <summary>
+    /// A stable text form of <see cref="ModelVersions"/>, one line per version.
+    /// Use it in a snapshot test so a released version can't be modified by accident: the snapshot may only grow at the end.
+    /// </summary>
+    public string DescribeModelVersions()
+    {
+        var builder = new StringBuilder();
+        foreach (var version in ModelVersions)
+        {
+            builder.Append(version.Number)
+                .Append(version.Major ? " major " : " ")
+                .Append(version.Name)
+                .Append(": ")
+                .AppendJoin(", ", version.Changes.Select(c => c.InvalidateFrom == version.Number
+                    ? c.ChangeType
+                    : $"{c.ChangeType} invalidates from {c.InvalidateFrom}"))
+                .Append('\n');
+        }
+        return builder.ToString();
     }
 
     private sealed record ChangeDiscriminatorMaps(

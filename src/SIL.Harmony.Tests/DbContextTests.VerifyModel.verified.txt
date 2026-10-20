@@ -36,6 +36,9 @@
     Properties: 
       CommitId (Guid) Required PK FK AfterSave:Throw
       Index (int) Required PK AfterSave:Throw
+      AuthoredModelVersion (int) Required ValueGenerated.OnAdd
+        Annotations: 
+          Relational:DefaultValue: 0
       Change (IChange)
         Annotations: 
           Relational:ColumnType: jsonb
@@ -49,6 +52,19 @@
       Relational:Schema: 
       Relational:SqlQuery: 
       Relational:TableName: ChangeEntities
+      Relational:ViewName: 
+      Relational:ViewSchema: 
+  EntityType: LocalStateEntry
+    Properties: 
+      Key (string) Required PK AfterSave:Throw
+      Value (string) Required
+    Keys: 
+      Key PK
+    Annotations: 
+      Relational:FunctionName: 
+      Relational:Schema: 
+      Relational:SqlQuery: 
+      Relational:TableName: LocalState
       Relational:ViewName: 
       Relational:ViewSchema: 
   EntityType: ObjectSnapshot

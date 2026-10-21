@@ -35,8 +35,9 @@ internal static class SyncHelper
             missingFromLocal = Clone(missingFromLocal, serializerOptions);
             missingFromRemote = Clone(missingFromRemote, serializerOptions);
         }
-        var pullError = await TryAddRange(localModel, missingFromLocal);
-        var pushError = await TryAddRange(remoteModel, missingFromRemote);
+        var pull = TryAddRange(localModel, missingFromLocal);
+        var push = TryAddRange(remoteModel, missingFromRemote);
+        var (pullError, pushError) = (await pull, await push);
         ThrowIfAny([pullError, pushError]);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }

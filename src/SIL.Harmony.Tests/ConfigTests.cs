@@ -1,7 +1,6 @@
 using System.Text.Json;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
-using SIL.Harmony.Entities;
 using SIL.Harmony.Resource;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
@@ -78,45 +77,15 @@ public class ConfigTests
     }
 
     [Fact]
-    public void RemoteResourceDiscriminatorsDontDependOnTheMetadataType()
+    public void ModelVersionBuilder_TwoTypesWithOneDiscriminator_Throws()
     {
-        HarmonyConfig.RemoteResourceChangeTypes<MediaMetadata>().Select(t => t.Discriminator)
-            .Should().Equal(HarmonyConfig.RemoteResourceChangeTypes<NoMetadata>().Select(t => t.Discriminator));
-    }
+        var builder = new ModelVersionBuilder()
+            .Add(0, "Before", v => v.RemoteResourceChanges<MediaMetadata>());
 
-    [Fact]
-    public void TwoTypesWithOneDiscriminator_Throws()
-    {
-        var config = new HarmonyConfig();
-        config.ModelVersionBuilder
-            .Add(0, "Before", v => v.Change<SetWordTextChange>())
-            .Add(1, "Same name", v => v.Change<OtherSetWordTextChange>());
+        var act = () => builder.Add(1, "No metadata", v => v.RemoteResourceChanges<NoMetadata>());
 
-        var act = () => config.JsonSerializerOptions;
-
-        act.Should().Throw<InvalidOperationException>().WithMessage($"*both use the discriminator {nameof(SetWordTextChange)}");
-    }
-
-    [Fact]
-    public void AnAppTypeWithARemoteResourceDiscriminator_Throws()
-    {
-        var config = new HarmonyConfig();
-        config.ModelVersionBuilder.Add(0, "Before", v => v.Change<FakeCreateRemoteResourceChange>());
-        config.AddRemoteResourceEntity<NoMetadata>();
-
-        var act = () => config.JsonSerializerOptions;
-
-        act.Should().Throw<InvalidOperationException>().WithMessage("*both use the discriminator create:remote-resource");
-    }
-
-    private class OtherSetWordTextChange(Guid entityId, string text) : SetWordTextChange(entityId, text), IPolyType
-    {
-        public static string TypeName => nameof(SetWordTextChange);
-    }
-
-    private class FakeCreateRemoteResourceChange(Guid entityId, string text) : SetWordTextChange(entityId, text), IPolyType
-    {
-        public static string TypeName => "create:remote-resource";
+        act.Should().Throw<ArgumentException>().WithMessage("*as uploaded:RemoteResource*");
+        builder.Versions.Should().ContainSingle();
     }
 
     [Fact]
@@ -129,18 +98,6 @@ public class ConfigTests
         var act = () => config.ModelVersionBuilder.Add(0, "Before", v => v.Change<SetWordTextChange>());
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*ModelVersionBuilder*frozen*");
-    }
-
-    [Fact]
-    public void AddRemoteResourceEntity_AfterJsonOptionsAreBuilt_Throws()
-    {
-        var config = new HarmonyConfig();
-        _ = config.JsonSerializerOptions;
-
-        var act = () => config.AddRemoteResourceEntity<NoMetadata>();
-
-        act.Should().Throw<InvalidOperationException>().WithMessage("*ModelVersionBuilder*frozen*");
-        config.RemoteResourcesEnabled.Should().BeFalse();
     }
 
     [Fact]

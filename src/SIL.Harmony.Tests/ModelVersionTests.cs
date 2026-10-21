@@ -6,6 +6,7 @@ using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
+using SIL.Harmony.Resource;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
@@ -26,14 +27,21 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         services.Configure<HarmonyConfig>(config => config.UnknownChangeHandling = UnknownChangeHandling.Fallback);
     }
 
-    /// <summary>replaces the sample's versions with a version 0 that lists every sample change type except <paramref name="without"/></summary>
-    private static void VersionZero(HarmonyConfig config, string? without = null, bool remoteResourceChanges = true)
+    /// <summary>
+    /// replaces the sample's versions with a version 0 that runs <paramref name="remoteResources"/> (by default the sample's
+    /// remote resource changes), then lists the other sample change types except <paramref name="without"/>
+    /// </summary>
+    private static void VersionZero(HarmonyConfig config, string? without = null, Action<ModelVersionChanges>? remoteResources = null)
     {
+        remoteResources ??= v => v.RemoteResourceChanges<MediaMetadata>();
         config.ModelVersionBuilder.Clear();
         config.ModelVersionBuilder.Add(0, "Before model versions", v =>
         {
-            if (remoteResourceChanges) v.RemoteResourceChanges();
-            foreach (var changeType in SampleConfig.ChangeTypes.Where(ct => ct.Discriminator != without)) v.Change(changeType);
+            remoteResources(v);
+            var others = SampleConfig.ChangeTypes.Where(ct =>
+                !v.Changes.ContainsKey(ct.Discriminator) // skip what remoteResources listed
+                && ct.Discriminator != without);
+            foreach (var changeType in others) v.Change(changeType);
         });
     }
 
@@ -537,8 +545,28 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     [Fact]
     public void RemoteResourceChangesMustBeListed()
     {
-        ValidationFailureOf(config => VersionZero(config, remoteResourceChanges: false))
-            .Message.Should().StartWith("Call RemoteResourceChanges() in a model version");
+        ValidationFailureOf(config => VersionZero(config, remoteResources: _ => { }))
+            .Message.Should().EndWith("got MediaMetadata and not called");
+    }
+
+    [Fact]
+    public void RemoteResourceChangesMustUseTheRemoteResourceMetadataType()
+    {
+        ValidationFailureOf(config => VersionZero(config, remoteResources: v => v.RemoteResourceChanges<NoMetadata>()))
+            .Message.Should().EndWith("got MediaMetadata and NoMetadata");
+    }
+
+    [Fact]
+    public void RemoteResourceChangesWithoutRemoteResourcesFailsValidation()
+    {
+        using var services = new ServiceCollection()
+            .AddCrdtData<SampleDbContext>(CrdtSampleKernel.ConfigureSample)
+            .BuildServiceProvider();
+
+        var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
+
+        act.Should().Throw<OptionsValidationException>()
+            .WithMessage("*got not called and MediaMetadata");
     }
 
     [Fact]

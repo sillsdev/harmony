@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.IO.Hashing;
 using System.Text.Json.Serialization;
 
@@ -12,7 +11,6 @@ public abstract class CommitBase : IComparable<CommitBase>
 {
     public const string NullParentHash = "0000";
     [JsonConstructor]
-    [SetsRequiredMembers]
     protected internal CommitBase(Guid id, HybridDateTime hybridDateTime)
     {
         Id = id;
@@ -71,7 +69,6 @@ public abstract class CommitBase : IComparable<CommitBase>
 /// <inheritdoc cref="CommitBase"/>
 public abstract class CommitBase<TChange> : CommitBase
 {
-    [SetsRequiredMembers]
     internal CommitBase(Guid id, HybridDateTime hybridDateTime) : base(id, hybridDateTime)
     {
     }

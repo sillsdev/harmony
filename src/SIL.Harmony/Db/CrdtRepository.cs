@@ -218,6 +218,60 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await Snapshots.ExecuteDeleteAsync();
     }
 
+    /// <summary>
+    /// Reclaims the space a mass delete left behind and refreshes the query planner statistics. SQLite only: on every
+    /// other provider it does nothing. Best effort: it only ever runs after the work it cleans up for has committed,
+    /// so a failure here (disk full, another connection holding the file) is logged and never surfaced.
+    /// Can't run inside a transaction, VACUUM refuses to.
+    /// </summary>
+    public async Task CompactDatabase()
+    {
+        if (_dbContext.Database.ProviderName != FastProjection.SqliteProviderName) return;
+        if (IsInTransaction) throw new InvalidOperationException("The database can't be compacted inside a transaction");
+        try
+        {
+            //TruncateWal uses the raw connection, which EF closes after each command it opened it for
+            await _dbContext.Database.OpenConnectionAsync();
+            //optimize first: it's cheap, and VACUUM keeps the statistics it refreshes.
+            //see https://gist.github.com/phiresky/978d8e204f77feaa0ab5cca08d2d5b27
+            await _dbContext.Database.ExecuteSqlRawAsync("PRAGMA optimize;");
+            //VACUUM rewrites the whole file: freed pages go back to the OS and the rows written in replay order get
+            //laid out contiguously. Expensive, but so was the rewrite that made it worthwhile
+            await _dbContext.Database.ExecuteSqlRawAsync("VACUUM;");
+            await TruncateWal();
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "Failed to compact the database, the data is intact but the file may be larger than it needs to be");
+        }
+        finally
+        {
+            await _dbContext.Database.CloseConnectionAsync();
+        }
+    }
+
+    /// <summary>
+    /// In WAL mode VACUUM writes the whole new file through the write ahead log, so the log is now about as big as
+    /// the database. The automatic checkpoint after the commit copies it back but never shrinks the file, only a
+    /// TRUNCATE checkpoint does. Nothing to do in any other journal mode
+    /// </summary>
+    private async Task TruncateWal()
+    {
+        var connection = _dbContext.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA journal_mode;";
+        var journalMode = await command.ExecuteScalarAsync() as string;
+        if (!string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase)) return;
+
+        //returns one row: busy (1 when it couldn't wait out the readers), log pages, checkpointed pages
+        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync() && reader.GetInt64(0) == 1)
+        {
+            _logger.LogWarning("Could not truncate the write ahead log after compacting because another connection is reading, {LogPages} pages stay in it until the next checkpoint", reader.GetInt64(1));
+        }
+    }
+
     private static readonly MethodInfo deleteProjectedTableMethod = new Func<ICrdtDbContext, Task>(DeleteProjectedTable<object>).Method.GetGenericMethodDefinition();
 
     private static async Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class

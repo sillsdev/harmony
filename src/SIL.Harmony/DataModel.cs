@@ -124,6 +124,10 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     internal static ChangeEntity<IChange> ToChangeEntity(IChange change, int index, Guid commitId, HarmonyConfig config)
     {
+        if (!config.IsRegisteredChangeType(change.GetType()))
+            throw new ArgumentException(
+                $"Change type {change.GetType().FullName} is not registered, list it with {nameof(ModelVersionChanges)}.{nameof(ModelVersionChanges.Change)}<T>() in a model version",
+                nameof(change));
         return new ChangeEntity<IChange>()
         {
             Change = change,

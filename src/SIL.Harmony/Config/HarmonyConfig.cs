@@ -45,12 +45,11 @@ public class HarmonyConfig
     /// to preserve unknown changes as <see cref="OpaqueChange"/>.
     /// </summary>
     public UnknownChangeHandling UnknownChangeHandling { get; set; } = UnknownChangeHandling.Throw;
-    public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
-    public IReadOnlyList<RegisteredChangeType> ChangeTypes => ChangeTypeListBuilder.Types;
     /// <summary>
-    /// The ordered list of model versions, see <see cref="ModelVersionBuilder"/>.
+    /// The ordered list of model versions, which also registers the change types, see <see cref="ModelVersionBuilder"/>.
     /// </summary>
     public ModelVersionBuilder ModelVersionBuilder { get; } = new();
+    public IReadOnlyList<RegisteredChangeType> ChangeTypes => ModelVersionBuilder.ChangeTypes;
     public IReadOnlyList<ModelVersion> ModelVersions => ModelVersionBuilder.Versions;
     /// <summary>the number of the last model version, which every change this app authors is stored with</summary>
     public int CurrentModelVersion => ModelVersions.Count == 0
@@ -112,11 +111,11 @@ public class HarmonyConfig
 
     private ChangeDiscriminatorMaps BuildChangeDiscriminatorMaps()
     {
-        ChangeTypeListBuilder.Freeze();
+        ModelVersionBuilder.Freeze();
 
-        var knownChanges = new Dictionary<string, Type>(ChangeTypeListBuilder.Types.Count);
-        var discriminators = new Dictionary<Type, string>(ChangeTypeListBuilder.Types.Count);
-        foreach (var changeType in ChangeTypeListBuilder.Types)
+        var knownChanges = new Dictionary<string, Type>(ChangeTypes.Count);
+        var discriminators = new Dictionary<Type, string>(ChangeTypes.Count);
+        foreach (var changeType in ChangeTypes)
         {
             knownChanges.Add(changeType.Discriminator, changeType.Type);
             discriminators.Add(changeType.Type, changeType.Discriminator);
@@ -165,7 +164,7 @@ public class HarmonyConfig
 
     private void JsonTypeModifier(JsonTypeInfo typeInfo)
     {
-        ChangeTypeListBuilder.Freeze();
+        ModelVersionBuilder.Freeze();
         ObjectTypeListBuilder.Freeze();
         var changeTypeDiscriminators = _lazyChangeDiscriminatorMaps.Value.ByType;
 
@@ -229,11 +228,6 @@ public class HarmonyConfig
                         : JsonSerializer.Deserialize<TMetadata>(json, (JsonSerializerOptions?)null)
                 );
         });
-        ChangeTypeListBuilder.Add<RemoteResourceUploadedChange<TMetadata>>();
-        ChangeTypeListBuilder.Add<CreateRemoteResourceChange<TMetadata>>();
-        ChangeTypeListBuilder.Add<CreateRemoteResourcePendingUploadChange<TMetadata>>();
-        ChangeTypeListBuilder.Add<SetRemoteResourceMetadataChange<TMetadata>>();
-        ChangeTypeListBuilder.Add<DeleteRemoteResourceChange<TMetadata>>();
         ObjectTypeListBuilder.ModelConfigurations.Add((builder, config) =>
         {
             var entity = builder.Entity<LocalResource>();

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using SIL.Harmony.Core;
 
-namespace SIL.Harmony.Tests;
+namespace SIL.Harmony.Tests.Core;
 
 public class ServerCommitTests
 {

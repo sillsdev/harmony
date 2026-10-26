@@ -37,7 +37,8 @@ internal static class SyncHelper
         }
         var pull = TryAddRange(localModel, missingFromLocal);
         var push = TryAddRange(remoteModel, missingFromRemote);
-        var (pullError, pushError) = (await pull, await push);
+        var pullError = await pull;
+        var pushError = await push;
         ThrowIfAny([pullError, pushError]);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }

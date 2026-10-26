@@ -6,7 +6,9 @@ namespace SIL.Harmony.Resource;
 public class LocalResource
 {
     public required Guid Id { get; set; }
-    //could probably be a URL if working in an electron context, not sure what would be best here. It depends on the app
+    /// <summary>
+    /// absolute path to the file on the local machine, resolved by Harmony when read from the database
+    /// </summary>
     public required string LocalPath { get; set; }
 
     public bool FileExists()

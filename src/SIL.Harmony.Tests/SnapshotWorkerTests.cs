@@ -110,6 +110,22 @@ public class SnapshotWorkerTests : CommitTestBase
     }
 
     [Fact]
+    public async Task DeletingAnEntityCascadesThroughReferrersThatRemovingTheReferenceDeletes()
+    {
+        var word = new Word { Id = Guid.NewGuid(), Text = "hello" };
+        var definition = new Definition { Id = Guid.NewGuid(), Text = "a greeting", Order = 0, PartOfSpeech = "noun", WordId = word.Id };
+        var example = new Example { Id = Guid.NewGuid(), DefinitionId = definition.Id };
+        var baseline = Baseline(word, definition, example);
+        var delete = NextCommit(DeleteWord(word.Id));
+
+        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [delete], SampleConfig);
+
+        //the example only references the definition, so it's deleted by the recursive MarkDeleted
+        snapshots.Should().HaveCount(3).And.OnlyContain(s => s.EntityIsDeleted && s.CommitId == delete.Id);
+        snapshots.Select(s => s.EntityId).Should().BeEquivalentTo([word.Id, definition.Id, example.Id]);
+    }
+
+    [Fact]
     public async Task ADeletedEntityIsRevivedByACreateChange()
     {
         var word = new Word { Id = Guid.NewGuid(), Text = "hello", DeletedAt = DateTimeOffset.UtcNow };

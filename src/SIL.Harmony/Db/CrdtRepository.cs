@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Reflection;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -217,6 +218,60 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         await Snapshots.ExecuteDeleteAsync();
     }
 
+    /// <summary>
+    /// Reclaims the space a mass delete left behind and refreshes the query planner statistics. SQLite only: on every
+    /// other provider it does nothing. Best effort: it only ever runs after the work it cleans up for has committed,
+    /// so a failure here (disk full, another connection holding the file) is logged and never surfaced.
+    /// Can't run inside a transaction, VACUUM refuses to.
+    /// </summary>
+    public async Task CompactDatabase()
+    {
+        if (_dbContext.Database.ProviderName != FastProjection.SqliteProviderName) return;
+        if (IsInTransaction) throw new InvalidOperationException("The database can't be compacted inside a transaction");
+        try
+        {
+            //TruncateWal uses the raw connection, which EF closes after each command it opened it for
+            await _dbContext.Database.OpenConnectionAsync();
+            //optimize first: it's cheap, and VACUUM keeps the statistics it refreshes.
+            //see https://gist.github.com/phiresky/978d8e204f77feaa0ab5cca08d2d5b27
+            await _dbContext.Database.ExecuteSqlRawAsync("PRAGMA optimize;");
+            //VACUUM rewrites the whole file: freed pages go back to the OS and the rows written in replay order get
+            //laid out contiguously. Expensive, but so was the rewrite that made it worthwhile
+            await _dbContext.Database.ExecuteSqlRawAsync("VACUUM;");
+            await TruncateWal();
+        }
+        catch (Exception e)
+        {
+            _logger.LogWarning(e, "Failed to compact the database, the data is intact but the file may be larger than it needs to be");
+        }
+        finally
+        {
+            await _dbContext.Database.CloseConnectionAsync();
+        }
+    }
+
+    /// <summary>
+    /// In WAL mode VACUUM writes the whole new file through the write ahead log, so the log is now about as big as
+    /// the database. The automatic checkpoint after the commit copies it back but never shrinks the file, only a
+    /// TRUNCATE checkpoint does. Nothing to do in any other journal mode
+    /// </summary>
+    private async Task TruncateWal()
+    {
+        var connection = _dbContext.Database.GetDbConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA journal_mode;";
+        var journalMode = await command.ExecuteScalarAsync() as string;
+        if (!string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase)) return;
+
+        //returns one row: busy (1 when it couldn't wait out the readers), log pages, checkpointed pages
+        command.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        await using var reader = await command.ExecuteReaderAsync();
+        if (await reader.ReadAsync() && reader.GetInt64(0) == 1)
+        {
+            _logger.LogWarning("Could not truncate the write ahead log after compacting because another connection is reading, {LogPages} pages stay in it until the next checkpoint", reader.GetInt64(1));
+        }
+    }
+
     private static readonly MethodInfo deleteProjectedTableMethod = new Func<ICrdtDbContext, Task>(DeleteProjectedTable<object>).Method.GetGenericMethodDefinition();
 
     private static async Task DeleteProjectedTable<T>(ICrdtDbContext dbContext) where T : class
@@ -384,6 +439,44 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return new ReplayWindow(null, await GetCommitsAfter(null));
     }
 
+    /// <summary>The window that rebuilds every snapshot from <paramref name="commit"/> onwards.</summary>
+    public async Task<ReplayWindow> ReplayWindowFrom(Commit commit)
+    {
+        var resumeFrom = await FindCheckpointBefore(commit);
+        return new ReplayWindow(resumeFrom, await GetCommitsAfter(resumeFrom));
+    }
+
+    /// <summary>
+    /// The oldest commit with a change whose <c>$type</c> is one of <paramref name="fromVersions"/>
+    /// and whose <see cref="ChangeEntity{TChange}.AuthoredModelVersion"/> is at least the model version given for that type.
+    /// Reads every change, so it's slow, only use it for rare operations. SQLite only.
+    /// </summary>
+    public async Task<Commit?> FindOldestCommitWithModelVersions(
+        IReadOnlyCollection<(string ChangeType, int FromVersion)> fromVersions)
+    {
+        if (fromVersions.Count == 0) return null;
+        if (!_dbContext.Database.IsSqlite())
+            throw new NotSupportedException(
+                $"Querying changes by type is only supported on SQLite, not {_dbContext.Database.ProviderName}");
+        //the key must be quoted in the path, because $ has a special meaning in json paths
+        var typeDiscriminatorPath = $"$.\"{CrdtConstants.ChangeDiscriminatorProperty}\"";
+        //one json array parameter, so the parameter count doesn't depend on how many types there are
+        var fromVersionsJson = JsonSerializer.Serialize(fromVersions.Select(fv => new { t = fv.ChangeType, v = fv.FromVersion }));
+        var commitIds = await _dbContext.Database.SqlQuery<Guid>($"""
+            SELECT c.Id AS Value FROM Commits c
+            WHERE EXISTS (
+                SELECT 1 FROM ChangeEntities ce, json_each({fromVersionsJson}) fv
+                WHERE ce.CommitId = c.Id
+                  AND json_extract(ce.Change, {typeDiscriminatorPath}) = json_extract(fv.value, '$.t')
+                  AND ce.AuthoredModelVersion >= json_extract(fv.value, '$.v')
+            )
+            ORDER BY c.DateTime, c.Counter, c.Id
+            LIMIT 1
+            """).ToListAsync();
+        if (commitIds is not [var commitId]) return null;
+        return await Commits.SingleAsync(c => c.Id == commitId);
+    }
+
     /// <inheritdoc cref="AddCommits"/>
     public Task<ReplayWindow> AddCommit(Commit commit) => AddCommits([commit]);
 
@@ -428,10 +521,55 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     }
 
 
+    private DbSet<LocalStateEntry> LocalState => _dbContext.Set<LocalStateEntry>();
+
+    public async Task<T?> GetLocalState<T>(string key)
+    {
+        var value = await LocalState.AsNoTracking()
+            .Where(e => e.Key == key)
+            .Select(e => e.Value)
+            .SingleOrDefaultAsync();
+        return value is null ? default : JsonSerializer.Deserialize<T>(value);
+    }
+
+    public async Task SetLocalState<T>(string key, T value)
+    {
+        var json = JsonSerializer.Serialize(value);
+        var entry = await LocalState.SingleOrDefaultAsync(e => e.Key == key);
+        if (entry is null) LocalState.Add(new LocalStateEntry { Key = key, Value = json });
+        else entry.Value = json;
+        await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task RemoveLocalState(string key)
+    {
+        //a tracked removal, not ExecuteDelete: the db context can be shared between calls, and ExecuteDelete would leave
+        //a tracked entry behind, so setting the key again would fail
+        var entry = await LocalState.FindAsync(key);
+        if (entry is null) return;
+        LocalState.Remove(entry);
+        await _dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// stores the resource; the caller's instance keeps its absolute path, only the stored row is relativized
+    /// </summary>
     public async Task AddLocalResource(LocalResource localResource)
     {
-        _dbContext.Set<LocalResource>().Add(localResource);
+        _dbContext.Set<LocalResource>().Add(new LocalResource
+        {
+            Id = localResource.Id,
+            LocalPath = LocalResourcePaths.ToStored(_crdtConfig.Value, localResource.LocalPath)
+        });
         await _dbContext.SaveChangesAsync();
+    }
+
+    public async Task UpdateLocalResource(LocalResource localResource)
+    {
+        var storedPath = LocalResourcePaths.ToStored(_crdtConfig.Value, localResource.LocalPath);
+        await _dbContext.Set<LocalResource>()
+            .Where(r => r.Id == localResource.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.LocalPath, storedPath));
     }
 
     public async Task DeleteLocalResource(Guid id)
@@ -441,11 +579,23 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public IAsyncEnumerable<LocalResource> LocalResourcesByIds(IEnumerable<Guid> resourceIds)
     {
-        return _dbContext.Set<LocalResource>().Where(r => resourceIds.Contains(r.Id)).AsAsyncEnumerable();
+        return ResolvePaths(_dbContext.Set<LocalResource>().Where(r => resourceIds.Contains(r.Id)));
     }
     public IAsyncEnumerable<LocalResource> LocalResources()
     {
-        return _dbContext.Set<LocalResource>().AsAsyncEnumerable();
+        return ResolvePaths(_dbContext.Set<LocalResource>());
+    }
+
+    //no tracking so rewriting LocalPath to its absolute form is never flushed back to the database
+    private IAsyncEnumerable<LocalResource> ResolvePaths(IQueryable<LocalResource> query)
+    {
+        return query.AsNoTracking().AsAsyncEnumerable().Select(ResolvePath);
+    }
+
+    private LocalResource ResolvePath(LocalResource resource)
+    {
+        resource.LocalPath = LocalResourcePaths.FromStored(_crdtConfig.Value, resource.LocalPath);
+        return resource;
     }
 
     /// <summary>
@@ -458,7 +608,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
     public async Task<LocalResource?> GetLocalResource(Guid resourceId)
     {
-        return await _dbContext.Set<LocalResource>().FindAsync(resourceId);
+        var resource = await _dbContext.Set<LocalResource>().AsNoTracking().FirstOrDefaultAsync(r => r.Id == resourceId);
+        return resource is null ? null : ResolvePath(resource);
     }
 
     public void Dispose()

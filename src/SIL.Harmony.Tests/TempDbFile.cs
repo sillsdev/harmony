@@ -15,5 +15,7 @@ public sealed class TempDbFile : IDisposable
     public void Dispose()
     {
         File.Delete(Path);
+        File.Delete(Path + "-wal");
+        File.Delete(Path + "-shm");
     }
 }

@@ -279,6 +279,113 @@ public class RemoteResourcesTests : DataModelTestBase
             .Should().ThrowAsync<RemoteResourceNotEnabledException>();
         await FluentActions.Awaiting(() => service.DownloadResource(id, _remoteServiceMock))
             .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+        await FluentActions.Awaiting(() => service.AddLocalCopy(id, file))
+            .Should().ThrowAsync<RemoteResourceNotEnabledException>();
+    }
+
+    //a resource created on another device and synced here, so it has no local copy yet
+    private async Task<Guid> SetupSyncedPendingUploadResource()
+    {
+        var resourceId = Guid.NewGuid();
+        await DataModel.AddChange(_localClientId, new CreateRemoteResourcePendingUploadChange<MediaMetadata>(resourceId));
+        return resourceId;
+    }
+
+    [Fact]
+    public async Task AddLocalCopy_PendingUploadResource_StaysPendingWithoutACommit()
+    {
+        var resourceId = await SetupSyncedPendingUploadResource();
+        var file = CreateFile("pending-copy");
+        var commitsBefore = DbContext.Commits.Count();
+
+        var localResource = await _resourceService.AddLocalCopy(resourceId, file);
+
+        localResource.Should().BeEquivalentTo(new LocalResource { Id = resourceId, LocalPath = file });
+        DbContext.Commits.Count().Should().Be(commitsBefore, "recording a local copy must not create a commit");
+        var resource = await _resourceService.GetResource(resourceId);
+        resource.Should().BeEquivalentTo(new HarmonyResource<MediaMetadata>
+        {
+            Id = resourceId,
+            LocalPath = file,
+            RemoteId = null
+        });
+        (await _resourceService.ListResourcesPendingUpload())
+            .Should().ContainSingle().Which.Id.Should().Be(resourceId);
+    }
+
+    [Fact]
+    public async Task AddLocalCopy_UploadedResource_IsNoLongerPendingDownloadWithoutACommit()
+    {
+        var (resourceId, remoteId) = await SetupRemoteResource("uploaded-copy");
+        var file = CreateFile("uploaded-copy");
+        var commitsBefore = DbContext.Commits.Count();
+
+        await _resourceService.AddLocalCopy(resourceId, file);
+
+        DbContext.Commits.Count().Should().Be(commitsBefore, "recording a local copy must not create a commit");
+        (await _resourceService.GetResource(resourceId)).Should().BeEquivalentTo(new HarmonyResource<MediaMetadata>
+        {
+            Id = resourceId,
+            LocalPath = file,
+            RemoteId = remoteId
+        });
+        (await _resourceService.ListResourcesPendingDownload()).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AddLocalCopy_ThrowsEntityNotFound_WhenResourceIdUnknown()
+    {
+        var file = CreateFile("unknown-copy");
+
+        await FluentActions.Awaiting(() => _resourceService.AddLocalCopy(Guid.NewGuid(), file))
+            .Should().ThrowAsync<EntityNotFoundException>();
+    }
+
+    [Fact]
+    public async Task AddLocalCopy_ThrowsEntityNotFound_WhenResourceDeleted()
+    {
+        var (resourceId, _) = await SetupRemoteResource("deleted-copy");
+        await DataModel.AddChange(_localClientId, new DeleteRemoteResourceChange<MediaMetadata>(resourceId));
+        var file = CreateFile("deleted-copy");
+
+        await FluentActions.Awaiting(() => _resourceService.AddLocalCopy(resourceId, file))
+            .Should().ThrowAsync<EntityNotFoundException>();
+        (await _resourceService.GetLocalResource(resourceId)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AddLocalCopy_ThrowsFileNotFound_WhenFileMissing()
+    {
+        var resourceId = await SetupSyncedPendingUploadResource();
+
+        await FluentActions.Awaiting(() => _resourceService.AddLocalCopy(resourceId, Path.GetFullPath("missing-copy.txt")))
+            .Should().ThrowAsync<FileNotFoundException>();
+        (await _resourceService.GetLocalResource(resourceId)).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task AddLocalCopy_KeepsExistingCopy_WhenItsFileExists()
+    {
+        var (resourceId, existingFile) = await SetupLocalFile("existing-copy");
+        var newFile = CreateFile("new-copy", "new-copy");
+
+        var localResource = await _resourceService.AddLocalCopy(resourceId, newFile);
+
+        localResource.LocalPath.Should().Be(existingFile);
+        (await _resourceService.GetLocalResource(resourceId))!.LocalPath.Should().Be(existingFile);
+    }
+
+    [Fact]
+    public async Task AddLocalCopy_ReplacesExistingCopy_WhenItsFileIsMissing()
+    {
+        var (resourceId, existingFile) = await SetupLocalFile("stale-copy");
+        File.Delete(existingFile);
+        var newFile = CreateFile("replacement-copy", "replacement-copy");
+
+        var localResource = await _resourceService.AddLocalCopy(resourceId, newFile);
+
+        localResource.LocalPath.Should().Be(newFile);
+        (await _resourceService.GetLocalResource(resourceId))!.LocalPath.Should().Be(newFile);
     }
 
     [Fact]

@@ -102,8 +102,10 @@ Once you have created your change types, you need to tell Harmony about them. Ag
 ```C#
 services.AddCrdtData<SampleDbContext>(config =>
 {
-// add the following line
+// add the following lines
     config.ChangeTypeListBuilder.Add<SetWordTextChange>();
+    //every change type must be listed by a model version, see Model versions below
+    config.ModelVersionBuilder.Add(0, "Before model versions", v => v.Change<SetWordTextChange>());
     config.ObjectTypeListBuilder
         .Add<Word>()
         .Add<Definition>()
@@ -177,6 +179,47 @@ ISyncable remoteModel;
 await dataModel.SyncWith(remoteModel);
 ```
 It's that easy. All the heavy lifting is done by the interface which is fairly simple to implement.
+
+### Model versions
+Clients on different app versions sync with each other, so an older app receives changes a newer app authored. It skips the ones whose type it doesn't know (stored as `OpaqueChange` with `UnknownChangeHandling.Fallback`) and applies the rest with its old code. When the older app upgrades, those changes must be replayed.
+
+Model versions make that possible. Declare them in order, numbered from 0, each listing the change types it added or changed. Version 0 lists every change type that existed before model versions. Every change is stored with the number of the authoring app's latest version, whether or not that version lists the change's type, so a change authored by a newer app carries a number the older app doesn't have yet. Startup fails if no versions are declared, a registered change type isn't listed, or remote resources are enabled without `RemoteResourceChanges`. Only add versions at the end, never modify a released one:
+```C#
+services.AddCrdtRemoteResources<MediaMetadata>();
+services.AddCrdtData<AppDbContext>(config =>
+{
+    config.ChangeTypeListBuilder
+        .Add<NewWordChange>()
+        .Add<SetWordTextChange>()
+        .Add<SetWordNoteChange>();
+    config.ModelVersionBuilder
+        .Add(0, "Before model versions", v => v
+            .Change<NewWordChange>()
+            .Change<SetWordTextChange>()
+            //the change types AddCrdtRemoteResources registers
+            .RemoteResourceChanges<MediaMetadata>())
+        .Add(1, "Word notes", v => v.Change<SetWordNoteChange>())
+        //a major version regenerates all snapshots on upgrade
+        .AddMajor(2, "Reference rewrite", v => v.Change<SetWordTextChange>());
+});
+```
+Call `ReconcileModelVersions` when you open a database, before you use it. A database with nothing stored is at version 0. For each type listed by a version newer than the stored one, it invalidates the changes authored with that version or later, and rebuilds the snapshots from the checkpoint before the oldest of them. A major version, or a downgrade, regenerates all snapshots. It throws if an applied version was modified. Querying changes by type is supported on SQLite only.
+```C#
+await dataModel.ReconcileModelVersions();
+```
+Listing a type invalidates only the changes authored by apps on the new version or later. When the new behavior must also apply to older changes, pass `invalidateFrom` with the model version to invalidate from. That covers a released version that changed how a type applies but forgot to list it: its apps still stamped their changes with its own number, so invalidating from that version replays only the changes those apps and later ones authored:
+```C#
+config.ModelVersionBuilder
+    .Add(0, "Before model versions", v => v.Change<SetWordNoteChange>().Change<SetTagChange>())
+    .Add(1, "Word notes", v => v.Change<SetWordNoteChange>())
+    //changed how SetTagChange applies but forgot to list it, its apps authored tags as version 2
+    .Add(2, "Notes again", v => v.Change<SetWordNoteChange>())
+    .Add(3, "Fix tags", v => v.Change<SetTagChange>(invalidateFrom: 2));
+```
+To make sure a released version is not modified by accident, add a snapshot test of `HarmonyConfig.DescribeModelVersions()` to your app. A new version only adds a line at the end of the snapshot.
+
+> [!NOTE]
+> Model versions add an `AuthoredModelVersion` column to `ChangeEntities` and a `LocalState` table, so an EF migration is required.
 
 ## Development
 

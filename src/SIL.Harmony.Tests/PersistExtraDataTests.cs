@@ -58,6 +58,7 @@ public class PersistExtraDataTests
             {
                 config.ObjectTypeListBuilder.DefaultAdapter().Add<ExtraDataModel>();
                 config.ChangeTypeListBuilder.Add<CreateExtraDataModelChange>();
+                config.ModelVersionBuilder.Add(1, "Extra data", v => v.Change<CreateExtraDataModelChange>());
                 config.BeforeSaveObject = (obj, snapshot) =>
                 {
                     if (obj is ExtraDataModel extraDataModel)

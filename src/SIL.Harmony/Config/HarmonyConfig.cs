@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore;
@@ -46,6 +47,15 @@ public class HarmonyConfig
     public UnknownChangeHandling UnknownChangeHandling { get; set; } = UnknownChangeHandling.Throw;
     public ChangeTypeListBuilder ChangeTypeListBuilder { get; } = new();
     public IReadOnlyList<RegisteredChangeType> ChangeTypes => ChangeTypeListBuilder.Types;
+    /// <summary>
+    /// The ordered list of model versions, see <see cref="ModelVersionBuilder"/>.
+    /// </summary>
+    public ModelVersionBuilder ModelVersionBuilder { get; } = new();
+    public IReadOnlyList<ModelVersion> ModelVersions => ModelVersionBuilder.Versions;
+    /// <summary>the number of the last model version, which every change this app authors is stored with</summary>
+    public int CurrentModelVersion => ModelVersions.Count == 0
+        ? throw new InvalidOperationException("No model versions are declared, see " + nameof(ModelVersionBuilder))
+        : ModelVersions[^1].Number;
     public ObjectTypeListBuilder ObjectTypeListBuilder { get; } = new();
     public IEnumerable<Type> ObjectTypes => ObjectTypeListBuilder.AdapterProviders.SelectMany(p => p.GetRegistrations().Select(r => r.ObjectDbType));
     public JsonSerializerOptions JsonSerializerOptions => _lazyJsonSerializerOptions.Value;
@@ -115,6 +125,27 @@ public class HarmonyConfig
         return new ChangeDiscriminatorMaps(knownChanges, discriminators);
     }
 
+    /// <summary>
+    /// A stable text form of <see cref="ModelVersions"/>, one line per version.
+    /// Use it in a snapshot test so a released version can't be modified by accident: the snapshot may only grow at the end.
+    /// </summary>
+    public string DescribeModelVersions()
+    {
+        var builder = new StringBuilder();
+        foreach (var version in ModelVersions)
+        {
+            builder.Append(version.Number)
+                .Append(version.Major ? " major " : " ")
+                .Append(version.Name)
+                .Append(": ")
+                .AppendJoin(", ", version.Changes.Select(c => c.InvalidateFrom == version.Number
+                    ? c.ChangeType
+                    : $"{c.ChangeType} invalidates from {c.InvalidateFrom}"))
+                .Append('\n');
+        }
+        return builder.ToString();
+    }
+
     private sealed record ChangeDiscriminatorMaps(
         IReadOnlyDictionary<string, Type> ByDiscriminator,
         IReadOnlyDictionary<Type, string> ByType);
@@ -171,6 +202,14 @@ public class HarmonyConfig
     public bool RemoteResourcesEnabled { get; private set; }
     public Type? RemoteResourceMetadataType { get; private set; }
     public string LocalResourceCachePath { get; set; } = Path.GetFullPath("./localResourceCache");
+    /// <summary>
+    /// When true, a local resource whose file lives under <see cref="LocalResourceCachePath"/> is stored with a path
+    /// relative to that directory and resolved against it on read, so the cache directory can move between runs
+    /// (iOS reassigns the app container path on reinstall or update). Files outside the cache are still stored
+    /// with their absolute path. Callers always see absolute paths. Only enable this when
+    /// <see cref="LocalResourceCachePath"/> is set explicitly: the default is relative to the working directory.
+    /// </summary>
+    public bool StoreLocalResourcePathsRelativeToCache { get; set; }
     public string FailedSyncOutputPath { get; set; } = Path.GetFullPath("./failedSyncs");
     public void AddRemoteResourceEntity<TMetadata>(string? cachePath = null)
         where TMetadata : class

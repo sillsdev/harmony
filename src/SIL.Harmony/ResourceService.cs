@@ -38,12 +38,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
-        var localResource = new LocalResource
-        {
-            Id = resourceId,
-            LocalPath = Path.GetFullPath(resourcePath)
-        };
-        if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
+        var localResource = NewLocalResource(resourceId, resourcePath);
 
         await _dataModel.AddChange(clientId,
             new CreateRemoteResourceChange<TMetadata>(localResource.Id, remoteId, metadata),
@@ -70,12 +65,7 @@ public class ResourceService<TMetadata> where TMetadata : class
         CommitMetadata? commitMetadata = null)
     {
         ValidateResourcesSetup();
-        var localResource = new LocalResource
-        {
-            Id = id == default ? Guid.NewGuid() : id,
-            LocalPath = Path.GetFullPath(resourcePath)
-        };
-        if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
+        var localResource = NewLocalResource(id == default ? Guid.NewGuid() : id, resourcePath);
         UploadResult<TMetadata>? uploadResult = null;
         if (resourceService is not null)
         {
@@ -209,11 +199,57 @@ public class ResourceService<TMetadata> where TMetadata : class
         ArgumentNullException.ThrowIfNull(remoteResource.RemoteId);
         var downloadResult = await remoteResourceService.DownloadResource(remoteResource.RemoteId,
             _crdtConfig.Value.LocalResourceCachePath);
+        var localResource = NewLocalResource(remoteResource.Id, downloadResult.LocalPath);
+        await repo.AddLocalResource(localResource);
+        return localResource;
+    }
+
+    /// <summary>
+    /// the single place a path enters Harmony: resolved to an absolute path (relative input is relative to the cache
+    /// directory) and required to exist, whether it came from the caller or from a download
+    /// </summary>
+    private LocalResource NewLocalResource(Guid id, string path)
+    {
         var localResource = new LocalResource
         {
-            Id = remoteResource.Id,
-            LocalPath = downloadResult.LocalPath
+            Id = id,
+            LocalPath = LocalResourcePaths.Normalize(_crdtConfig.Value, path)
         };
+        if (!localResource.FileExists()) throw new FileNotFoundException(localResource.LocalPath);
+        return localResource;
+    }
+
+    /// <summary>
+    /// record that a copy of an already known resource's file exists at <paramref name="localPath"/>,
+    /// for example after copying it from another device. No commit is made, so the resource's
+    /// <see cref="RemoteResource{TMetadata}.RemoteId"/> and pending upload state are unchanged.
+    /// </summary>
+    /// <remarks>
+    /// If a local copy is already recorded and its file still exists, that copy is kept and returned
+    /// and <paramref name="localPath"/> is ignored. If the recorded file is missing, the path is replaced.
+    /// </remarks>
+    /// <param name="resourceId">id of an existing, non-deleted <see cref="RemoteResource{TMetadata}"/></param>
+    /// <param name="localPath">path to the file on the local machine; a relative path is relative to the cache directory</param>
+    /// <returns>the local resource now recorded for <paramref name="resourceId"/></returns>
+    /// <exception cref="FileNotFoundException">the file at <paramref name="localPath"/> does not exist</exception>
+    /// <exception cref="EntityNotFoundException">no non-deleted resource with <paramref name="resourceId"/> exists</exception>
+    public async Task<LocalResource> AddLocalCopy(Guid resourceId, string localPath)
+    {
+        ValidateResourcesSetup();
+        var localResource = NewLocalResource(resourceId, localPath);
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        var remoteResource = await repo.GetCurrent<RemoteResource<TMetadata>>(resourceId);
+        if (remoteResource is null or { DeletedAt: not null })
+            throw new EntityNotFoundException($"Unable to find resource {resourceId}");
+
+        var existing = await repo.GetLocalResource(resourceId);
+        if (existing is not null)
+        {
+            if (existing.FileExists()) return existing;
+            await repo.UpdateLocalResource(localResource);
+            return localResource;
+        }
+
         await repo.AddLocalResource(localResource);
         return localResource;
     }

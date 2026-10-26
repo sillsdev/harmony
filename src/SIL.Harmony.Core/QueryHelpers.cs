@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Hashing;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,11 +47,12 @@ public static class QueryHelpers
     {
         commits = commits.AsNoTracking();
         if (includeChangeEntities) commits = commits.Include(c => c.ChangeEntities);
+        using var activity = StartPlanActivity(remoteState);
         foreach (var localClientState in localState.ClientStates)
         {
             var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
             var remoteClientState = remoteState.GetClientState(localClientState.ClientId);
-            switch (PlanFor(localClientState, remoteClientState))
+            switch (PlanAndRecordDivergence(activity, localClientState, remoteClientState))
             {
                 case SyncPlan.SendNothing:
                     break;
@@ -98,6 +100,42 @@ public static class QueryHelpers
         return local.CommitCount >= remote.CommitCount ? SyncPlan.SendAll : SyncPlan.SendNothing;
     }
 
+    private static Activity? StartPlanActivity(SyncState remoteState)
+    {
+        var activity = HarmonyActivitySource.Source.StartActivity(nameof(GetCommitsMissingFromRemote));
+        if (activity is { IsAllDataRequested: true } && remoteState.ClientStates.Any(c => c.OnlyHasTimestamp))
+            activity.SetTag("harmony.sync.remote_heads_only", true);
+        return activity;
+    }
+
+    private static SyncPlan PlanAndRecordDivergence(Activity? activity, ClientState local, ClientState? remote)
+    {
+        var plan = PlanFor(local, remote);
+        if (activity is { IsAllDataRequested: true } && remote is { OnlyHasTimestamp: false } && local != remote && HaveDiverged(local, remote))
+            RecordDivergence(activity, local, remote, plan);
+        return plan;
+    }
+
+    //a side that is just behind has an older head and fewer commits; anything else means the commit sets diverged
+    private static bool HaveDiverged(ClientState local, ClientState remote)
+    {
+        var (ahead, behind) = local.MaxTimestamp >= remote.MaxTimestamp ? (local, remote) : (remote, local);
+        return ahead.MaxTimestamp == behind.MaxTimestamp || behind.CommitCount >= ahead.CommitCount;
+    }
+
+    private static void RecordDivergence(Activity activity, ClientState local, ClientState remote, SyncPlan plan)
+    {
+        activity.AddEvent(new ActivityEvent("harmony.sync.divergence", tags: new ActivityTagsCollection
+        {
+            ["harmony.client_id"] = local.ClientId.ToString(),
+            ["harmony.plan"] = plan.ToString(),
+            ["harmony.local.commit_count"] = local.CommitCount,
+            ["harmony.local.max_timestamp"] = local.MaxTimestamp,
+            ["harmony.remote.commit_count"] = remote.CommitCount,
+            ["harmony.remote.max_timestamp"] = remote.MaxTimestamp
+        }));
+    }
+
     //the db keeps sub-millisecond precision, so re-check against the millisecond value the remote reported
     private static bool IsAfter(CommitBase commit, long afterMs) =>
         commit.DateTime.ToUnixTimeMilliseconds() > afterMs;
@@ -122,11 +160,12 @@ public static class QueryHelpers
         SyncState localState,
         SyncState remoteState) where TCommit : CommitBase<TChange>
     {
+        using var activity = StartPlanActivity(remoteState);
         foreach (var localClientState in localState.ClientStates)
         {
             ClientState? remoteClientState = remoteState.GetClientState(localClientState.ClientId);
             var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
-            switch (PlanFor(localClientState, remoteClientState))
+            switch (PlanAndRecordDivergence(activity, localClientState, remoteClientState))
             {
                 case SyncPlan.SendNothing:
                     break;

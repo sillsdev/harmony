@@ -37,9 +37,7 @@ internal static class SyncHelper
         }
         var pull = TryAddRange(localModel, missingFromLocal);
         var push = TryAddRange(remoteModel, missingFromRemote);
-        var pullError = await pull;
-        var pushError = await push;
-        ThrowIfAny([pullError, pushError]);
+        ThrowIfAny([await pull, await push]);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
     internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions)

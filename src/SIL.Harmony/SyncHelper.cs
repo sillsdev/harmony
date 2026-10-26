@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 namespace SIL.Harmony;
 
@@ -34,16 +35,16 @@ internal static class SyncHelper
             missingFromLocal = Clone(missingFromLocal, serializerOptions);
             missingFromRemote = Clone(missingFromRemote, serializerOptions);
         }
-        if (missingFromLocal.Length > 0)
-            await localModel.AddRangeFromSync(missingFromLocal);
-        if (missingFromRemote.Length > 0)
-            await remoteModel.AddRangeFromSync(missingFromRemote);
+        var pullTask = TryAddRange(localModel, missingFromLocal);
+        var pushTask = TryAddRange(remoteModel, missingFromRemote);
+        ThrowIfAnyErrors([await pullTask, await pushTask]);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
     internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions)
     {
         var localSyncState = await localModel.GetSyncState();
         var remoteSyncStates = new SyncState[remotes.Length];
+        List<Exception?> errors = [];
         for (var i = 0; i < remotes.Length; i++)
         {
             var remote = remotes[i];
@@ -54,9 +55,9 @@ internal static class SyncHelper
                 missingFromLocal = Clone(missingFromLocal, serializerOptions);
             }
             remoteSyncStates[i] = remoteSyncState;
-            await localModel.AddRangeFromSync(missingFromLocal);
+            errors.Add(await TryAddRange(localModel, missingFromLocal));
         }
-        // Now the localModel has all the changes from all remotes, so all remotes will get the changes from the localModel as well as all other remotes
+        // Now the localModel has the changes it could apply from all remotes, so all remotes will get the changes from the localModel as well as all other remotes
         for (var i = 0; i < remotes.Length; i++)
         {
             var remote = remotes[i];
@@ -67,8 +68,31 @@ internal static class SyncHelper
                 //cloning just to simulate the objects going over the wire
                 missingFromRemote = Clone(missingFromRemote, serializerOptions);
             }
-            await remote.AddRangeFromSync(missingFromRemote);
+            errors.Add(await TryAddRange(remote, missingFromRemote));
         }
+        ThrowIfAnyErrors(errors);
+    }
+
+    //don't fail fast: if neither direction lands, the next sync sends the same commits and fails the same way
+    private static async Task<Exception?> TryAddRange(ISyncable model, Commit[] commits)
+    {
+        if (commits.Length == 0) return null;
+        try
+        {
+            await model.AddRangeFromSync(commits);
+            return null;
+        }
+        catch (Exception e)
+        {
+            return e;
+        }
+    }
+
+    private static void ThrowIfAnyErrors(IEnumerable<Exception?> errors)
+    {
+        Exception[] thrown = [.. errors.OfType<Exception>()];
+        if (thrown.Length == 1) ExceptionDispatchInfo.Throw(thrown[0]);
+        if (thrown.Length > 1) throw new AggregateException(thrown);
     }
     private static T Clone<T>(this T source, JsonSerializerOptions options)
     {

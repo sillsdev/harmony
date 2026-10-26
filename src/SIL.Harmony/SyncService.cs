@@ -1,8 +1,10 @@
 using System.Runtime.ExceptionServices;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using static SIL.Harmony.Core.QueryHelpers;
 namespace SIL.Harmony;
 
-internal class SyncService(JsonSerializerOptions serializerOptions)
+internal class SyncService(JsonSerializerOptions serializerOptions, ILogger<SyncService> logger)
 {
     public async Task<SyncResults> SyncWithResourceUpload<TMetadata>(DataModel localModel,
         ISyncable remoteModel,
@@ -22,7 +24,8 @@ internal class SyncService(JsonSerializerOptions serializerOptions)
         var localSyncState = await localModel.GetSyncState();
         var (missingFromLocal, remoteSyncState) = await remoteModel.GetChanges(localSyncState);
         //todo abort if local and remote heads are the same
-        var (missingFromRemote, _) = await localModel.GetChanges(remoteSyncState);
+        var (missingFromRemote, currentLocalSyncState) = await localModel.GetChanges(remoteSyncState);
+        await WarnIfCommitsWillStillDiffer(currentLocalSyncState, remoteSyncState, missingFromLocal, missingFromRemote);
         if (localModel is DataModel && remoteModel is DataModel)
         {
             //cloning just to simulate the objects going over the wire
@@ -81,6 +84,31 @@ internal class SyncService(JsonSerializerOptions serializerOptions)
             return e;
         }
     }
+
+    //a clean sync sends each side only commits it lacks, leaving local + pulled == remote + pushed; a mismatch means a side withheld commits.
+    //a side that sends all of a client's commits resends ones the other already has, so the sums don't apply and that client is skipped
+    private async Task WarnIfCommitsWillStillDiffer(SyncState local, SyncState remote, Commit[] pulled, Commit[] pushed)
+    {
+        if (!logger.IsEnabled(LogLevel.Warning)) return;
+        var pulledState = await StateOf(pulled);
+        var pushedState = await StateOf(pushed);
+        foreach (var localClient in local.ClientStates)
+        {
+            var remoteClient = remote.GetClientState(localClient.ClientId);
+            if (remoteClient is null || remoteClient.OnlyHasTimestamp || localClient == remoteClient) continue;
+            if (PlanFor(localClient, remoteClient) == SyncPlan.SendAll || PlanFor(remoteClient, localClient) == SyncPlan.SendAll) continue;
+            var localAfter = localClient.Plus(pulledState.GetClientState(localClient.ClientId));
+            var remoteAfter = remoteClient.Plus(pushedState.GetClientState(localClient.ClientId));
+            if (!localAfter.HasSameCommits(remoteAfter))
+                logger.LogWarning("Commits from client {ClientId} will still differ after this sync: local has {LocalCount} up to {LocalHead}, remote has {RemoteCount} up to {RemoteHead}",
+                    localClient.ClientId, localClient.CommitCount, Head(localClient), remoteClient.CommitCount, Head(remoteClient));
+        }
+    }
+
+    private static DateTimeOffset Head(ClientState state) => DateTimeOffset.FromUnixTimeMilliseconds(state.MaxTimestamp);
+
+    private static async Task<SyncState> StateOf(Commit[] commits) =>
+        new(await BuildSyncState(commits.Select(c => new SimpleCommit(c.ClientId, c.Id, c.HybridDateTime.DateTime)).ToAsyncEnumerable()));
 
     private static void ThrowIfAnyErrors(IEnumerable<Exception?> errors)
     {

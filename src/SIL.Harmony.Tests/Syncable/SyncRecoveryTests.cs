@@ -1,5 +1,9 @@
 using System.Runtime.CompilerServices;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Testing;
 using SIL.Harmony.Changes;
+using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 
 namespace SIL.Harmony.Tests.Syncable;
@@ -219,6 +223,46 @@ public class SyncRecoveryTests
 
         (await sync.Should().ThrowExactlyAsync<AggregateException>())
             .Which.InnerExceptions.Should().HaveCount(2).And.AllBeOfType<NotSupportedException>();
+    }
+
+    private static (SyncService, FakeLogCollector) SyncServiceWithFakeLogging()
+    {
+        var services = new ServiceCollection().AddCrdtDataSample(":memory:").AddFakeLogging().BuildServiceProvider();
+        return (services.GetRequiredService<SyncService>(), services.GetFakeLogCollector());
+    }
+
+    [Fact]
+    public async Task Sync_WarnsThatCommitsWillStillDiffer_UntilTheWithheldCreateArrives()
+    {
+        var (syncService, logs) = SyncServiceWithFakeLogging();
+        await using var local = await new DataModelSyncBackend().CreateAsync();
+        await using var remote = await new DataModelSyncBackend().CreateAsync();
+        await SetUpEditOnWithheldCreate(behind: remote, ahead: local);
+        var sync = () => syncService.SyncWith(local.Syncable, remote.Syncable);
+
+        await sync.Should().ThrowExactlyAsync<NotSupportedException>();
+        logs.GetSnapshot().Should().ContainSingle(r => r.Level == LogLevel.Warning)
+            .Which.Message.Should().StartWith("Commits from client");
+        logs.Clear();
+
+        await sync.Should().NotThrowAsync();
+        logs.GetSnapshot().Should().NotContain(r => r.Level >= LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task Sync_DoesNotWarn_WhenEachSideIsJustBehindOnADifferentClient()
+    {
+        var (syncService, logs) = SyncServiceWithFakeLogging();
+        await using var local = await new DataModelSyncBackend().CreateAsync();
+        await using var remote = await new DataModelSyncBackend().CreateAsync();
+        Guid localAhead = Guid.NewGuid(), remoteAhead = Guid.NewGuid();
+        Commit[] shared = [SetWordCommit("a1", localAhead, Date), SetWordCommit("b1", remoteAhead, Date)];
+        await local.Syncable.AddRangeFromSync([.. shared, SetWordCommit("a2", localAhead, Date.AddDays(1))]);
+        await remote.Syncable.AddRangeFromSync([.. shared, SetWordCommit("b2", remoteAhead, Date.AddDays(1))]);
+
+        await syncService.SyncWith(local.Syncable, remote.Syncable);
+
+        logs.GetSnapshot().Should().NotContain(r => r.Level >= LogLevel.Warning);
     }
 
     [Fact(Skip = "Known sync blocker: each side withholds a create the other needs, so both directions throw on every sync. Revisit when we know more about missing commits.")]

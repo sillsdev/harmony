@@ -13,6 +13,7 @@
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="GitHubActionsTestLogger" />
         <PackageReference Include="JetBrains.Profiler.SelfApi" />
+        <PackageReference Include="Microsoft.Extensions.Diagnostics.Testing" />
         <PackageReference Include="Verify.DiffPlex" />
         <PackageReference Include="Verify.EntityFramework" />
         <PackageReference Include="Verify.XunitV3" />

@@ -52,6 +52,16 @@ public record ClientState(Guid ClientId, long MaxTimestamp, int CommitCount, ulo
     //0 means this came from a ClientHeads-only SyncState (a peer on an older version);
     //states we build always have at least one commit
     public bool OnlyHasTimestamp => CommitCount == 0;
+
+    //count and XOR hash add up over disjoint commit sets, so the state of a union is the sum of the parts
+    internal ClientState Plus(ClientState? other) => other is null ? this : this with
+    {
+        MaxTimestamp = Math.Max(MaxTimestamp, other.MaxTimestamp),
+        CommitCount = CommitCount + other.CommitCount,
+        Hash = Hash ^ other.Hash
+    };
+
+    internal bool HasSameCommits(ClientState other) => CommitCount == other.CommitCount && Hash == other.Hash;
 }
 
 public class ClientStateBuilder

@@ -72,14 +72,14 @@ public static class QueryHelpers
         }
     }
 
-    private enum SyncPlan
+    internal enum SyncPlan
     {
         SendNothing,
         SendAll,
         SendAfterRemoteTimestamp
     }
 
-    private static SyncPlan PlanFor(ClientState local, ClientState? remote)
+    internal static SyncPlan PlanFor(ClientState local, ClientState? remote)
     {
         //the remote has never seen this client, so push everything
         if (remote is null)

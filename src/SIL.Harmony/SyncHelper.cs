@@ -37,7 +37,7 @@ internal static class SyncHelper
         }
         var pullTask = TryAddRange(localModel, missingFromLocal);
         var pushTask = TryAddRange(remoteModel, missingFromRemote);
-        ThrowIfAny([await pullTask, await pushTask]);
+        ThrowIfAnyErrors([await pullTask, await pushTask]);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
     internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions)
@@ -70,7 +70,7 @@ internal static class SyncHelper
             }
             errors.Add(await TryAddRange(remote, missingFromRemote));
         }
-        ThrowIfAny(errors);
+        ThrowIfAnyErrors(errors);
     }
 
     //don't fail fast: if neither direction lands, the next sync sends the same commits and fails the same way
@@ -88,7 +88,7 @@ internal static class SyncHelper
         }
     }
 
-    private static void ThrowIfAny(IEnumerable<Exception?> errors)
+    private static void ThrowIfAnyErrors(IEnumerable<Exception?> errors)
     {
         Exception[] thrown = [.. errors.OfType<Exception>()];
         if (thrown.Length == 1) ExceptionDispatchInfo.Throw(thrown[0]);

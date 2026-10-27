@@ -90,13 +90,14 @@ internal class SyncService(JsonSerializerOptions serializerOptions, ILogger<Sync
     private async Task WarnIfCommitsWillStillDiffer(SyncState local, SyncState remote, Commit[] pulled, Commit[] pushed)
     {
         if (!logger.IsEnabled(LogLevel.Warning)) return;
-        var pulledState = await StateOf(pulled);
-        var pushedState = await StateOf(pushed);
+        SyncState? pulledState = null, pushedState = null;
         foreach (var localClient in local.ClientStates)
         {
             var remoteClient = remote.GetClientState(localClient.ClientId);
             if (remoteClient is null || remoteClient.OnlyHasTimestamp || localClient == remoteClient) continue;
             if (PlanFor(localClient, remoteClient) == SyncPlan.SendAll || PlanFor(remoteClient, localClient) == SyncPlan.SendAll) continue;
+            pulledState ??= await StateOf(pulled);
+            pushedState ??= await StateOf(pushed);
             var localAfter = localClient.Plus(pulledState.GetClientState(localClient.ClientId));
             var remoteAfter = remoteClient.Plus(pushedState.GetClientState(localClient.ClientId));
             if (!localAfter.HasSameCommits(remoteAfter))

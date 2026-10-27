@@ -2,9 +2,9 @@ using System.Runtime.ExceptionServices;
 using System.Text.Json;
 namespace SIL.Harmony;
 
-internal static class SyncHelper
+internal class SyncService(JsonSerializerOptions serializerOptions)
 {
-    public static async Task<SyncResults> SyncWithResourceUpload<TMetadata>(this DataModel localModel,
+    public async Task<SyncResults> SyncWithResourceUpload<TMetadata>(DataModel localModel,
         ISyncable remoteModel,
         ResourceService<TMetadata> resourceService,
         IRemoteResourceService<TMetadata> remoteResourceService,
@@ -14,15 +14,9 @@ internal static class SyncHelper
         return await localModel.SyncWith(remoteModel);
     }
     /// <summary>
-    /// simple sync example, each ISyncable could be over the wire or in memory
-    /// prefer that remote is over the wire for the best performance, however they could both be remote
+    /// Syncs two ISyncables, each over the wire or in memory. Prefer the remote one to be over the wire for the best performance.
     /// </summary>
-    /// <param name="localModel"></param>
-    /// <param name="remoteModel"></param>
-    /// <param name="serializerOptions"></param>
-    internal static async Task<SyncResults> SyncWith(ISyncable localModel,
-        ISyncable remoteModel,
-        JsonSerializerOptions serializerOptions)
+    public async Task<SyncResults> SyncWith(ISyncable localModel, ISyncable remoteModel)
     {
         if (!await localModel.ShouldSync() || !await remoteModel.ShouldSync()) return new SyncResults([], [], false);
         var localSyncState = await localModel.GetSyncState();
@@ -32,15 +26,15 @@ internal static class SyncHelper
         if (localModel is DataModel && remoteModel is DataModel)
         {
             //cloning just to simulate the objects going over the wire
-            missingFromLocal = Clone(missingFromLocal, serializerOptions);
-            missingFromRemote = Clone(missingFromRemote, serializerOptions);
+            missingFromLocal = Clone(missingFromLocal);
+            missingFromRemote = Clone(missingFromRemote);
         }
         var pullTask = TryAddRange(localModel, missingFromLocal);
         var pushTask = TryAddRange(remoteModel, missingFromRemote);
         ThrowIfAnyErrors([await pullTask, await pushTask]);
         return new SyncResults(missingFromLocal, missingFromRemote, true);
     }
-    internal static async Task SyncMany(ISyncable localModel, ISyncable[] remotes, JsonSerializerOptions serializerOptions)
+    public async Task SyncMany(ISyncable localModel, ISyncable[] remotes)
     {
         var localSyncState = await localModel.GetSyncState();
         var remoteSyncStates = new SyncState[remotes.Length];
@@ -52,7 +46,7 @@ internal static class SyncHelper
             if (localModel is DataModel && remote is DataModel)
             {
                 //cloning just to simulate the objects going over the wire
-                missingFromLocal = Clone(missingFromLocal, serializerOptions);
+                missingFromLocal = Clone(missingFromLocal);
             }
             remoteSyncStates[i] = remoteSyncState;
             errors.Add(await TryAddRange(localModel, missingFromLocal));
@@ -66,7 +60,7 @@ internal static class SyncHelper
             if (localModel is DataModel && remote is DataModel)
             {
                 //cloning just to simulate the objects going over the wire
-                missingFromRemote = Clone(missingFromRemote, serializerOptions);
+                missingFromRemote = Clone(missingFromRemote);
             }
             errors.Add(await TryAddRange(remote, missingFromRemote));
         }
@@ -94,11 +88,11 @@ internal static class SyncHelper
         if (thrown.Length == 1) ExceptionDispatchInfo.Throw(thrown[0]);
         if (thrown.Length > 1) throw new AggregateException(thrown);
     }
-    private static T Clone<T>(this T source, JsonSerializerOptions options)
+    private T Clone<T>(T source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        var json = JsonSerializer.Serialize(source, options);
-        var clone = JsonSerializer.Deserialize<T>(json, options);
+        var json = JsonSerializer.Serialize(source, serializerOptions);
+        var clone = JsonSerializer.Deserialize<T>(json, serializerOptions);
         return clone ?? throw new NullReferenceException("unable to clone object type " + typeof(T));
     }
 }

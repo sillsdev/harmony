@@ -52,7 +52,7 @@ public static class QueryHelpers
         {
             var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
             var remoteClientState = remoteState.GetClientState(localClientState.ClientId);
-            switch (PlanAndRecordDivergence(activity, localClientState, remoteClientState))
+            switch (PlanAndRecordRecovery(activity, localClientState, remoteClientState))
             {
                 case SyncPlan.SendNothing:
                     break;
@@ -108,31 +108,32 @@ public static class QueryHelpers
         return activity;
     }
 
-    private static SyncPlan PlanAndRecordDivergence(Activity? activity, ClientState local, ClientState? remote)
+    private static SyncPlan PlanAndRecordRecovery(Activity? activity, ClientState local, ClientState? remote)
     {
         var plan = PlanFor(local, remote);
-        if (activity is { IsAllDataRequested: true } && remote is { OnlyHasTimestamp: false } && local != remote && HaveDiverged(local, remote))
-            RecordDivergence(activity, local, remote, plan);
+        if (activity is { IsAllDataRequested: true } && remote is { OnlyHasTimestamp: false } && IsRecovering(local, remote))
+            RecordRecovery(activity, local, remote, plan);
         return plan;
     }
 
-    //a side that is just behind has an older head and fewer commits; anything else means the commit sets diverged
-    private static bool HaveDiverged(ClientState local, ClientState remote)
-    {
-        var (ahead, behind) = local.MaxTimestamp >= remote.MaxTimestamp ? (local, remote) : (remote, local);
-        return ahead.MaxTimestamp == behind.MaxTimestamp || behind.CommitCount >= ahead.CommitCount;
-    }
+    //a side sends its whole history for this client only when PlanFor falls back to recovery
+    private static bool IsRecovering(ClientState local, ClientState remote) =>
+        local != remote
+        && (PlanFor(local, remote) == SyncPlan.SendAll || PlanFor(remote, local) == SyncPlan.SendAll);
 
-    private static void RecordDivergence(Activity activity, ClientState local, ClientState remote, SyncPlan plan)
+    private static void RecordRecovery(Activity activity, ClientState local, ClientState remote, SyncPlan plan)
     {
-        activity.AddEvent(new ActivityEvent("harmony.sync.divergence", tags: new ActivityTagsCollection
+        activity.AddEvent(new ActivityEvent("harmony.sync.recovery", tags: new ActivityTagsCollection
         {
             ["harmony.client_id"] = local.ClientId.ToString(),
             ["harmony.plan"] = plan.ToString(),
             ["harmony.local.commit_count"] = local.CommitCount,
             ["harmony.local.max_timestamp"] = local.MaxTimestamp,
+            //OTLP has no unsigned 64-bit attribute type
+            ["harmony.local.hash"] = local.Hash.ToString("x16"),
             ["harmony.remote.commit_count"] = remote.CommitCount,
-            ["harmony.remote.max_timestamp"] = remote.MaxTimestamp
+            ["harmony.remote.max_timestamp"] = remote.MaxTimestamp,
+            ["harmony.remote.hash"] = remote.Hash.ToString("x16")
         }));
     }
 
@@ -165,7 +166,7 @@ public static class QueryHelpers
         {
             ClientState? remoteClientState = remoteState.GetClientState(localClientState.ClientId);
             var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
-            switch (PlanAndRecordDivergence(activity, localClientState, remoteClientState))
+            switch (PlanAndRecordRecovery(activity, localClientState, remoteClientState))
             {
                 case SyncPlan.SendNothing:
                     break;

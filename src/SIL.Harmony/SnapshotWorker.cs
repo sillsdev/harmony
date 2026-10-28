@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Linq.Expressions;
 using Microsoft.Extensions.Logging;
 using SIL.Harmony.Changes;
@@ -135,16 +134,6 @@ internal class SnapshotWorker : ISnapshotView
         _logger.LogWarning(exception,
             "Skipped change {ChangeType} at index {Index} of commit {CommitId}: authored with model version {AuthoredModelVersion}, this app is on {CurrentModelVersion} and failed to apply it",
             changeType, commitChange.Index, commit.Id, commitChange.AuthoredModelVersion, _crdtConfig.CurrentModelVersion);
-        Activity.Current?.AddEvent(new ActivityEvent("harmony.change.skipped", tags: new ActivityTagsCollection
-        {
-            ["harmony.change.type"] = changeType,
-            ["harmony.change.index"] = commitChange.Index,
-            ["harmony.commit.id"] = commit.Id.ToString(),
-            ["harmony.change.authored_model_version"] = commitChange.AuthoredModelVersion,
-            ["harmony.current_model_version"] = _crdtConfig.CurrentModelVersion,
-            ["exception.type"] = exception.GetType().FullName,
-            ["exception.message"] = exception.Message
-        }));
     }
 
     /// <summary>

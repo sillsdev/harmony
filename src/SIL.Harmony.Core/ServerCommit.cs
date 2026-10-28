@@ -1,4 +1,3 @@
-using System.Diagnostics.CodeAnalysis;
 using System.Runtime.Serialization;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -8,7 +7,6 @@ namespace SIL.Harmony.Core;
 public class ServerCommit : CommitBase<ServerJsonChange>
 {
     [JsonConstructor]
-    [SetsRequiredMembers]
     protected ServerCommit(Guid id, HybridDateTime hybridDateTime) : base(id,
         hybridDateTime)
     {

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.IO.Hashing;
 using Microsoft.EntityFrameworkCore;
 
@@ -46,11 +47,10 @@ public static class QueryHelpers
     {
         commits = commits.AsNoTracking();
         if (includeChangeEntities) commits = commits.Include(c => c.ChangeEntities);
-        foreach (var localClientState in localState.ClientStates)
+        foreach (var (localClientState, remoteClientState, plan) in PlanClients(localState, remoteState))
         {
             var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
-            var remoteClientState = remoteState.GetClientState(localClientState.ClientId);
-            switch (PlanFor(localClientState, remoteClientState))
+            switch (plan)
             {
                 case SyncPlan.SendNothing:
                     break;
@@ -98,6 +98,54 @@ public static class QueryHelpers
         return local.CommitCount >= remote.CommitCount ? SyncPlan.SendAll : SyncPlan.SendNothing;
     }
 
+    //planning only reads the two states, so the span ends before either iterator yields and Activity.Current never crosses a yield
+    private static (ClientState Local, ClientState? Remote, SyncPlan Plan)[] PlanClients(SyncState localState, SyncState remoteState)
+    {
+        using var activity = StartPlanActivity(remoteState);
+        return [.. localState.ClientStates.Select(local =>
+        {
+            var remote = remoteState.GetClientState(local.ClientId);
+            return (local, remote, PlanAndRecordRecovery(activity, local, remote));
+        })];
+    }
+
+    private static Activity? StartPlanActivity(SyncState remoteState)
+    {
+        var activity = HarmonyActivitySource.Source.StartActivity(nameof(PlanClients));
+        if (activity is { IsAllDataRequested: true } && remoteState.ClientStates.Any(c => c.OnlyHasTimestamp))
+            activity.SetTag("harmony.sync.remote_heads_only", true);
+        return activity;
+    }
+
+    private static SyncPlan PlanAndRecordRecovery(Activity? activity, ClientState local, ClientState? remote)
+    {
+        var plan = PlanFor(local, remote);
+        if (activity is { IsAllDataRequested: true } && remote is { OnlyHasTimestamp: false } && IsRecovering(local, remote))
+            RecordRecovery(activity, local, remote, plan);
+        return plan;
+    }
+
+    //a side sends its whole history for this client only when PlanFor falls back to recovery
+    private static bool IsRecovering(ClientState local, ClientState remote) =>
+        local != remote
+        && (PlanFor(local, remote) == SyncPlan.SendAll || PlanFor(remote, local) == SyncPlan.SendAll);
+
+    private static void RecordRecovery(Activity activity, ClientState local, ClientState remote, SyncPlan plan)
+    {
+        activity.AddEvent(new ActivityEvent("harmony.sync.recovery", tags: new ActivityTagsCollection
+        {
+            ["harmony.client_id"] = local.ClientId.ToString(),
+            ["harmony.plan"] = plan.ToString(),
+            ["harmony.local.commit_count"] = local.CommitCount,
+            ["harmony.local.max_timestamp"] = local.MaxTimestamp,
+            //OTLP has no unsigned 64-bit attribute type
+            ["harmony.local.hash"] = local.Hash.ToString("x16"),
+            ["harmony.remote.commit_count"] = remote.CommitCount,
+            ["harmony.remote.max_timestamp"] = remote.MaxTimestamp,
+            ["harmony.remote.hash"] = remote.Hash.ToString("x16")
+        }));
+    }
+
     //the db keeps sub-millisecond precision, so re-check against the millisecond value the remote reported
     private static bool IsAfter(CommitBase commit, long afterMs) =>
         commit.DateTime.ToUnixTimeMilliseconds() > afterMs;
@@ -122,11 +170,10 @@ public static class QueryHelpers
         SyncState localState,
         SyncState remoteState) where TCommit : CommitBase<TChange>
     {
-        foreach (var localClientState in localState.ClientStates)
+        foreach (var (localClientState, remoteClientState, plan) in PlanClients(localState, remoteState))
         {
-            ClientState? remoteClientState = remoteState.GetClientState(localClientState.ClientId);
             var clientCommits = commits.Where(c => c.ClientId == localClientState.ClientId).DefaultOrder();
-            switch (PlanFor(localClientState, remoteClientState))
+            switch (plan)
             {
                 case SyncPlan.SendNothing:
                     break;

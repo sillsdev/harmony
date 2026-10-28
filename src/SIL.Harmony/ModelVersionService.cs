@@ -48,14 +48,14 @@ internal class ModelVersionService(
             //a downgrade is rare and the snapshots were made by newer code, so start over
             fullRegeneration = true;
             oldestInvalidated = await repo.CurrentCommits().FirstOrDefaultAsync();
-            await SnapshotReplay.RegenerateAll(repo, Config);
+            await SnapshotReplay.RegenerateAll(repo, Config, logger);
         }
         else
         {
             oldestInvalidated = await repo.FindOldestCommitWithModelVersions(ModelVersionsToInvalidate(storedVersion, current));
             if (oldestInvalidated is not null)
             {
-                await SnapshotReplay.UpdateSnapshots(repo, await repo.ReplayWindowFrom(oldestInvalidated), Config);
+                await SnapshotReplay.UpdateSnapshots(repo, await repo.ReplayWindowFrom(oldestInvalidated), Config, logger);
             }
         }
 

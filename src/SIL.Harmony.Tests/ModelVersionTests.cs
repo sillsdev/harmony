@@ -103,10 +103,13 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     /// <summary>a commit authored by another client, with the model version that client's app authored it with</summary>
-    private static async Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange change, int version)
+    private static Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange change, int version) =>
+        SyncFromOtherClient(app, [change], version);
+
+    private static async Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange[] changes, int version)
     {
-        var commit = BuildCommit(Guid.NewGuid(), app.NextDate(), [change]);
-        commit.ChangeEntities.Single().AuthoredModelVersion = version;
+        var commit = BuildCommit(Guid.NewGuid(), app.NextDate(), changes);
+        foreach (var changeEntity in commit.ChangeEntities) changeEntity.AuthoredModelVersion = version;
         await app.AddCommitsViaSync([commit]);
         return commit;
     }
@@ -252,6 +255,104 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             "the old app authored the old note and applied it the old way, so only notes from the app that forgot are replayed");
         result.FullRegeneration.Should().BeFalse();
         (await NoteOf(fixedApp, wordId)).Should().Be("a note");
+    }
+
+    /// <summary>the old code for <see cref="SetWordNoteChange"/>, which can't apply it, like a patch of a property the old model doesn't have</summary>
+    public class NoteChangeTheOldAppCantApply(Guid entityId, string note) : EditChange<Word>(entityId), IPolyType
+    {
+        public static string TypeName => nameof(SetWordNoteChange);
+        public string Note { get; } = note;
+
+        public override ValueTask ApplyChange(Word entity, IChangeContext context) =>
+            throw new InvalidOperationException("Word has no note");
+    }
+
+    private static void OldAppThatCantApplyNotes(IServiceCollection services)
+    {
+        OldApp(services);
+        services.Configure<HarmonyConfig>(config =>
+        {
+            config.ChangeTypeListBuilder.Remove<SetWordNoteChange>();
+            config.ChangeTypeListBuilder.Add<NoteChangeTheOldAppCantApply>();
+            VersionZeroWithout(config);
+        });
+    }
+
+    private static void AppWithNotesThatApply(IServiceCollection services)
+    {
+        OldApp(services);
+        services.Configure<HarmonyConfig>(config =>
+        {
+            VersionZeroWithout(config);
+            config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<SetWordNoteChange>());
+        });
+    }
+
+    private static void AppWithNotesThatStillThrow(IServiceCollection services)
+    {
+        OldAppThatCantApplyNotes(services);
+        services.Configure<HarmonyConfig>(config =>
+            config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<NoteChangeTheOldAppCantApply>()));
+    }
+
+    private async Task<(DataModelTestBase oldApp, Guid wordId)> OldAppThatSkippedANote()
+    {
+        var oldApp = ForkDatabase(OldAppThatCantApplyNotes);
+        await oldApp.ModelVersionService.ReconcileModelVersions();
+        var wordId = Guid.NewGuid();
+        await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
+        await SyncFromOtherClient(oldApp,
+            [new NoteChangeTheOldAppCantApply(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
+        return (oldApp, wordId);
+    }
+
+    [Fact]
+    public async Task ChangeFromANewerVersionThatThrowsIsSkipped()
+    {
+        var (oldApp, wordId) = await OldAppThatSkippedANote();
+        await using var _ = oldApp;
+
+        var word = await oldApp.DataModel.GetLatest<Word>(wordId);
+        word!.Note.Should().BeNull();
+        word.Text.Should().Be("renamed", "the rest of the commit still applies");
+    }
+
+    [Fact]
+    public async Task ChangeFromTheCurrentVersionThatThrowsFailsTheSync()
+    {
+        await using var oldApp = ForkDatabase(OldAppThatCantApplyNotes);
+        await oldApp.ModelVersionService.ReconcileModelVersions();
+        var wordId = Guid.NewGuid();
+        await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
+
+        var sync = () => SyncFromOtherClient(oldApp, new NoteChangeTheOldAppCantApply(wordId, "a note"), version: 0);
+
+        await sync.Should().ThrowAsync<InvalidOperationException>().WithMessage("Word has no note");
+    }
+
+    [Fact]
+    public async Task SkippedChangeIsAppliedAfterUpgrade()
+    {
+        var (oldApp, wordId) = await OldAppThatSkippedANote();
+        await using var _ = oldApp;
+
+        await using var newApp = oldApp.ForkDatabase(AppWithNotesThatApply);
+        await newApp.ModelVersionService.ReconcileModelVersions();
+
+        (await NoteOf(newApp, wordId)).Should().Be("a note");
+    }
+
+    [Fact]
+    public async Task SkippedChangeThatStillThrowsAfterUpgradeFailsTheReconcile()
+    {
+        var (oldApp, wordId) = await OldAppThatSkippedANote();
+        await using var _ = oldApp;
+
+        await using var newApp = oldApp.ForkDatabase(AppWithNotesThatStillThrow);
+        var reconcile = () => newApp.ModelVersionService.ReconcileModelVersions();
+
+        await reconcile.Should().ThrowAsync<InvalidOperationException>().WithMessage("Word has no note");
+        (await newApp.DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("renamed", "the failed reconcile rolls back");
     }
 
     [Fact]

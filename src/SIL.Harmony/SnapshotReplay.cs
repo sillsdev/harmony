@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 
@@ -12,7 +13,7 @@ internal static class SnapshotReplay
     /// Rebuilds every snapshot the window covers by replaying its commits onto the state it resumes from.
     /// A window resuming from nothing rebuilds all of history.
     /// </summary>
-    public static async Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window, HarmonyConfig config)
+    public static async Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window, HarmonyConfig config, ILogger logger)
     {
         var (checkpoint, commitsToApply) = window;
         if (commitsToApply.Count == 0) return;
@@ -34,17 +35,17 @@ internal static class SnapshotReplay
         }
 
         await PreloadTouched(baseline, commitsToApply, config);
-        var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, config);
+        var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, config, logger);
         await repo.AddSnapshots(newSnapshots, checkpoints);
     }
 
     /// <summary>Rebuilds every snapshot from all of history.</summary>
-    public static async Task RegenerateAll(CrdtRepository repo, HarmonyConfig config)
+    public static async Task RegenerateAll(CrdtRepository repo, HarmonyConfig config, ILogger logger)
     {
         var wholeHistory = await repo.WholeHistory();
         //Replay does nothing without commits, which would leave snapshots with no history behind them in place
         if (wholeHistory.Commits.Count == 0) await repo.DeleteSnapshotsAndProjectedTables();
-        else await UpdateSnapshots(repo, wholeHistory, config);
+        else await UpdateSnapshots(repo, wholeHistory, config, logger);
     }
 
     /// <summary>one query for every entity the commits touch beats a lookup per entity only for large batches</summary>

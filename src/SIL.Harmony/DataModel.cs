@@ -196,7 +196,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     private Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
     {
-        return SnapshotReplay.UpdateSnapshots(repo, window, _crdtConfig.Value);
+        return SnapshotReplay.UpdateSnapshots(repo, window, _crdtConfig.Value, _logger);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -226,7 +226,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         repo.ClearChangeTracker();
         await using (var transaction = await repo.BeginTransactionAsync())
         {
-            await SnapshotReplay.RegenerateAll(repo, _crdtConfig.Value);
+            await SnapshotReplay.RegenerateAll(repo, _crdtConfig.Value, _logger);
             await transaction.CommitAsync();
         }
         //every snapshot and projected row was just deleted and rewritten, so the file is mostly free pages now.
@@ -347,7 +347,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         //loading everything up front makes every lookup during the replay a cache hit
         await baseline.PreloadAllAsync();
-        var updatedSnapshotView = await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value);
+        var updatedSnapshotView = await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value, _logger);
         return await updatedSnapshotView.All()
             .ToDictionaryAsync(s => s.EntityId);
     }
@@ -420,7 +420,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         //we don't have a persisted snapshot in the correct state, so rebuild it
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         await SnapshotReplay.PreloadTouched(baseline, commitsToReplay, _crdtConfig.Value);
-        return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
+        return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value, _logger)).GetAsync(entityId);
     }
 
     /// <summary>

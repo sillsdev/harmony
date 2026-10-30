@@ -2,7 +2,6 @@ using System.Diagnostics.CodeAnalysis;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Engines;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging.Abstractions;
 using SIL.Harmony.Db;
 using SIL.Harmony.Tests;
 
@@ -129,7 +128,7 @@ public class AddSnapshotsBenchmarks
         var baseline = _repository.SnapshotViewAsOf(checkpoint);
         baseline.PreloadAsync(entityIds).GetAwaiter().GetResult();
 
-        var (snapshots, checkpointFlags) = SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, measuredCommits, _local.CrdtConfig, NullLogger.Instance).GetAwaiter().GetResult();
+        var (snapshots, checkpointFlags) = _local.SnapshotReplay.ComputeNewSnapshotsAndCheckpoints(baseline, measuredCommits).GetAwaiter().GetResult();
         _snapshotsToAdd = snapshots.ToArray();
         _checkpointFlags = checkpointFlags;
     }

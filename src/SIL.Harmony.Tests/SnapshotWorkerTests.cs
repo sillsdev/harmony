@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
@@ -19,6 +20,8 @@ public class SnapshotWorkerTests : CommitTestBase
         return new FakeSnapshotView([.. entities.Select(e => new ObjectSnapshot(e, baselineCommit, isRoot: true))]);
     }
 
+    private static SnapshotReplay Replay(HarmonyConfig config) => new(Options.Create(config), NullLogger<SnapshotWorker>.Instance);
+
     private static Word WordFrom(ObjectSnapshot snapshot) => (Word)snapshot.Entity.DbObject;
 
     [Fact]
@@ -27,7 +30,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var wordId = Guid.NewGuid();
         var commit = NextCommit(new NewWordChange(wordId, "hello"));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], SampleConfig, NullLogger.Instance);
+        var (snapshots, _) = await Replay(SampleConfig).ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit]);
 
         var snapshot = snapshots.Should().ContainSingle().Subject;
         snapshot.EntityId.Should().Be(wordId);
@@ -42,7 +45,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var wordId = Guid.NewGuid();
         var commit = NextCommit(new NewWordChange(wordId, "hello"), SetWord(wordId, "goodbye"));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], SampleConfig, NullLogger.Instance);
+        var (snapshots, _) = await Replay(SampleConfig).ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit]);
 
         var snapshot = snapshots.Should().ContainSingle().Subject;
         snapshot.IsRoot.Should().BeTrue("the root was replaced within its own commit, so the replacement is the root");
@@ -56,7 +59,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var baseline = Baseline(word);
         var edit = NextCommit(SetWord(word.Id, "goodbye"));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [edit], SampleConfig, NullLogger.Instance);
+        var (snapshots, _) = await Replay(SampleConfig).ComputeNewSnapshotsAndCheckpoints(baseline, [edit]);
 
         var snapshot = snapshots.Should().ContainSingle().Subject;
         snapshot.IsRoot.Should().BeFalse();
@@ -78,8 +81,8 @@ public class SnapshotWorkerTests : CommitTestBase
         var edit2 = NextCommit(SetWord(wordId, "2"));
         var lastEdit = NextCommit(SetWord(wordId, "3"));
 
-        var (snapshots, flags) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(
-            EmptySnapshotView.Instance, [create, edit1, edit2, lastEdit], config, NullLogger.Instance);
+        var (snapshots, flags) = await Replay(config).ComputeNewSnapshotsAndCheckpoints(
+            EmptySnapshotView.Instance, [create, edit1, edit2, lastEdit]);
 
         //the running total reaches 2 at edit1 and 4 at lastEdit, so those are required checkpoints and the snapshots covering them stay
         snapshots.Select(s => s.CommitId).Should().BeEquivalentTo([create.Id, edit1.Id, lastEdit.Id],
@@ -99,7 +102,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var baseline = Baseline(antonym, word);
         var delete = NextCommit(DeleteWord(antonym.Id));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [delete], SampleConfig, NullLogger.Instance);
+        var (snapshots, _) = await Replay(SampleConfig).ComputeNewSnapshotsAndCheckpoints(baseline, [delete]);
 
         //one change, two snapshots: the delete cascades to the word that referenced the antonym
         snapshots.Should().HaveCount(2);
@@ -119,7 +122,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var baseline = Baseline(word, definition, example);
         var delete = NextCommit(DeleteWord(word.Id));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [delete], SampleConfig, NullLogger.Instance);
+        var (snapshots, _) = await Replay(SampleConfig).ComputeNewSnapshotsAndCheckpoints(baseline, [delete]);
 
         //the example only references the definition, so it's deleted by the recursive MarkDeleted
         snapshots.Should().HaveCount(3).And.OnlyContain(s => s.EntityIsDeleted && s.CommitId == delete.Id);
@@ -133,7 +136,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var baseline = Baseline(word);
         var revive = NextCommit(new NewWordChange(word.Id, "hello again"));
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, [revive], SampleConfig, NullLogger.Instance);
+        var (snapshots, _) = await Replay(SampleConfig).ComputeNewSnapshotsAndCheckpoints(baseline, [revive]);
 
         var snapshot = snapshots.Should().ContainSingle().Subject;
         snapshot.EntityIsDeleted.Should().BeFalse();
@@ -147,7 +150,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var opaque = new OpaqueChange { TypeName = "not-a-known-change", RawJson = JsonDocument.Parse("{}").RootElement, EntityId = Guid.NewGuid() };
         var commit = NextCommit(opaque);
 
-        var (snapshots, _) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit], SampleConfig, NullLogger.Instance);
+        var (snapshots, _) = await Replay(SampleConfig).ComputeNewSnapshotsAndCheckpoints(EmptySnapshotView.Instance, [commit]);
 
         snapshots.Should().BeEmpty("an entity this client can't create stays absent until it understands the change");
     }
@@ -160,7 +163,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var baseline = Baseline(edited, untouched);
         var edit = NextCommit(SetWord(edited.Id, "new"));
 
-        var view = await SnapshotWorker.ReplayCommits(baseline, [edit], SampleConfig, NullLogger.Instance);
+        var view = await Replay(SampleConfig).ReplayCommits(baseline, [edit]);
 
         var matches = await view.Where(s => s.EntityId == edited.Id).ToArrayAsync(TestContext.Current.CancellationToken);
         var match = matches.Should().ContainSingle("the baseline copy of the edited word is shadowed and the untouched word is excluded by the predicate").Subject;
@@ -175,7 +178,7 @@ public class SnapshotWorkerTests : CommitTestBase
         var baseline = Baseline(edited, untouched);
         var edit = NextCommit(SetWord(edited.Id, "new"));
 
-        var view = await SnapshotWorker.ReplayCommits(baseline, [edit], SampleConfig, NullLogger.Instance);
+        var view = await Replay(SampleConfig).ReplayCommits(baseline, [edit]);
 
         var all = await view.All().ToArrayAsync(TestContext.Current.CancellationToken);
         all.Should().HaveCount(2, "the edited word appears once, not once per layer");

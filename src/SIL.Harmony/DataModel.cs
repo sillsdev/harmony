@@ -26,6 +26,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly ILogger<DataModel> _logger;
     private readonly ModelVersionService _modelVersionService;
     private readonly SyncService _syncService;
+    private readonly SnapshotReplay _snapshotReplay;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
@@ -34,8 +35,10 @@ public class DataModel : ISyncable, IAsyncDisposable
         IOptions<HarmonyConfig> crdtConfig,
         ILogger<DataModel> logger,
         ModelVersionService modelVersionService,
-        SyncService syncService)
+        SyncService syncService,
+        SnapshotReplay snapshotReplay)
     {
+        _snapshotReplay = snapshotReplay;
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _serializerOptions = serializerOptions;
         _timeProvider = timeProvider;
@@ -196,7 +199,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     private Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
     {
-        return SnapshotReplay.UpdateSnapshots(repo, window, _crdtConfig.Value);
+        return _snapshotReplay.UpdateSnapshots(repo, window);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -226,7 +229,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         repo.ClearChangeTracker();
         await using (var transaction = await repo.BeginTransactionAsync())
         {
-            await SnapshotReplay.RegenerateAll(repo, _crdtConfig.Value);
+            await _snapshotReplay.RegenerateAll(repo);
             await transaction.CommitAsync();
         }
         //every snapshot and projected row was just deleted and rewritten, so the file is mostly free pages now.
@@ -347,7 +350,7 @@ public class DataModel : ISyncable, IAsyncDisposable
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         //loading everything up front makes every lookup during the replay a cache hit
         await baseline.PreloadAllAsync();
-        var updatedSnapshotView = await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value);
+        var updatedSnapshotView = await _snapshotReplay.ReplayCommits(baseline, commitsToReplay);
         return await updatedSnapshotView.All()
             .ToDictionaryAsync(s => s.EntityId);
     }
@@ -419,8 +422,8 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         //we don't have a persisted snapshot in the correct state, so rebuild it
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
-        await SnapshotReplay.PreloadTouched(baseline, commitsToReplay, _crdtConfig.Value);
-        return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
+        await _snapshotReplay.PreloadTouched(baseline, commitsToReplay);
+        return await (await _snapshotReplay.ReplayCommits(baseline, commitsToReplay)).GetAsync(entityId);
     }
 
     /// <summary>

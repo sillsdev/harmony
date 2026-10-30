@@ -74,6 +74,7 @@ public static class CrdtKernel
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
         services.AddSingleton<FastProjection>();
         services.AddScoped<CrdtRepositoryFactory>();
+        services.AddSingleton<SnapshotReplay>();
         services.AddScoped<ModelVersionService>();
         services.AddSingleton<SyncService>();
         services.AddSingleton<IJsonSyncableFactory, JsonSyncableFactory>();
@@ -85,7 +86,8 @@ public static class CrdtKernel
             provider.GetRequiredService<IOptions<HarmonyConfig>>(),
             provider.GetRequiredService<ILogger<DataModel>>(),
             provider.GetRequiredService<ModelVersionService>(),
-            provider.GetRequiredService<SyncService>()
+            provider.GetRequiredService<SyncService>(),
+            provider.GetRequiredService<SnapshotReplay>()
         ));
         return services;
     }

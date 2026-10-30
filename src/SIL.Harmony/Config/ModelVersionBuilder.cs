@@ -4,32 +4,27 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Config;
 
+public readonly record struct RegisteredChangeType(Type Type, string Discriminator);
+
 /// <summary>
 /// Declares the ordered list of model versions, which is required. Version 0 lists every change type that existed
 /// before model versions. Add a version when a release adds a change type, or changes how an existing change type
-/// applies. Every registered change type must be listed by a version. A change is authored with the number of the
-/// latest version, whether or not it lists the change's type, and changes authored by a newer app are replayed when
-/// an older app upgrades, see <see cref="DataModel.ReconcileModelVersions"/>.
+/// applies. The change types listed with <see cref="ModelVersionChanges.Change{T}"/> are the ones Harmony registers.
+/// A change is authored with the number of the latest version, whether or not it lists the change's type, and
+/// changes authored by a newer app are replayed when an older app upgrades, see <see cref="DataModel.ReconcileModelVersions"/>.
 /// Released versions must never be modified, use <see cref="HarmonyConfig.DescribeModelVersions"/> in a snapshot test to make sure.
 /// </summary>
 public class ModelVersionBuilder
 {
     private bool _frozen;
     private readonly List<ModelVersion> _versions = [];
-    private readonly HashSet<Type> _changeTypes = [];
-    private readonly HashSet<string> _listedChangeTypes = new(StringComparer.Ordinal);
-    private bool _remoteResourcesListed;
+    private readonly List<RegisteredChangeType> _changeTypes = [];
 
     public IReadOnlyList<ModelVersion> Versions => _versions.AsReadOnly();
 
-    /// <summary>change types added with <see cref="ModelVersionChanges.Change{T}"/>, which must be registered</summary>
-    internal IReadOnlyCollection<Type> ChangeTypes => _changeTypes;
+    internal IReadOnlyList<RegisteredChangeType> ChangeTypes => _changeTypes.AsReadOnly();
 
-    /// <summary>the discriminators of the change types listed by a model version</summary>
-    internal IReadOnlySet<string> ListedChangeTypes => _listedChangeTypes;
-
-    /// <summary>whether a version called <see cref="ModelVersionChanges.RemoteResourceChanges{TMetadata}"/></summary>
-    internal bool RemoteResourcesListed => _remoteResourcesListed;
+    internal Type? RemoteResourceChangesMetadataType { get; private set; }
 
     /// <summary>
     /// Adds a version. Changes of the listed types are replayed when upgrading to it,
@@ -62,22 +57,30 @@ public class ModelVersionBuilder
             throw new ArgumentException($"Model version 0 ({name}) can't be major, it is the state before model versions");
         var changes = new ModelVersionChanges(number);
         configure?.Invoke(changes);
-        _listedChangeTypes.UnionWith(changes.Changes.Keys);
-        _changeTypes.UnionWith(changes.Types);
-        _remoteResourcesListed |= changes.RemoteResourcesListed;
+        foreach (var changeType in changes.Types)
+        {
+            var registered = _changeTypes.Find(ct => ct.Discriminator == changeType.Discriminator);
+            if (registered.Type is not null && registered.Type != changeType.Type)
+                throw new ArgumentException(
+                    $"Model version {name} lists {changeType.Type} as {changeType.Discriminator}, which {registered.Type} already uses");
+        }
+        _changeTypes.AddRange(changes.Types.Except(_changeTypes));
+        RemoteResourceChangesMetadataType ??= changes.RemoteResourceChangesMetadataType;
         _versions.Add(new ModelVersion(number, name, major,
             changes.Changes.Values.OrderBy(c => c.ChangeType, StringComparer.Ordinal).ToArray()));
         return this;
     }
 
-    /// <summary>removes all versions, so a test can declare a different history than the model it starts from</summary>
+    /// <summary>
+    /// removes all versions, and so every change type they registered,
+    /// so a test can declare a different history than the model it starts from
+    /// </summary>
     internal void Clear()
     {
         CheckFrozen();
         _versions.Clear();
         _changeTypes.Clear();
-        _listedChangeTypes.Clear();
-        _remoteResourcesListed = false;
+        RemoteResourceChangesMetadataType = null;
     }
 
     internal void Freeze()
@@ -101,11 +104,12 @@ public class ModelVersionChanges
     }
 
     internal Dictionary<string, ModelVersionChange> Changes { get; } = new(StringComparer.Ordinal);
-    internal List<Type> Types { get; } = [];
-    internal bool RemoteResourcesListed { get; private set; }
+    internal List<RegisteredChangeType> Types { get; } = [];
+    internal Type? RemoteResourceChangesMetadataType { get; private set; }
 
     /// <summary>
     /// The change type was added or modified in this version, or existed before model versions when this is version 0.
+    /// Also registers the type.
     /// </summary>
     /// <param name="invalidateFrom">
     /// on upgrade, changes of this type authored with this model version or later are invalidated, so only changes
@@ -116,20 +120,25 @@ public class ModelVersionChanges
     /// </param>
     public ModelVersionChanges Change<T>(int? invalidateFrom = null) where T : IChange, IPolyType
     {
-        Change(T.TypeName, invalidateFrom);
-        Types.Add(typeof(T));
+        return Change(new RegisteredChangeType(typeof(T), T.TypeName), invalidateFrom);
+    }
+
+    internal ModelVersionChanges Change(RegisteredChangeType changeType, int? invalidateFrom = null)
+    {
+        Change(changeType.Discriminator, invalidateFrom);
+        Types.Add(changeType);
         return this;
     }
 
     /// <summary>
-    /// The change types registered by <see cref="CrdtKernel.AddCrdtRemoteResources{TMetadata}"/>.
-    /// Options validation requires it when remote resources are enabled. Harmony doesn't version these types yet,
-    /// see https://github.com/sillsdev/harmony/issues/141.
+    /// Registers the change types <see cref="CrdtKernel.AddCrdtRemoteResources{TMetadata}"/> needs. Options validation
+    /// requires it, with the same metadata type, when remote resources are enabled, and rejects it otherwise.
+    /// Harmony doesn't version these types yet, see https://github.com/sillsdev/harmony/issues/141.
     /// </summary>
     public ModelVersionChanges RemoteResourceChanges<TMetadata>()
         where TMetadata : class
     {
-        RemoteResourcesListed = true;
+        RemoteResourceChangesMetadataType = typeof(TMetadata);
         return Change<RemoteResourceUploadedChange<TMetadata>>()
             .Change<CreateRemoteResourceChange<TMetadata>>()
             .Change<CreateRemoteResourcePendingUploadChange<TMetadata>>()
@@ -138,7 +147,7 @@ public class ModelVersionChanges
     }
 
     /// <summary>
-    /// <see cref="Change{T}"/> by discriminator.
+    /// <see cref="Change{T}"/> by discriminator, which doesn't register a type.
     /// Only for change types that no longer exist in the code, use <see cref="Change{T}"/> otherwise.
     /// </summary>
     public ModelVersionChanges Change(string discriminator, int? invalidateFrom = null)

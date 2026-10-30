@@ -44,24 +44,6 @@ public static class CrdtSampleKernel
     public static void ConfigureSample(HarmonyConfig config)
     {
         config.EnableProjectedTables = true;
-        config.ChangeTypeListBuilder
-            .Add<NewWordChange>()
-            .Add<NewDefinitionChange>()
-            .Add<NewExampleChange>()
-            .Add<EditExampleChange>()
-            .Add<SetWordTextChange>()
-            .Add<SetWordNoteChange>()
-            .Add<SetAntonymReferenceChange>()
-            .Add<AddWordImageChange>()
-            .Add<SetOrderChange<Definition>>()
-            .Add<SetDefinitionPartOfSpeechChange>()
-            .Add<SetTagChange>()
-            .Add<TagWordChange>()
-            .Add<DeleteChange<Word>>()
-            .Add<DeleteChange<Definition>>()
-            .Add<DeleteChange<Example>>()
-            .Add<DeleteChange<Tag>>()
-            ;
         config.ModelVersionBuilder
             .Add(0, "Before model versions", v => v
                 .Change<NewWordChange>()
@@ -80,7 +62,6 @@ public static class CrdtSampleKernel
                 .Change<DeleteChange<Definition>>()
                 .Change<DeleteChange<Example>>()
                 .Change<DeleteChange<Tag>>()
-                //registered by AddCrdtRemoteResources
                 .RemoteResourceChanges<MediaMetadata>());
         config.ObjectTypeListBuilder.DefaultAdapter()
             .Add<Word>(builder =>

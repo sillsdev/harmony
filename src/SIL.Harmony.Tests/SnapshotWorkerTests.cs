@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
@@ -19,7 +20,7 @@ public class SnapshotWorkerTests : CommitTestBase
         return new FakeSnapshotView([.. entities.Select(e => new ObjectSnapshot(e, baselineCommit, isRoot: true))]);
     }
 
-    private static SnapshotReplay Replay(HarmonyConfig config) => new(Options.Create(config));
+    private static SnapshotReplay Replay(HarmonyConfig config) => new(Options.Create(config), NullLogger<SnapshotWorker>.Instance);
 
     private static Word WordFrom(ObjectSnapshot snapshot) => (Word)snapshot.Entity.DbObject;
 

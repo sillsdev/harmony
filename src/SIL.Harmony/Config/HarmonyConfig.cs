@@ -110,6 +110,15 @@ public class HarmonyConfig
         _jsonOptionsBuilder.Configure(configure);
     }
 
+    /// <summary>the change's <c>$type</c> discriminator</summary>
+    internal string ChangeTypeName(IChange change)
+    {
+        if (change is OpaqueChange opaque) return opaque.TypeName;
+        return _lazyChangeDiscriminatorMaps.Value.ByType.TryGetValue(change.GetType(), out var name)
+            ? name
+            : change.GetType().Name;
+    }
+
     private ChangeDiscriminatorMaps BuildChangeDiscriminatorMaps()
     {
         ChangeTypeListBuilder.Freeze();

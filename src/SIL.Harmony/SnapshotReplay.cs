@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
@@ -8,21 +9,21 @@ namespace SIL.Harmony;
 /// Replays commits into snapshots, creating a <see cref="SnapshotWorker"/> per replay.
 /// Callers of the persisting methods hold the repository lock and a transaction.
 /// </summary>
-internal class SnapshotReplay(IOptions<HarmonyConfig> config)
+internal class SnapshotReplay(IOptions<HarmonyConfig> config, ILogger<SnapshotWorker> logger)
 {
     private HarmonyConfig Config => config.Value;
 
     /// <inheritdoc cref="SnapshotWorker.ReplayCommits"/>
     public Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits)
     {
-        return SnapshotWorker.ReplayCommits(baseline, commits, Config);
+        return SnapshotWorker.ReplayCommits(baseline, commits, Config, logger);
     }
 
     /// <inheritdoc cref="SnapshotWorker.ComputeNewSnapshotsAndCheckpoints"/>
     public Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeNewSnapshotsAndCheckpoints(
         ISnapshotView baseline, SortedSet<Commit> commits)
     {
-        return SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commits, Config);
+        return SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commits, Config, logger);
     }
 
     /// <summary>

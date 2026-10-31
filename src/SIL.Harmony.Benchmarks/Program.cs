@@ -3,5 +3,5 @@ using SIL.Harmony.Benchmarks;
 
 
 BenchmarkSwitcher
-    .FromTypes([typeof(DataModelSyncBenchmarks), typeof(AddSnapshotsBenchmarks), typeof(BuildSyncStateBenchmarks), typeof(GetSyncStateBenchmarks)])
+    .FromTypes([typeof(DataModelSyncBenchmarks), typeof(AddSnapshotsBenchmarks), typeof(BuildSyncStateBenchmarks), typeof(GetSyncStateBenchmarks), typeof(PointInTimeReadBenchmarks)])
     .Run(args);

@@ -128,6 +128,78 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
         await view.Invoking(v => v.GetAsync(wordId).AsTask()).Should().ThrowAsync<ObjectDisposedException>();
     }
 
+    [Fact]
+    public async Task ACommitReplayMatchesOpenViewAtCommitAtEveryStep()
+    {
+        var wordId = Guid.NewGuid();
+        var definitionId = Guid.NewGuid();
+        IChange[] changes =
+        [
+            new SetWordTextChange(wordId, "text 0"),
+            NewDefinition(definitionId, wordId, "definition 0"),
+            .. Enumerable.Range(1, 20).Select(i => i % 3 == 0
+                ? (IChange)new SetDefinitionPartOfSpeechChange(definitionId, $"part of speech {i}")
+                : i % 2 == 0 ? new SetWordNoteChange(wordId, $"note {i}") : new SetWordTextChange(wordId, $"text {i}")),
+            new DeleteChange<Word>(wordId),
+        ];
+        var commits = await SyncInOneBatch(changes);
+        //a checkpoint, because the replay must still stop at one it could have resumed from
+        var fromIndex = 2;
+        while (!await IsCheckpoint(commits[fromIndex])) fromIndex++;
+
+        await using var replay = await DataModel.StartCommitReplay(commits[fromIndex], commits[^1]);
+        var applied = new List<Guid>();
+        for (var commit = replay.CurrentCommit; commit is not null; commit = await replay.ApplyNextCommit())
+        {
+            applied.Add(commit.Id);
+            replay.CurrentCommit.Should().Be(commit);
+            await ShouldMatch(replay, await DataModel.OpenViewAtCommit(commit));
+        }
+
+        applied.Should().Equal(commits[fromIndex..].Select(c => c.Id));
+
+        async Task ShouldMatch(ISnapshotView actual, SnapshotView expected)
+        {
+            await using var _ = expected;
+            var actualReferencing = await actual.WhereReferences(wordId, includeDeleted: true).ToArrayAsync();
+            var expectedReferencing = await ((ISnapshotView)expected).WhereReferences(wordId, includeDeleted: true).ToArrayAsync();
+            actualReferencing.Select(s => s.Entity.DbObject).Should().BeEquivalentTo(expectedReferencing.Select(s => s.Entity.DbObject));
+            object? actualWord = (await actual.GetAsync(wordId))?.Entity.DbObject;
+            actualWord.Should().BeEquivalentTo((await expected.GetAsync(wordId))?.Entity.DbObject);
+        }
+    }
+
+    [Fact]
+    public async Task ACommitReplayStartsAtFromAndStaysAtTo()
+    {
+        var wordId = Guid.NewGuid();
+        var commits = await SyncInOneBatch(
+            new SetWordTextChange(wordId, "zero"), new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
+
+        await using var replay = await DataModel.StartCommitReplay(commits[1], commits[^1]);
+
+        replay.CurrentCommit.Should().Be(commits[1]);
+        Text(await replay.GetAsync(wordId)).Should().Be("first");
+        (await replay.ApplyNextCommit()).Should().Be(commits[2]);
+        (await replay.ApplyNextCommit()).Should().BeNull();
+        Text(await replay.GetAsync(wordId)).Should().Be("second");
+
+        static string Text(ObjectSnapshot? snapshot) => ((Word)snapshot!.Entity.DbObject).Text;
+    }
+
+    [Fact]
+    public async Task ADisposedCommitReplayThrows()
+    {
+        var wordId = Guid.NewGuid();
+        var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"));
+        var replay = await DataModel.StartCommitReplay(commits[0], commits[0]);
+
+        await replay.DisposeAsync();
+
+        await replay.Invoking(r => r.GetAsync(wordId).AsTask()).Should().ThrowAsync<ObjectDisposedException>();
+        await replay.Invoking(r => r.ApplyNextCommit()).Should().ThrowAsync<ObjectDisposedException>();
+    }
+
     private async Task<Commit[]> SyncInOneBatch(params IChange[] changes)
     {
         Commit[] commits = [.. changes.Select(change => NextCommit(change))];

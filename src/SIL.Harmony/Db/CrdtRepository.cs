@@ -15,17 +15,34 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
-internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory)
+internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory, ILogger<CrdtRepositoryFactory> logger)
 {
+    private static bool _warnedSharedContext;
+
     public async Task<CrdtRepository> CreateRepository()
     {
         return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
     }
 
-    /// <summary>a repository whose reads all see the database as it was at the first of them, see <see cref="CrdtRepository.BeginConsistentRead"/></summary>
+    /// <summary>
+    /// A repository whose reads all see the database as it was at the first of them, see <see cref="CrdtRepository.BeginConsistentRead"/>.
+    /// Only when each repository gets a context of its own: a shared one would carry the read transaction into
+    /// whatever else uses it, so a sync there would fail and a write would be rolled back with the read.
+    /// </summary>
     public async Task<CrdtRepository> CreateReadRepository()
     {
         var repo = await CreateRepository();
+        if (dbContextFactory is not IContextPerRepository)
+        {
+            if (!_warnedSharedContext)
+            {
+                _warnedSharedContext = true;
+                logger.LogWarning("Repositories share a DbContext, so reads at a commit can see a concurrent sync part way through; register Harmony with AddCrdtDataDbFactory to isolate them");
+            }
+
+            return repo;
+        }
+
         try
         {
             await repo.BeginConsistentRead();
@@ -299,9 +316,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
         //not Database.BeginTransaction: that issues BEGIN IMMEDIATE, which takes the write lock and blocks every sync until the read ends
         _readTransaction = connection.BeginTransaction(deferred: true);
-        //UseTransaction opens the connection once more, release ours so disposal's single close balances it
         await _dbContext.Database.UseTransactionAsync(_readTransaction);
-        await _dbContext.Database.CloseConnectionAsync();
     }
 
     /// <summary>
@@ -666,28 +681,16 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return resource is null ? null : ResolvePath(resource);
     }
 
-    //the context can outlive this repository (CrdtDbContextNoDisposeFactory shares one), so detach the read from it
+    //EF doesn't own a transaction handed to UseTransaction, so disposing the context leaves it open
     public void Dispose()
     {
-        if (_readTransaction is not null)
-        {
-            _dbContext.Database.UseTransaction(null);
-            _readTransaction.Dispose();
-            _dbContext.Database.CloseConnection();
-        }
-
+        _readTransaction?.Dispose();
         _dbContext.Dispose();
     }
 
     public async ValueTask DisposeAsync()
     {
-        if (_readTransaction is not null)
-        {
-            await _dbContext.Database.UseTransactionAsync(null);
-            await _readTransaction.DisposeAsync();
-            await _dbContext.Database.CloseConnectionAsync();
-        }
-
+        if (_readTransaction is not null) await _readTransaction.DisposeAsync();
         await _dbContext.DisposeAsync();
     }
 }

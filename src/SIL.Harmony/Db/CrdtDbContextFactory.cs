@@ -5,7 +5,10 @@ using Microsoft.EntityFrameworkCore.Metadata;
 
 namespace SIL.Harmony.Db;
 
-public class CrdtDbContextFactory<TContext>(IDbContextFactory<TContext> dbContextFactory) : ICrdtDbContextFactory
+/// <summary>marks a factory that hands every repository a context of its own, which the repository disposes</summary>
+internal interface IContextPerRepository;
+
+public class CrdtDbContextFactory<TContext>(IDbContextFactory<TContext> dbContextFactory) : ICrdtDbContextFactory, IContextPerRepository
     where TContext : DbContext, ICrdtDbContext
 {
     public async Task<ICrdtDbContext> CreateDbContextAsync(CancellationToken cancellationToken = new CancellationToken())

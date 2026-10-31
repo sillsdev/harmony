@@ -10,16 +10,15 @@ namespace SIL.Harmony.Tests;
 public class ConsistentReadTests
 {
     [Fact]
-    public async Task InWalModeAReadRepositoryKeepsItsStateWhileASyncRewritesSnapshots()
+    public async Task InWalModeAConsistentReadKeepsItsStateWhileASyncRewritesSnapshots()
     {
         using var file = new TempDbFile();
-        await using var reader = new DataModelTestBase(new SqliteConnection(file.ConnectionString), alwaysValidate: false);
-        await reader.DbContext.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", TestContext.Current.CancellationToken);
+        await using var reader = await Model(file, wal: true);
         var (wordId, firstCommit) = await Seed(reader);
         //short, so a sync blocked by the read fails the test quickly instead of waiting out the default 30s
         await using var writer = new DataModelTestBase(new SqliteConnection(file.ConnectionString + ";Default Timeout=3"), alwaysValidate: false);
 
-        await using (var repo = await reader.RepositoryFactory.CreateReadRepository())
+        await using (var repo = await ConsistentRead(reader))
         {
             (await TextOf(repo, wordId)).Should().Be("before");
 
@@ -28,40 +27,57 @@ public class ConsistentReadTests
             (await TextOf(repo, wordId)).Should().Be("before", "the late commit landed after the read started");
         }
 
-        //tests share one context between repositories, so this also checks the read let go of it
-        await using var afterRead = await reader.RepositoryFactory.CreateReadRepository();
+        await using var afterRead = await ConsistentRead(reader);
         (await TextOf(afterRead, wordId)).Should().Be("late");
     }
 
     [Fact]
-    public async Task OutsideWalModeAReadRepositoryDoesNotBlockASync()
+    public async Task OutsideWalModeAConsistentReadDoesNotBlockASync()
     {
         using var file = new TempDbFile();
-        await using var reader = new DataModelTestBase(new SqliteConnection(file.ConnectionString), alwaysValidate: false);
-        await reader.DbContext.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=DELETE;", TestContext.Current.CancellationToken);
+        await using var reader = await Model(file, wal: false);
         var (wordId, firstCommit) = await Seed(reader);
         await using var writer = new DataModelTestBase(new SqliteConnection(file.ConnectionString + ";Default Timeout=3"), alwaysValidate: false);
 
-        await using var repo = await reader.RepositoryFactory.CreateReadRepository();
+        await using var repo = await ConsistentRead(reader);
         await TextOf(repo, wordId);
 
         await writer.Invoking(w => w.AddCommitsViaSync([LateCommit(w, firstCommit, wordId)])).Should().NotThrowAsync();
     }
 
     [Fact]
-    public async Task DisposingAReadRepositoryLetsGoOfTheConnection()
+    public async Task AReadOnASharedContextDoesNotGetInTheWayOfWrites()
     {
         using var file = new TempDbFile();
-        await using var model = new DataModelTestBase(new SqliteConnection(file.ConnectionString), alwaysValidate: false);
-        await model.DbContext.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", TestContext.Current.CancellationToken);
-        await model.DbContext.Database.CloseConnectionAsync();
+        //tests share one context between repositories, as AddCrdtData does in an app
+        await using var model = await Model(file, wal: true);
+        var (wordId, firstCommit) = await Seed(model);
+        var newWordId = Guid.NewGuid();
 
-        //tests share one context between repositories, as CrdtDbContextNoDisposeFactory does in an app
-        await using (await model.RepositoryFactory.CreateReadRepository())
+        await using (var repo = await model.RepositoryFactory.CreateReadRepository())
         {
+            await TextOf(repo, wordId);
+
+            await model.WriteNextChange(new SetWordTextChange(newWordId, "added"));
+            await model.AddCommitsViaSync([LateCommit(model, firstCommit, wordId)]);
         }
 
-        model.DbContext.Database.GetDbConnection().State.Should().Be(System.Data.ConnectionState.Closed);
+        (await model.DataModel.GetLatest<Word>(newWordId))!.Text.Should().Be("added");
+        (await model.DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("late");
+    }
+
+    private static async Task<DataModelTestBase> Model(TempDbFile file, bool wal)
+    {
+        var model = new DataModelTestBase(new SqliteConnection(file.ConnectionString), alwaysValidate: false);
+        await model.DbContext.Database.ExecuteSqlRawAsync(wal ? "PRAGMA journal_mode=WAL;" : "PRAGMA journal_mode=DELETE;", TestContext.Current.CancellationToken);
+        return model;
+    }
+
+    private static async Task<CrdtRepository> ConsistentRead(DataModelTestBase model)
+    {
+        var repo = model.CreateRepositoryWithOwnConnection();
+        await repo.BeginConsistentRead();
+        return repo;
     }
 
     private static async Task<(Guid wordId, Commit firstCommit)> Seed(DataModelTestBase model)

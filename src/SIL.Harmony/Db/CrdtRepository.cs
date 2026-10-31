@@ -22,7 +22,7 @@ internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbCo
         return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
     }
 
-    /// <summary>a repository whose reads all see the database as it was when it was created, see <see cref="CrdtRepository.BeginConsistentRead"/></summary>
+    /// <summary>a repository whose reads all see the database as it was at the first of them, see <see cref="CrdtRepository.BeginConsistentRead"/></summary>
     public async Task<CrdtRepository> CreateReadRepository()
     {
         var repo = await CreateRepository();
@@ -270,7 +270,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Pins every later read to the database as it is now, so a sync that rewrites snapshots part way through a
+    /// Pins every later read to the database as it is at the first of them, so a sync that rewrites snapshots part way through a
     /// point-in-time read can't hand it a mix of two histories. Only in WAL mode: there a deferred read transaction
     /// doesn't block writers, in any other journal mode it makes them fail with "database is locked" until it ends.
     /// Elsewhere reads stay unpinned, and a database file that isn't in WAL mode logs a warning once.
@@ -299,7 +299,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
 
         //not Database.BeginTransaction: that issues BEGIN IMMEDIATE, which takes the write lock and blocks every sync until the read ends
         _readTransaction = connection.BeginTransaction(deferred: true);
+        //UseTransaction opens the connection once more, release ours so disposal's single close balances it
         await _dbContext.Database.UseTransactionAsync(_readTransaction);
+        await _dbContext.Database.CloseConnectionAsync();
     }
 
     /// <summary>

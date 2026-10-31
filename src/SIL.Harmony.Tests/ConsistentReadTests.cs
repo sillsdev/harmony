@@ -48,6 +48,22 @@ public class ConsistentReadTests
         await writer.Invoking(w => w.AddCommitsViaSync([LateCommit(w, firstCommit, wordId)])).Should().NotThrowAsync();
     }
 
+    [Fact]
+    public async Task DisposingAReadRepositoryLetsGoOfTheConnection()
+    {
+        using var file = new TempDbFile();
+        await using var model = new DataModelTestBase(new SqliteConnection(file.ConnectionString), alwaysValidate: false);
+        await model.DbContext.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;", TestContext.Current.CancellationToken);
+        await model.DbContext.Database.CloseConnectionAsync();
+
+        //tests share one context between repositories, as CrdtDbContextNoDisposeFactory does in an app
+        await using (await model.RepositoryFactory.CreateReadRepository())
+        {
+        }
+
+        model.DbContext.Database.GetDbConnection().State.Should().Be(System.Data.ConnectionState.Closed);
+    }
+
     private static async Task<(Guid wordId, Commit firstCommit)> Seed(DataModelTestBase model)
     {
         var wordId = Guid.NewGuid();

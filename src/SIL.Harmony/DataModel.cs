@@ -466,8 +466,8 @@ public class DataModel : ISyncable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Starts a replay of the commits from <paramref name="from"/> to <paramref name="to"/>, both included; each
-    /// <see cref="CommitReplay.ApplyNextCommit"/> applies one, the first applying <paramref name="from"/>.
+    /// Starts a replay at <paramref name="from"/>; each <see cref="CommitReplay.ApplyNextCommit"/> then applies one more
+    /// commit, up to and including <paramref name="to"/>.
     /// Costs one replay of every commit in the range, so it beats <see cref="OpenViewAtCommit(Commit)"/> or
     /// <see cref="GetAtCommit{T}(Commit, Guid)"/> per commit when the commits of interest are close together (a sync burst)
     /// and loses to them when they are spread out: in a benchmark it lost with 20 rows 100 commits apart and won with 100.

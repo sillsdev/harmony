@@ -109,7 +109,7 @@ public class PointInTimeReadBenchmarks
     {
         await using var replay = await _model.DataModel.StartCommitReplay(_beforeFirstRow, _rows[^1]);
         var states = new Dictionary<Guid, ObjectSnapshot?>();
-        while (await replay.ApplyNextCommit() is { } commit)
+        for (var commit = replay.CurrentCommit; commit is not null; commit = await replay.ApplyNextCommit())
         {
             if (_pauses.Contains(commit.Id)) states[commit.Id] = await ReadWord(replay);
         }

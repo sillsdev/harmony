@@ -7,8 +7,7 @@ namespace SIL.Harmony;
 /// <summary>
 /// Steps through a range of commits, one replay for the whole range, from <see cref="DataModel.StartCommitReplay"/>.
 /// It is itself the view of the snapshots as of <see cref="CurrentCommit"/>, so what it returns changes with each
-/// <see cref="ApplyNextCommit"/>, and reading it before the first one throws; <see cref="ObjectSnapshot"/>s read from it
-/// stay valid. Owns a database connection until disposed.
+/// <see cref="ApplyNextCommit"/>; <see cref="ObjectSnapshot"/>s read from it stay valid. Owns a database connection until disposed.
 /// </summary>
 public sealed class CommitReplay : ISnapshotView, IAsyncDisposable
 {
@@ -24,6 +23,7 @@ public sealed class CommitReplay : ISnapshotView, IAsyncDisposable
 
     private CommitReplay(CrdtRepository repo, ISnapshotView baseline, Commit[] commits, HarmonyConfig config)
     {
+        CurrentCommit = null!; //set by Start, which no caller can bypass
         _repo = repo;
         _baseline = baseline;
         _worker = SnapshotWorker.Stepwise(baseline, config);
@@ -33,20 +33,22 @@ public sealed class CommitReplay : ISnapshotView, IAsyncDisposable
 
     internal static async Task<CommitReplay> Start(CrdtRepository repo, Commit from, Commit to, HarmonyConfig config)
     {
-        //strictly before, so `from` itself is one of the commits applied rather than the resume point
+        if (to.CompareKey.CompareTo(from.CompareKey) < 0) throw new ArgumentException($"{nameof(to)} is before {nameof(from)}", nameof(to));
+        //strictly before, so the replay resumes from snapshots it can trust even when `from` itself is a checkpoint
         var checkpoint = await repo.FindCheckpointBefore(from);
         var commits = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: to);
         var replay = new CommitReplay(repo, repo.SnapshotViewAsOf(checkpoint), [.. commits], config);
-        while (replay._next < replay._commits.Length && replay._commits[replay._next].CompareKey.CompareTo(from.CompareKey) < 0)
+        while (replay._next < replay._commits.Length && replay._commits[replay._next].CompareKey.CompareTo(from.CompareKey) <= 0)
         {
-            await replay.ApplyNext();
+            replay.CurrentCommit = await replay.ApplyNext();
         }
 
+        if (replay.CurrentCommit?.Id != from.Id) throw new ArgumentException($"Commit {from.Id} not found", nameof(from));
         return replay;
     }
 
-    /// <summary>the last commit applied, null before the first <see cref="ApplyNextCommit"/></summary>
-    public Commit? CurrentCommit { get; private set; }
+    /// <summary>the last commit applied, starting at the replay's <c>from</c></summary>
+    public Commit CurrentCommit { get; private set; }
 
     /// <returns>the commit just applied, or null once the range is done (the view then stays at the last one)</returns>
     public async Task<Commit?> ApplyNextCommit()
@@ -85,8 +87,6 @@ public sealed class CommitReplay : ISnapshotView, IAsyncDisposable
     private SnapshotWorker Open()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        //before then the worker holds commits from before the range, applied to reach its start
-        if (CurrentCommit is null) throw new InvalidOperationException($"Call {nameof(ApplyNextCommit)} before reading the replay");
         return _worker;
     }
 

@@ -149,7 +149,7 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
 
         await using var replay = await DataModel.StartCommitReplay(commits[fromIndex], commits[^1]);
         var applied = new List<Guid>();
-        while (await replay.ApplyNextCommit() is { } commit)
+        for (var commit = replay.CurrentCommit; commit is not null; commit = await replay.ApplyNextCommit())
         {
             applied.Add(commit.Id);
             replay.CurrentCommit.Should().Be(commit);
@@ -170,17 +170,17 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
     }
 
     [Fact]
-    public async Task ACommitReplayCoversExactlyItsRange()
+    public async Task ACommitReplayStartsAtFromAndStaysAtTo()
     {
         var wordId = Guid.NewGuid();
-        var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
+        var commits = await SyncInOneBatch(
+            new SetWordTextChange(wordId, "zero"), new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
 
-        await using var replay = await DataModel.StartCommitReplay(commits[0], commits[^1]);
+        await using var replay = await DataModel.StartCommitReplay(commits[1], commits[^1]);
 
-        await replay.Invoking(r => r.GetAsync(wordId).AsTask()).Should().ThrowAsync<InvalidOperationException>();
-        (await replay.ApplyNextCommit()).Should().Be(commits[0]);
+        replay.CurrentCommit.Should().Be(commits[1]);
         Text(await replay.GetAsync(wordId)).Should().Be("first");
-        (await replay.ApplyNextCommit()).Should().Be(commits[1]);
+        (await replay.ApplyNextCommit()).Should().Be(commits[2]);
         (await replay.ApplyNextCommit()).Should().BeNull();
         Text(await replay.GetAsync(wordId)).Should().Be("second");
 

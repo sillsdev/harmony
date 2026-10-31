@@ -83,6 +83,8 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
     /// Creates a repository over this instance's DbContext. Exposed so benchmarks can drive
     /// <see cref="CrdtRepository"/> methods (e.g. AddSnapshots) directly without going through the sync pipeline.
     /// </summary>
+    internal CrdtRepositoryFactory RepositoryFactory => _services.GetRequiredService<CrdtRepositoryFactory>();
+
     internal CrdtRepository CreateRepository() =>
         _services.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
 

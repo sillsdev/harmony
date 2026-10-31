@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Reflection;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,11 +15,44 @@ using SIL.Harmony.Resource;
 
 namespace SIL.Harmony.Db;
 
-internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory)
+internal class CrdtRepositoryFactory(IServiceProvider serviceProvider, ICrdtDbContextFactory dbContextFactory, ILogger<CrdtRepositoryFactory> logger)
 {
+    private static bool _warnedSharedContext;
+
     public async Task<CrdtRepository> CreateRepository()
     {
         return ActivatorUtilities.CreateInstance<CrdtRepository>(serviceProvider, await dbContextFactory.CreateDbContextAsync());
+    }
+
+    /// <summary>
+    /// A repository whose reads all see the database as it was at the first of them, see <see cref="CrdtRepository.BeginConsistentRead"/>.
+    /// Only when each repository gets a context of its own: a shared one would carry the read transaction into
+    /// whatever else uses it, so a sync there would fail and a write would be rolled back with the read.
+    /// </summary>
+    public async Task<CrdtRepository> CreateReadRepository()
+    {
+        var repo = await CreateRepository();
+        if (dbContextFactory is not IContextPerRepository)
+        {
+            if (!_warnedSharedContext)
+            {
+                _warnedSharedContext = true;
+                logger.LogWarning("Repositories share a DbContext, so reads at a commit can see a concurrent sync part way through; register Harmony with AddCrdtDataDbFactory to isolate them");
+            }
+
+            return repo;
+        }
+
+        try
+        {
+            await repo.BeginConsistentRead();
+            return repo;
+        }
+        catch
+        {
+            await repo.DisposeAsync();
+            throw;
+        }
     }
 
     public CrdtRepository CreateRepositorySync()
@@ -54,6 +88,8 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
     private readonly ILogger<CrdtRepository> _logger;
     private readonly FastProjection _fastProjection;
     private readonly IProjectedEntityInterceptor[] _interceptors;
+    private static readonly ConcurrentDictionary<string, bool> WarnedNotWal = new();
+    private SqliteTransaction? _readTransaction;
 
     public CrdtRepository(ICrdtDbContext dbContext, IOptions<HarmonyConfig> crdtConfig,
         ILogger<CrdtRepository> logger,
@@ -248,6 +284,39 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         {
             await _dbContext.Database.CloseConnectionAsync();
         }
+    }
+
+    /// <summary>
+    /// Pins every later read to the database as it is at the first of them, so a sync that rewrites snapshots part way through a
+    /// point-in-time read can't hand it a mix of two histories. Only in WAL mode: there a deferred read transaction
+    /// doesn't block writers, in any other journal mode it makes them fail with "database is locked" until it ends.
+    /// Elsewhere reads stay unpinned, and a database file that isn't in WAL mode logs a warning once.
+    /// </summary>
+    internal async Task BeginConsistentRead()
+    {
+        if (_dbContext.Database.ProviderName != FastProjection.SqliteProviderName || IsInTransaction) return;
+        await _dbContext.Database.OpenConnectionAsync();
+        var connection = (SqliteConnection)_dbContext.Database.GetDbConnection();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA journal_mode;";
+            var journalMode = await command.ExecuteScalarAsync() as string;
+            if (!string.Equals(journalMode, "wal", StringComparison.OrdinalIgnoreCase))
+            {
+                //an in-memory database reports "memory", it can't use WAL and has no other connection to race with
+                if (!string.Equals(journalMode, "memory", StringComparison.OrdinalIgnoreCase) && WarnedNotWal.TryAdd(connection.DataSource, true))
+                {
+                    _logger.LogWarning("Database {DataSource} is in {JournalMode} journal mode rather than WAL, so reads at a commit can see a concurrent sync part way through", connection.DataSource, journalMode);
+                }
+
+                await _dbContext.Database.CloseConnectionAsync();
+                return;
+            }
+        }
+
+        //not Database.BeginTransaction: that issues BEGIN IMMEDIATE, which takes the write lock and blocks every sync until the read ends
+        _readTransaction = connection.BeginTransaction(deferred: true);
+        await _dbContext.Database.UseTransactionAsync(_readTransaction);
     }
 
     /// <summary>
@@ -612,13 +681,16 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         return resource is null ? null : ResolvePath(resource);
     }
 
+    //EF doesn't own a transaction handed to UseTransaction, so disposing the context leaves it open
     public void Dispose()
     {
+        _readTransaction?.Dispose();
         _dbContext.Dispose();
     }
 
     public async ValueTask DisposeAsync()
     {
+        if (_readTransaction is not null) await _readTransaction.DisposeAsync();
         await _dbContext.DisposeAsync();
     }
 }

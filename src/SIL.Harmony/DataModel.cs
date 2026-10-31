@@ -343,7 +343,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAtCommit(Commit commit)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await using var repo = await _crdtRepositoryFactory.CreateReadRepository();
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         //loading everything up front makes every lookup during the replay a cache hit
         await baseline.PreloadAllAsync();
@@ -362,14 +362,14 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<T> GetAtCommit<T>(Guid commitId, Guid entityId)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await using var repo = await _crdtRepositoryFactory.CreateReadRepository();
         var commit = await repo.CurrentCommits().SingleAsync(c => c.Id == commitId);
         return await GetAtCommit<T>(commit, entityId, repo);
     }
 
     public async Task<T> GetAtCommit<T>(Commit commit, Guid entityId)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await using var repo = await _crdtRepositoryFactory.CreateReadRepository();
         return await GetAtCommit<T>(commit, entityId, repo);
     }
 
@@ -382,14 +382,14 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<T?> GetBeforeCommit<T>(Guid commitId, Guid entityId)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await using var repo = await _crdtRepositoryFactory.CreateReadRepository();
         var commit = await repo.CurrentCommits().SingleAsync(c => c.Id == commitId);
         return await GetBeforeCommit<T>(commit, entityId, repo);
     }
 
     public async Task<T?> GetBeforeCommit<T>(Commit commit, Guid entityId)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        await using var repo = await _crdtRepositoryFactory.CreateReadRepository();
         return await GetBeforeCommit<T>(commit, entityId, repo);
     }
 

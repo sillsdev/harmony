@@ -83,6 +83,19 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
     /// Creates a repository over this instance's DbContext. Exposed so benchmarks can drive
     /// <see cref="CrdtRepository"/> methods (e.g. AddSnapshots) directly without going through the sync pipeline.
     /// </summary>
+    internal CrdtRepositoryFactory RepositoryFactory => _services.GetRequiredService<CrdtRepositoryFactory>();
+
+    /// <summary>
+    /// A repository on its own context and connection, as AddCrdtDataDbFactory gives each repository; the rest of this
+    /// model shares one context. Needs a database file, a new connection to :memory: is a different database.
+    /// </summary>
+    internal CrdtRepository CreateRepositoryWithOwnConnection()
+    {
+        var context = _services.CreateScope().ServiceProvider.GetRequiredService<SampleDbContext>();
+        context.Database.SetDbConnection(new SqliteConnection(DbContext.Database.GetConnectionString()), contextOwnsConnection: true);
+        return ActivatorUtilities.CreateInstance<CrdtRepository>(_services, (ICrdtDbContext)context);
+    }
+
     internal CrdtRepository CreateRepository() =>
         _services.GetRequiredService<CrdtRepositoryFactory>().CreateRepositorySync();
 

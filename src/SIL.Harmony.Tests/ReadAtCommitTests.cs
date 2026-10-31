@@ -23,12 +23,11 @@ public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
             NewDefinition(definitionId, wordId, "a definition"),
             new SetWordTextChange(wordId, "second"));
 
-        var (word, definitions) = await DataModel.ReadAtCommit(commits[1].Id, async view =>
-            ((Word)(await view.GetAsync(wordId))!.Entity.DbObject,
-                await view.WhereReferences(wordId, includeDeleted: false).ToArrayAsync()));
+        await using var view = await DataModel.OpenViewAtCommit(commits[1].Id);
 
-        word.Text.Should().Be("first");
-        definitions.Should().ContainSingle().Which.EntityId.Should().Be(definitionId);
+        ((Word)(await view.GetAsync(wordId))!.Entity.DbObject).Text.Should().Be("first");
+        (await ((ISnapshotView)view).WhereReferences(wordId, includeDeleted: false).ToArrayAsync(TestContext.Current.CancellationToken))
+            .Should().ContainSingle().Which.EntityId.Should().Be(definitionId);
     }
 
     [Fact]
@@ -36,9 +35,9 @@ public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
     {
         var commits = await SyncInOneBatch(new SetWordTextChange(Guid.NewGuid(), "first"));
 
-        var all = await DataModel.ReadBeforeCommit(commits[0], view => view.All().ToArrayAsync().AsTask());
+        await using var view = await DataModel.OpenViewBeforeCommit(commits[0]);
 
-        all.Should().BeEmpty();
+        (await view.All().ToArrayAsync(TestContext.Current.CancellationToken)).Should().BeEmpty();
     }
 
     [Fact]
@@ -47,9 +46,9 @@ public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
         var wordId = Guid.NewGuid();
         var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
 
-        var word = await DataModel.ReadBeforeCommit(commits[1].Id, async view => (Word)(await view.GetAsync(wordId))!.Entity.DbObject);
+        await using var view = await DataModel.OpenViewBeforeCommit(commits[1].Id);
 
-        word.Text.Should().Be("first");
+        ((Word)(await view.GetAsync(wordId))!.Entity.DbObject).Text.Should().Be("first");
     }
 
     [Fact]
@@ -61,7 +60,8 @@ public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
         var persisted = await DbContext.Snapshots.SingleAsync(s => s.CommitId == commit.Id, TestContext.Current.CancellationToken);
         (await IsCheckpoint(commit)).Should().BeTrue();
 
-        var read = await DataModel.ReadAtCommit(commit, view => view.GetAsync(wordId).AsTask());
+        await using var view = await DataModel.OpenViewAtCommit(commit);
+        var read = await view.GetAsync(wordId);
 
         read!.Id.Should().Be(persisted.Id, "a replay would have built a new snapshot");
     }
@@ -81,10 +81,10 @@ public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
         var commit = commits[3];
         (await IsCheckpoint(commit)).Should().BeFalse("the word's snapshot at the commit was pruned, so reading it needs a replay");
 
-        var referencing = await DataModel.ReadAtCommit(commit,
-            view => view.WhereReferences(antonymAtCommit, includeDeleted: false).Select(s => s.EntityId).ToArrayAsync().AsTask());
+        await using var view = await DataModel.OpenViewAtCommit(commit);
+        var referencing = await ((ISnapshotView)view).WhereReferences(antonymAtCommit, includeDeleted: false).ToArrayAsync(TestContext.Current.CancellationToken);
 
-        referencing.Should().Equal(wordId);
+        referencing.Select(s => s.EntityId).Should().Equal(wordId);
     }
 
     [Fact]
@@ -106,12 +106,26 @@ public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
 
         foreach (var commit in commits[1..])
         {
-            var (word, definition) = await DataModel.ReadAtCommit(commit, async view =>
-                ((await view.GetAsync(wordId))!.Entity.DbObject, (await view.GetAsync(definitionId))!.Entity.DbObject));
+            await using var view = await DataModel.OpenViewAtCommit(commit);
+            var word = (await view.GetAsync(wordId))!.Entity.DbObject;
+            var definition = (await view.GetAsync(definitionId))!.Entity.DbObject;
 
             word.Should().BeEquivalentTo(await DataModel.GetAtCommit<Word>(commit, wordId));
             definition.Should().BeEquivalentTo(await DataModel.GetAtCommit<Definition>(commit, definitionId));
         }
+    }
+
+    [Fact]
+    public async Task ADisposedViewThrows()
+    {
+        var wordId = Guid.NewGuid();
+        var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
+        var view = await DataModel.OpenViewAtCommit(commits[0]);
+        await view.GetAsync(wordId);
+
+        await view.DisposeAsync();
+
+        await view.Invoking(v => v.GetAsync(wordId).AsTask()).Should().ThrowAsync<ObjectDisposedException>();
     }
 
     private async Task<Commit[]> SyncInOneBatch(params IChange[] changes)

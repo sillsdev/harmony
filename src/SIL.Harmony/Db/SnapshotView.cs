@@ -3,9 +3,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Db;
 
-internal interface ISnapshotView
+/// <summary>Each entity's newest snapshot as of one point in history.</summary>
+public interface ISnapshotView
 {
     ValueTask<ObjectSnapshot?> GetAsync(Guid entityId);
+    /// <summary>
+    /// <paramref name="predicate"/> may be translated to SQL or compiled and run in memory, so it has to work both ways
+    /// </summary>
     IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate);
     /// <summary>every entity's snapshot; enumerating it preloads the whole view</summary>
     IAsyncEnumerable<ObjectSnapshot> All();
@@ -17,6 +21,44 @@ internal interface ISnapshotView
     /// <summary>snapshots whose entity holds a reference to <paramref name="entityId"/></summary>
     IAsyncEnumerable<ObjectSnapshot> WhereReferences(Guid entityId, bool includeDeleted) =>
         Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
+}
+
+/// <summary>The snapshots as of one commit, opened by <see cref="DataModel"/>. Owns a database connection until disposed.</summary>
+public sealed class SnapshotView : ISnapshotView, IAsyncDisposable
+{
+    private readonly CrdtRepository _repo;
+    private readonly ISnapshotView _view;
+    private bool _disposed;
+
+    internal SnapshotView(CrdtRepository repo, ISnapshotView view)
+    {
+        _repo = repo;
+        _view = view;
+    }
+
+    public ValueTask<ObjectSnapshot?> GetAsync(Guid entityId) => Open().GetAsync(entityId);
+
+    public IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate) => Open().Where(predicate);
+
+    public IAsyncEnumerable<ObjectSnapshot> All() => Open().All();
+
+    public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => Open().PreloadAsync(entityIds);
+
+    public Task PreloadAllAsync() => Open().PreloadAllAsync();
+
+    private ISnapshotView Open()
+    {
+        //the replayed part lives in memory and would keep answering after the connection is gone
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _view;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        await _repo.DisposeAsync();
+    }
 }
 
 /// <summary>the view before the first commit</summary>

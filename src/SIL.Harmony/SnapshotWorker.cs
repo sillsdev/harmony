@@ -15,17 +15,18 @@ internal class SnapshotWorker : ISnapshotView
     private readonly ISnapshotView _baseline;
     private readonly HarmonyConfig _crdtConfig;
     private readonly SortedSet<Commit> _batchCommits;
-    private readonly SnapshotCheckpointPolicy _policy;
+    /// <summary>null for a read-only replay, which persists nothing so needn't keep superseded snapshots</summary>
+    private readonly SnapshotCheckpointPolicy? _policy;
     /// <summary>each entity's newest snapshot so far in this replay</summary>
     private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
     /// <summary>superseded snapshots the policy says must still be persisted</summary>
     private readonly List<ObjectSnapshot> _keptSupersededSnapshots = [];
 
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
-    private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
+    private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig, bool persisting)
     {
         _batchCommits = commits;
-        _policy = new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
+        _policy = persisting ? new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints) : null;
         _baseline = baseline;
         _crdtConfig = crdtConfig;
     }
@@ -37,7 +38,7 @@ internal class SnapshotWorker : ISnapshotView
     internal static async Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
         if (commits.Count == 0) return baseline;
-        var worker = new SnapshotWorker(baseline, commits, crdtConfig);
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig, persisting: false);
         await worker.ApplyCommitChanges();
         return worker;
     }
@@ -49,60 +50,93 @@ internal class SnapshotWorker : ISnapshotView
     internal static async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeNewSnapshotsAndCheckpoints(
         ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
-        var worker = new SnapshotWorker(baseline, commits, crdtConfig);
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig, persisting: true);
         await worker.ApplyCommitChanges();
         IReadOnlyList<ObjectSnapshot> snapshots = [.. worker._keptSupersededSnapshots, .. worker._latestSnapshots.Values];
-        return (snapshots, worker._policy.CheckpointFlags());
+        return (snapshots, worker._policy!.CheckpointFlags());
+    }
+
+    /// <summary>
+    /// Applies <paramref name="commits"/> in order onto <paramref name="baseline"/>, calling <paramref name="atCommit"/>
+    /// after each one the filter accepts. The view passed to it is this worker, so it moves on once the callback returns.
+    /// </summary>
+    internal static async Task Walk(ISnapshotView baseline,
+        SortedSet<Commit> commits,
+        HarmonyConfig crdtConfig,
+        Func<Commit, bool> pauseAt,
+        Func<Commit, ISnapshotView, Task> atCommit)
+    {
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig, persisting: false);
+        //one preload per checkpoint window, so a long walk never holds every touched entity's baseline at once
+        var window = new List<Commit>();
+        foreach (var commit in commits)
+        {
+            window.Add(commit);
+            if (!commit.IsSnapshotCheckpoint && commit != commits.Max) continue;
+            await SnapshotReplay.PreloadTouched(baseline, window, crdtConfig);
+            foreach (var windowCommit in window)
+            {
+                await worker.ApplyCommit(windowCommit);
+                if (pauseAt(windowCommit)) await atCommit(windowCommit, worker);
+            }
+
+            window.Clear();
+        }
     }
 
     private async ValueTask ApplyCommitChanges()
     {
         foreach (var commit in _batchCommits)
         {
-            foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
+            await ApplyCommit(commit);
+        }
+    }
+
+    private async ValueTask ApplyCommit(Commit commit)
+    {
+        foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
+        {
+            IObjectBase entity;
+            var prevSnapshot = await GetAsync(commitChange.EntityId);
+            var changeContext = new ChangeContext(commit, this, _crdtConfig);
+
+            if (prevSnapshot is null)
             {
-                IObjectBase entity;
-                var prevSnapshot = await GetAsync(commitChange.EntityId);
-                var changeContext = new ChangeContext(commit, this, _crdtConfig);
-
-                if (prevSnapshot is null)
+                if (commitChange.Change is OpaqueChange)
                 {
-                    if (commitChange.Change is OpaqueChange)
-                    {
-                        // Keep unknown changes in history until this client understands how to apply them.
-                        continue;
-                    }
-
-                    // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
-                    entity = await commitChange.Change.NewEntity(commit, changeContext);
-                }
-                else if (prevSnapshot.EntityIsDeleted && commitChange.Change.SupportsNewEntity())
-                {
-                    // revive deleted entity
-                    entity = await commitChange.Change.NewEntity(commit, changeContext);
-                }
-                else if (commitChange.Change.SupportsApplyChange())
-                {
-                    // update existing entity
-                    entity = prevSnapshot.Entity.Copy();
-                    var wasDeleted = prevSnapshot.EntityIsDeleted;
-                    await commitChange.Change.ApplyChange(entity, changeContext);
-                    var deletedByChange = !wasDeleted && entity.DeletedAt.HasValue;
-                    if (deletedByChange)
-                    {
-                        await MarkDeleted(entity.Id, changeContext);
-                    }
-                }
-                else
-                {
-                    // Entity already exists (and is not deleted)
-                    // and change does not support updating existing entities,
-                    // so do nothing.
+                    // Keep unknown changes in history until this client understands how to apply them.
                     continue;
                 }
 
-                await RecordEntitySnapshot(entity, prevSnapshot, changeContext);
+                // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
+                entity = await commitChange.Change.NewEntity(commit, changeContext);
             }
+            else if (prevSnapshot.EntityIsDeleted && commitChange.Change.SupportsNewEntity())
+            {
+                // revive deleted entity
+                entity = await commitChange.Change.NewEntity(commit, changeContext);
+            }
+            else if (commitChange.Change.SupportsApplyChange())
+            {
+                // update existing entity
+                entity = prevSnapshot.Entity.Copy();
+                var wasDeleted = prevSnapshot.EntityIsDeleted;
+                await commitChange.Change.ApplyChange(entity, changeContext);
+                var deletedByChange = !wasDeleted && entity.DeletedAt.HasValue;
+                if (deletedByChange)
+                {
+                    await MarkDeleted(entity.Id, changeContext);
+                }
+            }
+            else
+            {
+                // Entity already exists (and is not deleted)
+                // and change does not support updating existing entities,
+                // so do nothing.
+                continue;
+            }
+
+            await RecordEntitySnapshot(entity, prevSnapshot, changeContext);
         }
     }
 
@@ -143,7 +177,7 @@ internal class SnapshotWorker : ISnapshotView
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.Supersede(superseded, by: newSnapshot))
+        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy?.Supersede(superseded, by: newSnapshot) == true)
         {
             _keptSupersededSnapshots.Add(superseded);
         }

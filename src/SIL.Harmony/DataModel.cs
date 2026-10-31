@@ -463,6 +463,25 @@ public class DataModel : ISyncable, IAsyncDisposable
         return await read(await ReplayToBefore(commit, repo));
     }
 
+    /// <summary>
+    /// Replays history from <paramref name="fromInclusive"/> to <paramref name="toInclusive"/> once, calling
+    /// <paramref name="atCommit"/> with the snapshots as of each commit in that range, in commit order.
+    /// </summary>
+    /// <param name="atCommit">
+    /// the view is only valid until the returned task completes, the walk then applies the next commit to it;
+    /// <see cref="ObjectSnapshot"/>s read from it stay valid
+    /// </param>
+    public async Task WalkCommits(Commit fromInclusive, Commit toInclusive, Func<Commit, ISnapshotView, Task> atCommit)
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        //strictly before, so the first pause comes out of the replay rather than being the resume point
+        var checkpoint = await repo.FindCheckpointBefore(fromInclusive);
+        var commits = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: toInclusive);
+        await SnapshotWorker.Walk(repo.SnapshotViewAsOf(checkpoint), commits, _crdtConfig.Value,
+            pauseAt: commit => commit.CompareKey.CompareTo(fromInclusive.CompareKey) >= 0,
+            atCommit);
+    }
+
     private async Task<ISnapshotView> ReplayToBefore(Commit commit, CrdtRepository repo)
     {
         var previousCommit = await repo.FindPreviousCommit(commit);

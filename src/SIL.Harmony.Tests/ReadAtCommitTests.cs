@@ -114,6 +114,38 @@ public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
         }
     }
 
+    [Fact]
+    public async Task WalkCommitsMatchesReadAtCommitAtEveryPause()
+    {
+        var wordId = Guid.NewGuid();
+        var definitionId = Guid.NewGuid();
+        IChange[] changes =
+        [
+            new SetWordTextChange(wordId, "text 0"),
+            NewDefinition(definitionId, wordId, "definition 0"),
+            .. Enumerable.Range(1, 20).Select(i => i % 3 == 0
+                ? (IChange)new SetDefinitionPartOfSpeechChange(definitionId, $"part of speech {i}")
+                : i % 2 == 0 ? new SetWordNoteChange(wordId, $"note {i}") : new SetWordTextChange(wordId, $"text {i}")),
+            new DeleteChange<Word>(wordId),
+        ];
+        var commits = await SyncInOneBatch(changes);
+        //a checkpoint, because the walk must still pause at one it could have resumed from
+        var fromIndex = 2;
+        while (!await IsCheckpoint(commits[fromIndex])) fromIndex++;
+        var from = commits[fromIndex];
+        var walked = new List<(Commit, ObjectSnapshot[])>();
+
+        await DataModel.WalkCommits(from, commits[^1], async (commit, view) =>
+            walked.Add((commit, await view.WhereReferences(wordId, includeDeleted: true).ToArrayAsync())));
+
+        walked.Select(w => w.Item1.Id).Should().Equal(commits[fromIndex..].Select(c => c.Id));
+        foreach (var (commit, referencing) in walked)
+        {
+            var expected = await DataModel.ReadAtCommit(commit, view => view.WhereReferences(wordId, includeDeleted: true).ToArrayAsync().AsTask());
+            referencing.Select(s => s.Entity.DbObject).Should().BeEquivalentTo(expected.Select(s => s.Entity.DbObject));
+        }
+    }
+
     private async Task<Commit[]> SyncInOneBatch(params IChange[] changes)
     {
         Commit[] commits = [.. changes.Select(change => NextCommit(change))];

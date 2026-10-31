@@ -23,18 +23,24 @@ public interface ISnapshotView
         Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
 }
 
-/// <summary>a view that throws once <see cref="Close"/> is called, so a caller can't read a view that has moved on</summary>
-internal sealed class ScopedSnapshotView(ISnapshotView inner) : ISnapshotView
+/// <summary>The snapshots as of one commit, opened by <see cref="DataModel"/>. Owns a database connection until disposed.</summary>
+public sealed class SnapshotView : ISnapshotView, IAsyncDisposable
 {
-    private bool _closed;
+    private readonly CrdtRepository _repo;
+    private readonly ISnapshotView _view;
+    private bool _disposed;
 
-    public void Close() => _closed = true;
+    internal SnapshotView(CrdtRepository repo, ISnapshotView view)
+    {
+        _repo = repo;
+        _view = view;
+    }
 
     public ValueTask<ObjectSnapshot?> GetAsync(Guid entityId) => Open().GetAsync(entityId);
 
-    public IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate) => Guard(Open().Where(predicate));
+    public IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate) => Open().Where(predicate);
 
-    public IAsyncEnumerable<ObjectSnapshot> All() => Guard(Open().All());
+    public IAsyncEnumerable<ObjectSnapshot> All() => Open().All();
 
     public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => Open().PreloadAsync(entityIds);
 
@@ -42,17 +48,16 @@ internal sealed class ScopedSnapshotView(ISnapshotView inner) : ISnapshotView
 
     private ISnapshotView Open()
     {
-        ObjectDisposedException.ThrowIf(_closed, this);
-        return inner;
+        //the replayed part lives in memory and would keep answering after the connection is gone
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _view;
     }
 
-    private async IAsyncEnumerable<ObjectSnapshot> Guard(IAsyncEnumerable<ObjectSnapshot> snapshots)
+    public async ValueTask DisposeAsync()
     {
-        await foreach (var snapshot in snapshots)
-        {
-            Open();
-            yield return snapshot;
-        }
+        if (_disposed) return;
+        _disposed = true;
+        await _repo.DisposeAsync();
     }
 }
 

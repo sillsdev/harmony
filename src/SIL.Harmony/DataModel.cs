@@ -422,68 +422,68 @@ public class DataModel : ISyncable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Replays history up to <paramref name="commit"/> once and passes the snapshots as of it to <paramref name="read"/>,
-    /// for asking the same point in history several things. A single entity is cheaper through <see cref="GetAtCommit{T}(Commit, Guid)"/>,
-    /// which can skip the replay.
+    /// Replays history up to <paramref name="commit"/> once and opens the snapshots as of it, for asking the same point
+    /// in history several things. A single entity is cheaper through <see cref="GetAtCommit{T}(Commit, Guid)"/>, which can
+    /// skip the replay. The view holds a database connection until disposed; <see cref="ObjectSnapshot"/>s read from it stay valid.
     /// </summary>
-    /// <param name="read">
-    /// the view is only valid until the returned task completes, so materialize what it returns;
-    /// <see cref="ObjectSnapshot"/>s read from it stay valid
-    /// </param>
-    public async Task<T> ReadAtCommit<T>(Commit commit, Func<ISnapshotView, Task<T>> read)
+    public Task<SnapshotView> OpenViewAtCommit(Commit commit)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        return await read(await ReplayToCommit(commit, repo));
+        return OpenView(repo => ReplayToCommit(commit, repo));
     }
 
-    /// <inheritdoc cref="ReadAtCommit{T}(Commit, Func{ISnapshotView, Task{T}})"/>
-    public async Task<T> ReadAtCommit<T>(Guid commitId, Func<ISnapshotView, Task<T>> read)
+    /// <inheritdoc cref="OpenViewAtCommit(Commit)"/>
+    public Task<SnapshotView> OpenViewAtCommit(Guid commitId)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        var commit = await repo.CurrentCommits().SingleAsync(c => c.Id == commitId);
-        return await read(await ReplayToCommit(commit, repo));
+        return OpenView(async repo => await ReplayToCommit(await repo.CurrentCommits().SingleAsync(c => c.Id == commitId), repo));
     }
 
     /// <summary>
-    /// <see cref="ReadAtCommit{T}(Commit, Func{ISnapshotView, Task{T}})"/> as of the commit before <paramref name="commit"/>;
-    /// the view is empty before the first commit.
+    /// <see cref="OpenViewAtCommit(Commit)"/> as of the commit before <paramref name="commit"/>; the view is empty before the first commit.
     /// </summary>
-    /// <inheritdoc cref="ReadAtCommit{T}(Commit, Func{ISnapshotView, Task{T}})"/>
-    public async Task<T> ReadBeforeCommit<T>(Commit commit, Func<ISnapshotView, Task<T>> read)
+    public Task<SnapshotView> OpenViewBeforeCommit(Commit commit)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        return await read(await ReplayToBefore(commit, repo));
+        return OpenView(repo => ReplayToBefore(commit, repo));
     }
 
-    /// <inheritdoc cref="ReadBeforeCommit{T}(Commit, Func{ISnapshotView, Task{T}})"/>
-    public async Task<T> ReadBeforeCommit<T>(Guid commitId, Func<ISnapshotView, Task<T>> read)
+    /// <inheritdoc cref="OpenViewBeforeCommit(Commit)"/>
+    public Task<SnapshotView> OpenViewBeforeCommit(Guid commitId)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        var commit = await repo.CurrentCommits().SingleAsync(c => c.Id == commitId);
-        return await read(await ReplayToBefore(commit, repo));
+        return OpenView(async repo => await ReplayToBefore(await repo.CurrentCommits().SingleAsync(c => c.Id == commitId), repo));
+    }
+
+    private async Task<SnapshotView> OpenView(Func<CrdtRepository, Task<ISnapshotView>> replay)
+    {
+        var repo = await _crdtRepositoryFactory.CreateRepository();
+        try
+        {
+            return new SnapshotView(repo, await replay(repo));
+        }
+        catch
+        {
+            await repo.DisposeAsync();
+            throw;
+        }
     }
 
     /// <summary>
-    /// Replays history from <paramref name="fromInclusive"/> to <paramref name="toInclusive"/> once, calling
-    /// <paramref name="atCommit"/> with the snapshots as of each commit in that range, in commit order.
-    /// Costs one replay of every commit in the range, so it beats a <see cref="ReadAtCommit{T}(Commit, Func{ISnapshotView, Task{T}})"/>
-    /// or <see cref="GetAtCommit{T}(Commit, Guid)"/> per commit when the commits of interest are close together (a sync burst)
+    /// Starts a replay positioned just before <paramref name="from"/>; each <see cref="CommitReplay.ApplyNextCommit"/>
+    /// then applies one commit, up to and including <paramref name="to"/>.
+    /// Costs one replay of every commit in the range, so it beats <see cref="OpenViewAtCommit(Commit)"/> or
+    /// <see cref="GetAtCommit{T}(Commit, Guid)"/> per commit when the commits of interest are close together (a sync burst)
     /// and loses to them when they are spread out: in a benchmark it lost with 20 rows 100 commits apart and won with 100.
     /// </summary>
-    /// <param name="fromInclusive">to get the state before the first commit of interest, start at the commit before it</param>
-    /// <param name="atCommit">
-    /// the view throws once the returned task completes, because the walk then applies the next commit;
-    /// <see cref="ObjectSnapshot"/>s read from it stay valid
-    /// </param>
-    public async Task WalkCommits(Commit fromInclusive, Commit toInclusive, Func<Commit, ISnapshotView, Task> atCommit)
+    public async Task<CommitReplay> StartCommitReplay(Commit from, Commit to)
     {
-        await using var repo = await _crdtRepositoryFactory.CreateRepository();
-        //strictly before, so the first pause comes out of the replay rather than being the resume point
-        var checkpoint = await repo.FindCheckpointBefore(fromInclusive);
-        var commits = await repo.GetCommitsBetween(afterExclusive: checkpoint, upToInclusive: toInclusive);
-        await SnapshotWorker.Walk(repo.SnapshotViewAsOf(checkpoint), commits, _crdtConfig.Value,
-            pauseAt: commit => commit.CompareKey.CompareTo(fromInclusive.CompareKey) >= 0,
-            atCommit);
+        var repo = await _crdtRepositoryFactory.CreateRepository();
+        try
+        {
+            return await CommitReplay.Start(repo, from, to, _crdtConfig.Value);
+        }
+        catch
+        {
+            await repo.DisposeAsync();
+            throw;
+        }
     }
 
     private async Task<ISnapshotView> ReplayToBefore(Commit commit, CrdtRepository repo)

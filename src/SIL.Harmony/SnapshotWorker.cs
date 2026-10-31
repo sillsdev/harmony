@@ -56,42 +56,9 @@ internal class SnapshotWorker : ISnapshotView
         return (snapshots, worker._policy!.CheckpointFlags());
     }
 
-    /// <summary>
-    /// Applies <paramref name="commits"/> in order onto <paramref name="baseline"/>, calling <paramref name="atCommit"/>
-    /// after each one the filter accepts. The view passed to it throws once the callback returns, because the worker behind it moves on.
-    /// </summary>
-    internal static async Task Walk(ISnapshotView baseline,
-        SortedSet<Commit> commits,
-        HarmonyConfig crdtConfig,
-        Func<Commit, bool> pauseAt,
-        Func<Commit, ISnapshotView, Task> atCommit)
-    {
-        var worker = new SnapshotWorker(baseline, commits, crdtConfig, persisting: false);
-        //one preload per checkpoint window, so a long walk never holds every touched entity's baseline at once
-        var window = new List<Commit>();
-        foreach (var commit in commits)
-        {
-            window.Add(commit);
-            if (!commit.IsSnapshotCheckpoint && commit != commits.Max) continue;
-            await SnapshotReplay.PreloadTouched(baseline, window, crdtConfig);
-            foreach (var windowCommit in window)
-            {
-                await worker.ApplyCommit(windowCommit);
-                if (!pauseAt(windowCommit)) continue;
-                var view = new ScopedSnapshotView(worker);
-                try
-                {
-                    await atCommit(windowCommit, view);
-                }
-                finally
-                {
-                    view.Close();
-                }
-            }
-
-            window.Clear();
-        }
-    }
+    /// <summary>a read-only worker that the caller steps through commits with <see cref="ApplyCommit"/></summary>
+    internal static SnapshotWorker Stepwise(ISnapshotView baseline, HarmonyConfig crdtConfig) =>
+        new(baseline, new SortedSet<Commit>(), crdtConfig, persisting: false);
 
     private async ValueTask ApplyCommitChanges()
     {
@@ -101,7 +68,7 @@ internal class SnapshotWorker : ISnapshotView
         }
     }
 
-    private async ValueTask ApplyCommit(Commit commit)
+    internal async ValueTask ApplyCommit(Commit commit)
     {
         foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
         {

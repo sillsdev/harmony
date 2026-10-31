@@ -3,9 +3,13 @@ using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Db;
 
-internal interface ISnapshotView
+/// <summary>Each entity's newest snapshot as of one point in history.</summary>
+public interface ISnapshotView
 {
     ValueTask<ObjectSnapshot?> GetAsync(Guid entityId);
+    /// <summary>
+    /// <paramref name="predicate"/> may be translated to SQL or compiled and run in memory, so it has to work both ways
+    /// </summary>
     IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate);
     /// <summary>every entity's snapshot; enumerating it preloads the whole view</summary>
     IAsyncEnumerable<ObjectSnapshot> All();

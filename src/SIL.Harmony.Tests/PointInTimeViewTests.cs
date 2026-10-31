@@ -8,7 +8,7 @@ using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
 
-public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
+public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
     services.Configure<HarmonyConfig>(config => config.MaxChangesBetweenSnapshotCheckpoints = TestMaxChanges))
 {
     private const int TestMaxChanges = 8;

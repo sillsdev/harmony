@@ -28,6 +28,7 @@ public class PointInTimeReadBenchmarks
     private DataModelTestBase _model = null!;
     private Guid _wordId;
     private Commit[] _rows = null!;
+    private Commit _beforeFirstRow = null!;
     private HashSet<Guid> _pauses = null!;
     private Dictionary<Guid, Guid> _previous = null!;
 
@@ -65,6 +66,7 @@ public class PointInTimeReadBenchmarks
 
         _model.AddCommitsViaSync(history).Wait();
         _rows = [.. rows];
+        _beforeFirstRow = history[history.IndexOf(_rows[0]) - 1];
         _previous = _rows.ToDictionary(r => r.Id, r => history[history.IndexOf(r) - 1].Id);
         _pauses = [.. _rows.Select(r => r.Id), .. _previous.Values];
 
@@ -105,8 +107,8 @@ public class PointInTimeReadBenchmarks
     [Benchmark]
     public async Task<int> CommitReplay()
     {
-        await using var replay = await _model.DataModel.StartCommitReplay(_rows[0], _rows[^1]);
-        var states = new Dictionary<Guid, ObjectSnapshot?> { [_previous[_rows[0].Id]] = await ReadWord(replay) };
+        await using var replay = await _model.DataModel.StartCommitReplay(_beforeFirstRow, _rows[^1]);
+        var states = new Dictionary<Guid, ObjectSnapshot?>();
         while (await replay.ApplyNextCommit() is { } commit)
         {
             if (_pauses.Contains(commit.Id)) states[commit.Id] = await ReadWord(replay);

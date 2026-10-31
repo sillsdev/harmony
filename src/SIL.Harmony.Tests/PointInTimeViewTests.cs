@@ -148,7 +148,6 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
         while (!await IsCheckpoint(commits[fromIndex])) fromIndex++;
 
         await using var replay = await DataModel.StartCommitReplay(commits[fromIndex], commits[^1]);
-        await ShouldMatch(replay, await DataModel.OpenViewBeforeCommit(commits[fromIndex]));
         var applied = new List<Guid>();
         while (await replay.ApplyNextCommit() is { } commit)
         {
@@ -171,14 +170,14 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
     }
 
     [Fact]
-    public async Task ACommitReplayFromTheFirstCommitStartsEmptyAndStaysAtTheLastCommit()
+    public async Task ACommitReplayCoversExactlyItsRange()
     {
         var wordId = Guid.NewGuid();
         var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
 
         await using var replay = await DataModel.StartCommitReplay(commits[0], commits[^1]);
 
-        (await replay.All().ToArrayAsync(TestContext.Current.CancellationToken)).Should().BeEmpty();
+        await replay.Invoking(r => r.GetAsync(wordId).AsTask()).Should().ThrowAsync<InvalidOperationException>();
         (await replay.ApplyNextCommit()).Should().Be(commits[0]);
         Text(await replay.GetAsync(wordId)).Should().Be("first");
         (await replay.ApplyNextCommit()).Should().Be(commits[1]);

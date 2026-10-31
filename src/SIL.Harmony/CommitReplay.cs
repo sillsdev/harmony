@@ -6,8 +6,9 @@ namespace SIL.Harmony;
 
 /// <summary>
 /// Steps through a range of commits, one replay for the whole range, from <see cref="DataModel.StartCommitReplay"/>.
-/// It is itself the view of the snapshots as of the last applied commit, so what it returns changes with each
-/// <see cref="ApplyNextCommit"/>; <see cref="ObjectSnapshot"/>s read from it stay valid. Owns a database connection until disposed.
+/// It is itself the view of the snapshots as of <see cref="CurrentCommit"/>, so what it returns changes with each
+/// <see cref="ApplyNextCommit"/>, and reading it before the first one throws; <see cref="ObjectSnapshot"/>s read from it
+/// stay valid. Owns a database connection until disposed.
 /// </summary>
 public sealed class CommitReplay : ISnapshotView, IAsyncDisposable
 {
@@ -47,7 +48,7 @@ public sealed class CommitReplay : ISnapshotView, IAsyncDisposable
     /// <summary>the last commit applied, null before the first <see cref="ApplyNextCommit"/></summary>
     public Commit? CurrentCommit { get; private set; }
 
-    /// <returns>the commit just applied, or null once the range is done (the view then stays at the last commit)</returns>
+    /// <returns>the commit just applied, or null once the range is done (the view then stays at the last one)</returns>
     public async Task<Commit?> ApplyNextCommit()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -84,6 +85,8 @@ public sealed class CommitReplay : ISnapshotView, IAsyncDisposable
     private SnapshotWorker Open()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        //before then the worker holds commits from before the range, applied to reach its start
+        if (CurrentCommit is null) throw new InvalidOperationException($"Call {nameof(ApplyNextCommit)} before reading the replay");
         return _worker;
     }
 

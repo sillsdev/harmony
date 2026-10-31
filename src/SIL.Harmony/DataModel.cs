@@ -466,9 +466,13 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// <summary>
     /// Replays history from <paramref name="fromInclusive"/> to <paramref name="toInclusive"/> once, calling
     /// <paramref name="atCommit"/> with the snapshots as of each commit in that range, in commit order.
+    /// Costs one replay of every commit in the range, so it beats a <see cref="ReadAtCommit{T}(Commit, Func{ISnapshotView, Task{T}})"/>
+    /// or <see cref="GetAtCommit{T}(Commit, Guid)"/> per commit when the commits of interest are close together (a sync burst)
+    /// and loses to them when they are spread out: in a benchmark it lost with 20 rows 100 commits apart and won with 100.
     /// </summary>
+    /// <param name="fromInclusive">to get the state before the first commit of interest, start at the commit before it</param>
     /// <param name="atCommit">
-    /// the view is only valid until the returned task completes, the walk then applies the next commit to it;
+    /// the view throws once the returned task completes, because the walk then applies the next commit;
     /// <see cref="ObjectSnapshot"/>s read from it stay valid
     /// </param>
     public async Task WalkCommits(Commit fromInclusive, Commit toInclusive, Func<Commit, ISnapshotView, Task> atCommit)

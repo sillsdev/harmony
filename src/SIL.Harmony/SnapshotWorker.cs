@@ -58,7 +58,7 @@ internal class SnapshotWorker : ISnapshotView
 
     /// <summary>
     /// Applies <paramref name="commits"/> in order onto <paramref name="baseline"/>, calling <paramref name="atCommit"/>
-    /// after each one the filter accepts. The view passed to it is this worker, so it moves on once the callback returns.
+    /// after each one the filter accepts. The view passed to it throws once the callback returns, because the worker behind it moves on.
     /// </summary>
     internal static async Task Walk(ISnapshotView baseline,
         SortedSet<Commit> commits,
@@ -77,7 +77,16 @@ internal class SnapshotWorker : ISnapshotView
             foreach (var windowCommit in window)
             {
                 await worker.ApplyCommit(windowCommit);
-                if (pauseAt(windowCommit)) await atCommit(windowCommit, worker);
+                if (!pauseAt(windowCommit)) continue;
+                var view = new ScopedSnapshotView(worker);
+                try
+                {
+                    await atCommit(windowCommit, view);
+                }
+                finally
+                {
+                    view.Close();
+                }
             }
 
             window.Clear();

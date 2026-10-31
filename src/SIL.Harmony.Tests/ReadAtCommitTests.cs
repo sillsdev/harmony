@@ -146,6 +146,36 @@ public class ReadAtCommitTests() : DataModelTestBase(configure: services =>
         }
     }
 
+    [Fact]
+    public async Task WalkCommitsFromTheFirstCommitPausesAtIt()
+    {
+        var wordId = Guid.NewGuid();
+        var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
+        var texts = new List<string>();
+
+        await DataModel.WalkCommits(commits[0], commits[^1],
+            async (_, view) => texts.Add(((Word)(await view.GetAsync(wordId))!.Entity.DbObject).Text));
+
+        texts.Should().Equal("first", "second");
+    }
+
+    [Fact]
+    public async Task AWalkedViewThrowsOnceItsCallbackReturns()
+    {
+        var wordId = Guid.NewGuid();
+        var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
+        ISnapshotView? kept = null;
+
+        await DataModel.WalkCommits(commits[0], commits[0], (_, view) =>
+        {
+            kept = view;
+            return Task.CompletedTask;
+        });
+
+        await kept!.Invoking(view => view.GetAsync(wordId).AsTask()).Should().ThrowAsync<ObjectDisposedException>();
+        await kept!.Invoking(view => view.All().ToArrayAsync().AsTask()).Should().ThrowAsync<ObjectDisposedException>();
+    }
+
     private async Task<Commit[]> SyncInOneBatch(params IChange[] changes)
     {
         Commit[] commits = [.. changes.Select(change => NextCommit(change))];

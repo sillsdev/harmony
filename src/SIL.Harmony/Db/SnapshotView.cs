@@ -23,6 +23,39 @@ public interface ISnapshotView
         Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
 }
 
+/// <summary>a view that throws once <see cref="Close"/> is called, so a caller can't read a view that has moved on</summary>
+internal sealed class ScopedSnapshotView(ISnapshotView inner) : ISnapshotView
+{
+    private bool _closed;
+
+    public void Close() => _closed = true;
+
+    public ValueTask<ObjectSnapshot?> GetAsync(Guid entityId) => Open().GetAsync(entityId);
+
+    public IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate) => Guard(Open().Where(predicate));
+
+    public IAsyncEnumerable<ObjectSnapshot> All() => Guard(Open().All());
+
+    public Task PreloadAsync(IReadOnlyCollection<Guid> entityIds) => Open().PreloadAsync(entityIds);
+
+    public Task PreloadAllAsync() => Open().PreloadAllAsync();
+
+    private ISnapshotView Open()
+    {
+        ObjectDisposedException.ThrowIf(_closed, this);
+        return inner;
+    }
+
+    private async IAsyncEnumerable<ObjectSnapshot> Guard(IAsyncEnumerable<ObjectSnapshot> snapshots)
+    {
+        await foreach (var snapshot in snapshots)
+        {
+            Open();
+            yield return snapshot;
+        }
+    }
+}
+
 /// <summary>the view before the first commit</summary>
 internal sealed class EmptySnapshotView : ISnapshotView
 {

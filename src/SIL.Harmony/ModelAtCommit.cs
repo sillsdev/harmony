@@ -38,22 +38,25 @@ public sealed class ModelAtCommit : IAsyncDisposable
         return (T?)snapshot?.Entity.Copy().DbObject;
     }
 
-    public async Task<ObjectSnapshot?> GetSnapshot(Guid entityId) => await Open().GetAsync(entityId);
+    public async Task<ObjectSnapshot?> GetSnapshot(Guid entityId) => await View.GetAsync(entityId);
 
     /// <summary>snapshots whose entity holds a reference to <paramref name="entityId"/></summary>
     public async IAsyncEnumerable<ObjectSnapshot> WhereReferences(Guid entityId, bool includeDeleted = false)
     {
-        await foreach (var snapshot in Open().WhereReferences(entityId, includeDeleted))
+        await foreach (var snapshot in View.WhereReferences(entityId, includeDeleted))
         {
             yield return snapshot;
         }
     }
 
-    private ISnapshotView Open()
+    private ISnapshotView View
     {
-        //the replayed part lives in memory and would keep answering after the connection is gone
-        ObjectDisposedException.ThrowIf(_disposed, this);
-        return _view;
+        get
+        {
+            //the replayed part lives in memory and would keep answering after the connection is gone
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return _view;
+        }
     }
 
     public async ValueTask DisposeAsync()

@@ -295,22 +295,23 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<NoteChangeTheOldAppCantApply>()));
     }
 
-    private async Task<(DataModelTestBase oldApp, Guid wordId)> OldAppThatSkippedANote()
+    private async Task<(DataModelTestBase oldApp, Guid wordId)> OldAppWithAWord()
     {
         var oldApp = ForkDatabase(OldAppThatCantApplyNotes);
         await oldApp.ModelVersionService.ReconcileModelVersions();
         var wordId = Guid.NewGuid();
         await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
-        await SyncFromOtherClient(oldApp,
-            [new NoteChangeTheOldAppCantApply(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
         return (oldApp, wordId);
     }
 
     [Fact]
     public async Task ChangeFromANewerVersionThatThrowsIsSkipped()
     {
-        var (oldApp, wordId) = await OldAppThatSkippedANote();
+        var (oldApp, wordId) = await OldAppWithAWord();
         await using var _ = oldApp;
+
+        await SyncFromOtherClient(oldApp,
+            [new NoteChangeTheOldAppCantApply(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
 
         var word = await oldApp.DataModel.GetLatest<Word>(wordId);
         word!.Note.Should().BeNull();
@@ -320,10 +321,8 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     [Fact]
     public async Task ChangeFromTheCurrentVersionThatThrowsFailsTheSync()
     {
-        await using var oldApp = ForkDatabase(OldAppThatCantApplyNotes);
-        await oldApp.ModelVersionService.ReconcileModelVersions();
-        var wordId = Guid.NewGuid();
-        await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
+        var (oldApp, wordId) = await OldAppWithAWord();
+        await using var _ = oldApp;
 
         var sync = () => SyncFromOtherClient(oldApp, new NoteChangeTheOldAppCantApply(wordId, "a note"), version: 0);
 
@@ -333,8 +332,10 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     [Fact]
     public async Task SkippedChangeIsAppliedAfterUpgrade()
     {
-        var (oldApp, wordId) = await OldAppThatSkippedANote();
+        var (oldApp, wordId) = await OldAppWithAWord();
         await using var _ = oldApp;
+        await SyncFromOtherClient(oldApp, new NoteChangeTheOldAppCantApply(wordId, "a note"), version: 1);
+        (await NoteOf(oldApp, wordId)).Should().BeNull();
 
         await using var newApp = oldApp.ForkDatabase(AppWithNotesThatApply);
         await newApp.ModelVersionService.ReconcileModelVersions();
@@ -345,8 +346,10 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     [Fact]
     public async Task SkippedChangeThatStillThrowsAfterUpgradeFailsTheReconcile()
     {
-        var (oldApp, wordId) = await OldAppThatSkippedANote();
+        var (oldApp, wordId) = await OldAppWithAWord();
         await using var _ = oldApp;
+        await SyncFromOtherClient(oldApp,
+            [new NoteChangeTheOldAppCantApply(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
 
         await using var newApp = oldApp.ForkDatabase(AppWithNotesThatStillThrow);
         var reconcile = () => newApp.ModelVersionService.ReconcileModelVersions();

@@ -74,7 +74,7 @@ internal class SnapshotWorker : ISnapshotView
                 }
                 catch (Exception e) when (commitChange.AuthoredModelVersion > _crdtConfig.CurrentModelVersion)
                 {
-                    SkipFutureChange(commitChange, commit, e);
+                    LogSkippedFutureChange(commitChange, commit, e);
                     continue;
                 }
 
@@ -128,7 +128,7 @@ internal class SnapshotWorker : ISnapshotView
     /// this model doesn't have. Skipped like an <see cref="OpaqueChange"/>: listing the type in the model version
     /// that changed it replays the change after an upgrade, and a throw then is a bug and isn't caught.
     /// </summary>
-    private void SkipFutureChange(ChangeEntity<IChange> commitChange, Commit commit, Exception exception)
+    private void LogSkippedFutureChange(ChangeEntity<IChange> commitChange, Commit commit, Exception exception)
     {
         var changeType = _crdtConfig.ChangeTypeName(commitChange.Change);
         _logger.LogWarning(exception,

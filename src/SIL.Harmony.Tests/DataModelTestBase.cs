@@ -89,7 +89,6 @@ public class DataModelTestBase : CommitTestBase, IAsyncLifetime
     internal HarmonyConfig CrdtConfig => _services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
 
     internal ModelVersionService ModelVersionService => _services.GetRequiredService<ModelVersionService>();
-    internal SnapshotReplay SnapshotReplay => _services.GetRequiredService<SnapshotReplay>();
 
     public async ValueTask<Commit> WriteNextChange(IChange change)
     {

@@ -18,13 +18,6 @@ internal class SnapshotReplay(IOptions<HarmonyConfig> config)
         return SnapshotWorker.ReplayCommits(baseline, commits, Config);
     }
 
-    /// <inheritdoc cref="SnapshotWorker.ComputeNewSnapshotsAndCheckpoints"/>
-    public Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeNewSnapshotsAndCheckpoints(
-        ISnapshotView baseline, SortedSet<Commit> commits)
-    {
-        return SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commits, Config);
-    }
-
     /// <summary>
     /// Rebuilds every snapshot the window covers by replaying its commits onto the state it resumes from.
     /// A window resuming from nothing rebuilds all of history.
@@ -51,7 +44,7 @@ internal class SnapshotReplay(IOptions<HarmonyConfig> config)
         }
 
         await PreloadTouched(baseline, commitsToApply);
-        var (newSnapshots, checkpoints) = await ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply);
+        var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, Config);
         await repo.AddSnapshots(newSnapshots, checkpoints);
     }
 

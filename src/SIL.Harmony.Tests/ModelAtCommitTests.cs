@@ -102,6 +102,10 @@ public class ModelAtCommitTests() : DataModelTestBase(configure: services =>
         var commits = await SyncInOneBatch(changes);
         (await DbContext.Commits.CountAsync(c => !c.IsSnapshotCheckpoint, TestContext.Current.CancellationToken))
             .Should().BePositive("otherwise nothing here replays");
+        await using (var atCommit = await DataModel.OpenAtCommit(commits[2]))
+        {
+            (await atCommit.Get<Word>(wordId))!.Text.Should().Be("text 1");
+        }
 
         foreach (var commit in commits[1..])
         {
@@ -125,6 +129,31 @@ public class ModelAtCommitTests() : DataModelTestBase(configure: services =>
         await model.DisposeAsync();
 
         await model.Invoking(m => m.Get<Word>(wordId)).Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task WhereReferencesStartedAfterDisposeThrows()
+    {
+        var wordId = Guid.NewGuid();
+        var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), NewDefinition(Guid.NewGuid(), wordId, "a definition"));
+        var model = await DataModel.OpenAtCommit(commits[1]);
+        var referencing = model.WhereReferences(wordId);
+
+        await model.DisposeAsync();
+
+        await referencing.Invoking(r => r.ToArrayAsync(TestContext.Current.CancellationToken).AsTask()).Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task EditingAReadEntityDoesNotChangeTheNextRead()
+    {
+        var wordId = Guid.NewGuid();
+        var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
+        await using var model = await DataModel.OpenAtCommit(commits[0]);
+
+        (await model.Get<Word>(wordId))!.Text = "edited";
+
+        (await model.Get<Word>(wordId))!.Text.Should().Be("first");
     }
 
     [Fact]

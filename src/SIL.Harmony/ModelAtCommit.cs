@@ -34,14 +34,20 @@ public sealed class ModelAtCommit : IAsyncDisposable
         if (!_config.ObjectTypes.Contains(typeof(T)))
             throw new InvalidOperationException($"{typeof(T).Name} is not a registered object type");
         var snapshot = await GetSnapshot(entityId);
-        return (T?)snapshot?.Entity.DbObject;
+        //a copy, so a caller editing what it read can't change what the next read returns
+        return (T?)snapshot?.Entity.Copy().DbObject;
     }
 
     public async Task<ObjectSnapshot?> GetSnapshot(Guid entityId) => await Open().GetAsync(entityId);
 
     /// <summary>snapshots whose entity holds a reference to <paramref name="entityId"/></summary>
-    public IAsyncEnumerable<ObjectSnapshot> WhereReferences(Guid entityId, bool includeDeleted = false) =>
-        Open().WhereReferences(entityId, includeDeleted);
+    public async IAsyncEnumerable<ObjectSnapshot> WhereReferences(Guid entityId, bool includeDeleted = false)
+    {
+        await foreach (var snapshot in Open().WhereReferences(entityId, includeDeleted))
+        {
+            yield return snapshot;
+        }
+    }
 
     private ISnapshotView Open()
     {

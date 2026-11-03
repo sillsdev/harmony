@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
@@ -7,10 +9,13 @@ namespace SIL.Harmony.Tests;
 
 public class JsonSyncableTests
 {
-    private static IJsonSyncableFactory Factory { get; } = new ServiceCollection()
+    private static ServiceProvider Services { get; } = new ServiceCollection()
         .AddCrdtDataSample(":memory:")
-        .BuildServiceProvider()
-        .GetRequiredService<IJsonSyncableFactory>();
+        .BuildServiceProvider();
+
+    private static IJsonSyncableFactory Factory => Services.GetRequiredService<IJsonSyncableFactory>();
+    private static JsonSerializerOptions SerializerOptions => Services.GetRequiredService<JsonSerializerOptions>();
+    private static SyncService SyncService => Services.GetRequiredService<SyncService>();
 
     [Fact]
     public async Task WritesPerClientFile()
@@ -110,7 +115,7 @@ public class JsonSyncableTests
         var dir = Directory.CreateTempSubdirectory("harmony-json-syncable-test-");
         try
         {
-            var syncable = new JsonSyncable(dir, SerializerOptions, NullLogger<JsonSyncable>.Instance);
+            var syncable = new JsonSyncable(dir, SerializerOptions, SyncService, NullLogger<JsonSyncable>.Instance);
             var clientId = Guid.NewGuid();
             Commit[] commits = [MakeCommit(clientId, 0), MakeCommit(clientId, 1)];
             await syncable.AddRangeFromSync(commits);
@@ -137,7 +142,7 @@ public class JsonSyncableTests
         var dir = Directory.CreateTempSubdirectory("harmony-json-syncable-test-");
         try
         {
-            var syncable = new JsonSyncable(dir, SerializerOptions, NullLogger<JsonSyncable>.Instance);
+            var syncable = new JsonSyncable(dir, SerializerOptions, SyncService, NullLogger<JsonSyncable>.Instance);
             var clientId = Guid.NewGuid();
             var file = ClientFile(dir, clientId);
             var first = MakeCommit(clientId, 0);
@@ -172,7 +177,7 @@ public class JsonSyncableTests
         var dir = Directory.CreateTempSubdirectory("harmony-json-syncable-test-");
         try
         {
-            var syncable = new JsonSyncable(dir, SerializerOptions, NullLogger<JsonSyncable>.Instance);
+            var syncable = new JsonSyncable(dir, SerializerOptions, SyncService, NullLogger<JsonSyncable>.Instance);
             var clientId = Guid.NewGuid();
             var file = ClientFile(dir, clientId);
             await File.WriteAllTextAsync(file, Truncated(MakeCommit(clientId, 0)), TestContext.Current.CancellationToken);
@@ -199,7 +204,7 @@ public class JsonSyncableTests
         var dir = Directory.CreateTempSubdirectory("harmony-json-syncable-test-");
         try
         {
-            var syncable = new JsonSyncable(dir, SerializerOptions, NullLogger<JsonSyncable>.Instance);
+            var syncable = new JsonSyncable(dir, SerializerOptions, SyncService, NullLogger<JsonSyncable>.Instance);
             var clientId = Guid.NewGuid();
             var file = ClientFile(dir, clientId);
             var first = MakeCommit(clientId, 0);
@@ -232,7 +237,7 @@ public class JsonSyncableTests
         var dir = Directory.CreateTempSubdirectory("harmony-json-syncable-test-");
         try
         {
-            var syncable = new JsonSyncable(dir, SerializerOptions, NullLogger<JsonSyncable>.Instance);
+            var syncable = new JsonSyncable(dir, SerializerOptions, SyncService, NullLogger<JsonSyncable>.Instance);
             var clientId = Guid.NewGuid();
             await File.WriteAllTextAsync(ClientFile(dir, clientId),
                 Serialize(MakeCommit(clientId, 0)) + newline
@@ -256,7 +261,7 @@ public class JsonSyncableTests
         var dir = Directory.CreateTempSubdirectory("harmony-json-syncable-test-");
         try
         {
-            var syncable = new JsonSyncable(dir, SerializerOptions, NullLogger<JsonSyncable>.Instance);
+            var syncable = new JsonSyncable(dir, SerializerOptions, SyncService, NullLogger<JsonSyncable>.Instance);
             var clientId = Guid.NewGuid();
             await File.WriteAllTextAsync(ClientFile(dir, clientId),
                 Serialize(MakeCommit(clientId, 0)) + "\n" + Truncated(MakeCommit(clientId, 1)) + "\n",

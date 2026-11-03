@@ -257,8 +257,8 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         (await NoteOf(fixedApp, wordId)).Should().Be("a note");
     }
 
-    /// <summary>the old code for <see cref="SetWordNoteChange"/>, which can't apply it, like a patch of a property the old model doesn't have</summary>
-    public class NoteChangeTheOldAppCantApply(Guid entityId, string note) : EditChange<Word>(entityId), IPolyType
+    /// <summary><see cref="SetWordNoteChange"/> code that can't apply it, like a patch of a property the model doesn't have</summary>
+    public class NoteChangeThatThrows(Guid entityId, string note) : EditChange<Word>(entityId), IPolyType
     {
         public static string TypeName => nameof(SetWordNoteChange);
         public string Note { get; } = note;
@@ -273,7 +273,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         services.Configure<HarmonyConfig>(config =>
         {
             config.ChangeTypeListBuilder.Remove<SetWordNoteChange>();
-            config.ChangeTypeListBuilder.Add<NoteChangeTheOldAppCantApply>();
+            config.ChangeTypeListBuilder.Add<NoteChangeThatThrows>();
             VersionZeroWithout(config);
         });
     }
@@ -292,7 +292,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     {
         OldAppThatCantApplyNotes(services);
         services.Configure<HarmonyConfig>(config =>
-            config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<NoteChangeTheOldAppCantApply>()));
+            config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<NoteChangeThatThrows>()));
     }
 
     private async Task<(DataModelTestBase oldApp, Guid wordId)> OldAppWithAWord()
@@ -311,7 +311,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         await using var _ = oldApp;
 
         await SyncFromOtherClient(oldApp,
-            [new NoteChangeTheOldAppCantApply(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
+            [new NoteChangeThatThrows(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
 
         var word = await oldApp.DataModel.GetLatest<Word>(wordId);
         word!.Note.Should().BeNull();
@@ -324,7 +324,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var (oldApp, wordId) = await OldAppWithAWord();
         await using var _ = oldApp;
 
-        var sync = () => SyncFromOtherClient(oldApp, new NoteChangeTheOldAppCantApply(wordId, "a note"), version: 0);
+        var sync = () => SyncFromOtherClient(oldApp, new NoteChangeThatThrows(wordId, "a note"), version: 0);
 
         await sync.Should().ThrowAsync<InvalidOperationException>().WithMessage("Word has no note");
     }
@@ -334,7 +334,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     {
         var (oldApp, wordId) = await OldAppWithAWord();
         await using var _ = oldApp;
-        await SyncFromOtherClient(oldApp, new NoteChangeTheOldAppCantApply(wordId, "a note"), version: 1);
+        await SyncFromOtherClient(oldApp, new NoteChangeThatThrows(wordId, "a note"), version: 1);
         (await NoteOf(oldApp, wordId)).Should().BeNull();
 
         await using var newApp = oldApp.ForkDatabase(AppWithNotesThatApply);
@@ -349,7 +349,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         var (oldApp, wordId) = await OldAppWithAWord();
         await using var _ = oldApp;
         await SyncFromOtherClient(oldApp,
-            [new NoteChangeTheOldAppCantApply(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
+            [new NoteChangeThatThrows(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
 
         await using var newApp = oldApp.ForkDatabase(AppWithNotesThatStillThrow);
         var reconcile = () => newApp.ModelVersionService.ReconcileModelVersions();

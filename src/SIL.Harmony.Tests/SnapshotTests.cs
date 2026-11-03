@@ -153,6 +153,94 @@ public class SnapshotTests : DataModelTestBase
         word.Tags.Should().BeEquivalentTo([new Tag { Id = tagId, Text = "tag-1" }]);
     }
 
+    //An entity id belongs to one type. A commit authored here is replayed strictly, so reusing an id for another type
+    //throws and the transaction rolls back; a commit that is already in shared history is replayed leniently.
+
+    [Fact]
+    public async Task AuthoringACreateForAnIdThatBelongsToAnotherTypeThrowsAndPersistsNothing()
+    {
+        //ported from an app test: two creates in one commit sharing an id
+        var shared = Guid.NewGuid();
+        var act = async () => await WriteNextChange(
+            [
+                new NewWordChange(shared, "in"),
+                NewDefinition(shared, "in", "preposition", definitionId: shared),
+            ]);
+
+        await act.Should().ThrowAsync<CommitValidationException>().WithMessage($"*{shared}*Word*NewDefinitionChange*Definition*");
+        (await DbContext.Commits.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+        (await DbContext.Snapshots.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task AuthoringAChangeForAnIdThatBelongsToAnotherTypeThrowsAcrossCommits()
+    {
+        var shared = Guid.NewGuid();
+        await WriteNextChange(new NewWordChange(shared, "in"));
+
+        var create = async () => await WriteNextChange(NewDefinition(shared, "in", "preposition", definitionId: shared));
+        await create.Should().ThrowAsync<CommitValidationException>();
+        //an edit on the wrong type used to surface as NotSupportedException from inside replay
+        var edit = async () => await WriteNextChange(new SetDefinitionPartOfSpeechChange(shared, "noun"));
+        await edit.Should().ThrowAsync<CommitValidationException>();
+
+        (await DbContext.Commits.CountAsync(TestContext.Current.CancellationToken)).Should().Be(1);
+        var word = await DataModel.GetLatest<Word>(shared);
+        word.Should().NotBeNull();
+        word.Text.Should().Be("in");
+    }
+
+    [Fact]
+    public async Task AuthoringACreateForAnIdWhoseEntityOfAnotherTypeWasDeletedThrows()
+    {
+        //snapshots chain by entity id, so a Definition on a deleted Word's id would continue the Word's chain
+        var shared = Guid.NewGuid();
+        await WriteNextChange(new NewWordChange(shared, "in"));
+        await WriteNextChange(new DeleteChange<Word>(shared));
+
+        var act = async () => await WriteNextChange(NewDefinition(shared, "in", "preposition", definitionId: shared));
+
+        await act.Should().ThrowAsync<CommitValidationException>();
+        (await DbContext.Commits.CountAsync(TestContext.Current.CancellationToken)).Should().Be(2);
+    }
+
+    [Fact]
+    public async Task AuthoringADuplicateCreateOfTheSameTypeIsStillAccepted()
+    {
+        var shared = Guid.NewGuid();
+        await WriteNextChange(new NewWordChange(shared, "in"));
+        await WriteNextChange(new NewWordChange(shared, "on"));
+
+        var word = await DataModel.GetLatest<Word>(shared);
+        word.Should().NotBeNull();
+        word.Text.Should().Be("in");
+    }
+
+    [Fact]
+    public async Task ASyncedCreateForAnIdThatBelongsToAnotherTypeIsSkippedNotThrown()
+    {
+        //the commit is already in another client's history, so replay must stay deterministic and must not fail
+        var shared = Guid.NewGuid();
+        var commit = NextCommit(
+            new NewWordChange(shared, "in"),
+            NewDefinition(shared, "in", "preposition", definitionId: shared));
+
+        await AddCommitsViaSync([commit]);
+
+        var word = await DataModel.GetLatest<Word>(shared);
+        word.Should().NotBeNull();
+        (await DataModel.QueryLatest<Definition>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+        //a later local commit replays the window containing the synced one, which must stay lenient
+        await WriteNextChange(SetWord(shared, "on"));
+        (await DataModel.GetLatest<Word>(shared))!.Text.Should().Be("on");
+        //and a rebuild from history agrees
+        var before = await DataModel.QueryLatest<Word>().ToArrayAsync(TestContext.Current.CancellationToken);
+        await DataModel.RegenerateSnapshots();
+        var after = await DataModel.QueryLatest<Word>().ToArrayAsync(TestContext.Current.CancellationToken);
+        after.Should().BeEquivalentTo(before);
+        (await DataModel.QueryLatest<Definition>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+    }
+
     [Fact]
     public async Task RegenerateSnapshots_WillArriveAtTheSameState()
     {

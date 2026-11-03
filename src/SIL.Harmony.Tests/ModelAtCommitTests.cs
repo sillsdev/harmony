@@ -8,7 +8,7 @@ using SIL.Harmony.Sample.Models;
 
 namespace SIL.Harmony.Tests;
 
-public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
+public class ModelAtCommitTests() : DataModelTestBase(configure: services =>
     services.Configure<HarmonyConfig>(config => config.MaxChangesBetweenSnapshotCheckpoints = TestMaxChanges))
 {
     private const int TestMaxChanges = 8;
@@ -23,21 +23,19 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
             NewDefinition(definitionId, wordId, "a definition"),
             new SetWordTextChange(wordId, "second"));
 
-        await using var view = await DataModel.OpenViewAtCommit(commits[1].Id);
+        await using var model = await DataModel.OpenAtCommit(commits[1].Id);
 
-        ((Word)(await view.GetAsync(wordId))!.Entity.DbObject).Text.Should().Be("first");
-        (await ((ISnapshotView)view).WhereReferences(wordId, includeDeleted: false).ToArrayAsync(TestContext.Current.CancellationToken))
+        (await model.Get<Word>(wordId))!.Text.Should().Be("first");
+        (await model.WhereReferences(wordId).ToArrayAsync(TestContext.Current.CancellationToken))
             .Should().ContainSingle().Which.EntityId.Should().Be(definitionId);
     }
 
     [Fact]
-    public async Task BeforeTheFirstCommitTheViewIsEmpty()
+    public async Task BeforeTheFirstCommitThereIsNoModel()
     {
         var commits = await SyncInOneBatch(new SetWordTextChange(Guid.NewGuid(), "first"));
 
-        await using var view = await DataModel.OpenViewBeforeCommit(commits[0]);
-
-        (await view.All().ToArrayAsync(TestContext.Current.CancellationToken)).Should().BeEmpty();
+        (await DataModel.OpenBeforeCommit(commits[0])).Should().BeNull();
     }
 
     [Fact]
@@ -46,9 +44,10 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
         var wordId = Guid.NewGuid();
         var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
 
-        await using var view = await DataModel.OpenViewBeforeCommit(commits[1].Id);
+        await using var model = await DataModel.OpenBeforeCommit(commits[1].Id);
 
-        ((Word)(await view.GetAsync(wordId))!.Entity.DbObject).Text.Should().Be("first");
+        model!.Commit.Id.Should().Be(commits[0].Id);
+        (await model.Get<Word>(wordId))!.Text.Should().Be("first");
     }
 
     [Fact]
@@ -60,8 +59,8 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
         var persisted = await DbContext.Snapshots.SingleAsync(s => s.CommitId == commit.Id, TestContext.Current.CancellationToken);
         (await IsCheckpoint(commit)).Should().BeTrue();
 
-        await using var view = await DataModel.OpenViewAtCommit(commit);
-        var read = await view.GetAsync(wordId);
+        await using var model = await DataModel.OpenAtCommit(commit);
+        var read = await model.GetSnapshot(wordId);
 
         read!.Id.Should().Be(persisted.Id, "a replay would have built a new snapshot");
     }
@@ -81,8 +80,8 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
         var commit = commits[3];
         (await IsCheckpoint(commit)).Should().BeFalse("the word's snapshot at the commit was pruned, so reading it needs a replay");
 
-        await using var view = await DataModel.OpenViewAtCommit(commit);
-        var referencing = await ((ISnapshotView)view).WhereReferences(antonymAtCommit, includeDeleted: false).ToArrayAsync(TestContext.Current.CancellationToken);
+        await using var model = await DataModel.OpenAtCommit(commit);
+        var referencing = await model.WhereReferences(antonymAtCommit).ToArrayAsync(TestContext.Current.CancellationToken);
 
         referencing.Select(s => s.EntityId).Should().Equal(wordId);
     }
@@ -106,9 +105,9 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
 
         foreach (var commit in commits[1..])
         {
-            await using var view = await DataModel.OpenViewAtCommit(commit);
-            var word = (await view.GetAsync(wordId))!.Entity.DbObject;
-            var definition = (await view.GetAsync(definitionId))!.Entity.DbObject;
+            await using var model = await DataModel.OpenAtCommit(commit);
+            var word = await model.Get<Word>(wordId);
+            var definition = await model.Get<Definition>(definitionId);
 
             word.Should().BeEquivalentTo(await DataModel.GetAtCommit<Word>(commit, wordId));
             definition.Should().BeEquivalentTo(await DataModel.GetAtCommit<Definition>(commit, definitionId));
@@ -116,16 +115,57 @@ public class PointInTimeViewTests() : DataModelTestBase(configure: services =>
     }
 
     [Fact]
-    public async Task ADisposedViewThrows()
+    public async Task ADisposedModelThrows()
     {
         var wordId = Guid.NewGuid();
         var commits = await SyncInOneBatch(new SetWordTextChange(wordId, "first"), new SetWordTextChange(wordId, "second"));
-        var view = await DataModel.OpenViewAtCommit(commits[0]);
-        await view.GetAsync(wordId);
+        var model = await DataModel.OpenAtCommit(commits[0]);
+        await model.Get<Word>(wordId);
 
-        await view.DisposeAsync();
+        await model.DisposeAsync();
 
-        await view.Invoking(v => v.GetAsync(wordId).AsTask()).Should().ThrowAsync<ObjectDisposedException>();
+        await model.Invoking(m => m.Get<Word>(wordId)).Should().ThrowAsync<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task GetRejectsATypeThatIsNotRegistered()
+    {
+        var commits = await SyncInOneBatch(new SetWordTextChange(Guid.NewGuid(), "first"));
+        await using var model = await DataModel.OpenAtCommit(commits[0]);
+
+        //a missing entity too, so the check can't depend on there being a snapshot to cast
+        await model.Invoking(m => m.Get<object>(Guid.NewGuid())).Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task TheCommitIsNotTracked()
+    {
+        var commits = await SyncInOneBatch(new SetWordTextChange(Guid.NewGuid(), "first"), new SetWordTextChange(Guid.NewGuid(), "second"));
+
+        await using var atCommit = await DataModel.OpenAtCommit(commits[1]);
+        await using var beforeCommit = await DataModel.OpenBeforeCommit(commits[1]);
+
+        DbContext.Entry(atCommit.Commit).State.Should().Be(EntityState.Detached);
+        DbContext.Entry(beforeCommit!.Commit).State.Should().Be(EntityState.Detached);
+    }
+
+    [Fact]
+    public async Task OpeningWaitsForTheRepositoryLock()
+    {
+        //on disk so the lock isn't the one every in-memory test shares
+        await using var onDisk = new DataModelTestBase(saveToDisk: true);
+        var commit = await onDisk.WriteNextChange(SetWord(Guid.NewGuid(), "first"));
+
+        Task<ModelAtCommit> opening;
+        await using (var repo = onDisk.CreateRepository())
+        using (await repo.Lock())
+        {
+            opening = onDisk.DataModel.OpenAtCommit(commit);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+            opening.IsCompleted.Should().BeFalse();
+        }
+
+        await using var model = await opening;
     }
 
     private async Task<Commit[]> SyncInOneBatch(params IChange[] changes)

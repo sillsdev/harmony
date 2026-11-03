@@ -422,53 +422,47 @@ public class DataModel : ISyncable, IAsyncDisposable
     }
 
     /// <summary>
-    /// Replays history up to <paramref name="commit"/> once and opens the snapshots as of it, for asking the same point
-    /// in history several things. A single entity is cheaper through <see cref="GetAtCommit{T}(Commit, Guid)"/>, which can
-    /// skip the replay. The view holds a database connection until disposed; <see cref="ObjectSnapshot"/>s read from it stay valid.
+    /// Replays history up to the commit once, for reading several entities as of it. A single entity is cheaper through
+    /// <see cref="GetAtCommit{T}(Guid, Guid)"/>, which can skip the replay. The replay holds the repository lock so a sync
+    /// can't land part way through it; later reads of entities the replay didn't touch go to the database and aren't protected.
     /// </summary>
-    public Task<SnapshotView> OpenViewAtCommit(Commit commit)
+    public Task<ModelAtCommit> OpenAtCommit(Commit commit) => OpenAtCommit(commit.Id);
+
+    /// <inheritdoc cref="OpenAtCommit(Commit)"/>
+    public async Task<ModelAtCommit> OpenAtCommit(Guid commitId)
     {
-        return OpenView(repo => ReplayToCommit(commit, repo));
+        return (await Open(async repo => await repo.CurrentCommits().AsNoTracking().SingleAsync(c => c.Id == commitId)))!;
     }
 
-    /// <inheritdoc cref="OpenViewAtCommit(Commit)"/>
-    public Task<SnapshotView> OpenViewAtCommit(Guid commitId)
+    /// <summary><see cref="OpenAtCommit(Commit)"/> at the commit before this one; null before the first commit</summary>
+    public Task<ModelAtCommit?> OpenBeforeCommit(Commit commit) => OpenBeforeCommit(commit.Id);
+
+    /// <inheritdoc cref="OpenBeforeCommit(Commit)"/>
+    public Task<ModelAtCommit?> OpenBeforeCommit(Guid commitId)
     {
-        return OpenView(async repo => await ReplayToCommit(await repo.CurrentCommits().SingleAsync(c => c.Id == commitId), repo));
+        return Open(async repo => await repo.FindPreviousCommit(await repo.CurrentCommits().SingleAsync(c => c.Id == commitId)));
     }
 
-    /// <summary>
-    /// <see cref="OpenViewAtCommit(Commit)"/> as of the commit before <paramref name="commit"/>; the view is empty before the first commit.
-    /// </summary>
-    public Task<SnapshotView> OpenViewBeforeCommit(Commit commit)
-    {
-        return OpenView(repo => ReplayToBefore(commit, repo));
-    }
-
-    /// <inheritdoc cref="OpenViewBeforeCommit(Commit)"/>
-    public Task<SnapshotView> OpenViewBeforeCommit(Guid commitId)
-    {
-        return OpenView(async repo => await ReplayToBefore(await repo.CurrentCommits().SingleAsync(c => c.Id == commitId), repo));
-    }
-
-    private async Task<SnapshotView> OpenView(Func<CrdtRepository, Task<ISnapshotView>> replay)
+    private async Task<ModelAtCommit?> Open(Func<CrdtRepository, Task<Commit?>> findCommit)
     {
         var repo = await _crdtRepositoryFactory.CreateRepository();
         try
         {
-            return new SnapshotView(repo, await replay(repo));
+            using var locked = await repo.Lock();
+            var commit = await findCommit(repo);
+            if (commit is null)
+            {
+                await repo.DisposeAsync();
+                return null;
+            }
+
+            return new ModelAtCommit(repo, await ReplayToCommit(commit, repo), commit, _crdtConfig.Value);
         }
         catch
         {
             await repo.DisposeAsync();
             throw;
         }
-    }
-
-    private async Task<ISnapshotView> ReplayToBefore(Commit commit, CrdtRepository repo)
-    {
-        var previousCommit = await repo.FindPreviousCommit(commit);
-        return previousCommit is null ? EmptySnapshotView.Instance : await ReplayToCommit(previousCommit, repo);
     }
 
     private async Task<ISnapshotView> ReplayToCommit(Commit commit, CrdtRepository repo)

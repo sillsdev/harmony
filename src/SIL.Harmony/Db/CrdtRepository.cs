@@ -318,6 +318,7 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         // if (!string.IsNullOrWhiteSpace(commit.ParentHash)) return await FindCommitByHash(commit.ParentHash);
         return await Commits.WhereBefore(commit)
             .DefaultOrderDescending()
+            .AsNoTracking()
             .FirstOrDefaultAsync();
     }
 

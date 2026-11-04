@@ -7,11 +7,12 @@ using SIL.Harmony.Config;
 namespace SIL.Harmony.Changes;
 
 /// <summary>
-/// Owns <see cref="IChange"/> discrimination. Requires <c>$type</c> as the first JSON property
+/// Owns <see cref="IChange"/> discrimination. Every stored change has <c>$type</c> as its first JSON property
 /// (matching synthetic write order from <see cref="Config.HarmonyConfig"/>).
-/// Known discriminators deserialize via cached concrete <see cref="JsonTypeInfo"/>;
-/// an unknown discriminator either throws or falls back to <see cref="OpaqueChange"/>
-/// (preserving the raw payload), depending on <see cref="UnknownChangeHandling"/>.
+/// Registered types are written with their discriminator and deserialize via cached concrete <see cref="JsonTypeInfo"/>.
+/// An unregistered discriminator (from a newer client) throws or, per <see cref="UnknownChangeHandling"/>, is read as an
+/// <see cref="OpaqueChange"/> that is written back unchanged and never applied.
+/// The app itself can't author an unregistered type: <see cref="DataModel"/> rejects it.
 /// </summary>
 internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
 {

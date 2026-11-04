@@ -183,6 +183,20 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     [Fact]
+    public async Task AuthoringAnUnregisteredTypeThrows()
+    {
+        await using var oldApp = ForkDatabase(OldAppWithoutNotes);
+        var wordId = Guid.NewGuid();
+        await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
+        var commitsBefore = oldApp.DbContext.Commits.Count();
+
+        var act = async () => await oldApp.WriteNextChange(new SetWordNoteChange(wordId, "note"));
+
+        (await act.Should().ThrowAsync<ArgumentException>()).WithMessage($"*{nameof(SetWordNoteChange)}*");
+        oldApp.DbContext.Commits.Count().Should().Be(commitsBefore);
+    }
+
+    [Fact]
     public async Task UnknownTypeIsAppliedAfterUpgrade()
     {
         await using var oldApp = ForkDatabase(OldAppWithoutNotes);

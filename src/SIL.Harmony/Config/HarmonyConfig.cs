@@ -109,6 +109,8 @@ public class HarmonyConfig
         _jsonOptionsBuilder.Configure(configure);
     }
 
+    internal bool IsRegisteredChangeType(Type type) => _lazyChangeDiscriminatorMaps.Value.ByType.ContainsKey(type);
+
     private ChangeDiscriminatorMaps BuildChangeDiscriminatorMaps()
     {
         ModelVersionBuilder.Freeze();

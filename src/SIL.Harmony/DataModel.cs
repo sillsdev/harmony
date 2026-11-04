@@ -446,7 +446,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     /// <inheritdoc cref="OpenBeforeCommit(Commit)"/>
     public Task<ModelAtCommit?> OpenBeforeCommit(Guid commitId)
     {
-        return Open(async repo => await repo.FindPreviousCommit(await repo.CurrentCommits().SingleAsync(c => c.Id == commitId)));
+        return Open(async repo => await repo.FindPreviousCommit(await repo.CurrentCommits().AsNoTracking().SingleAsync(c => c.Id == commitId)));
     }
 
     private async Task<ModelAtCommit?> Open(Func<CrdtRepository, Task<Commit?>> findCommit)

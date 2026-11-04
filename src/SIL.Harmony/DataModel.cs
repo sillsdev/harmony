@@ -424,9 +424,58 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
 
         //we don't have a persisted snapshot in the correct state, so rebuild it
+        return await (await ReplayToCommit(commit, repo)).GetAsync(entityId);
+    }
+
+    /// <summary>
+    /// Replays history up to the commit once, for reading several entities as of it. A single entity is cheaper through
+    /// <see cref="GetAtCommit{T}(Guid, Guid)"/>, which can skip the replay. The replay holds the repository lock so a sync
+    /// can't land part way through it; later reads of entities the replay didn't touch go to the database and aren't protected.
+    /// </summary>
+    public Task<ModelAtCommit> OpenAtCommit(Commit commit) => OpenAtCommit(commit.Id);
+
+    /// <inheritdoc cref="OpenAtCommit(Commit)"/>
+    public async Task<ModelAtCommit> OpenAtCommit(Guid commitId)
+    {
+        return (await Open(async repo => await repo.CurrentCommits().AsNoTracking().SingleAsync(c => c.Id == commitId)))!;
+    }
+
+    /// <summary><see cref="OpenAtCommit(Commit)"/> at the commit before this one; null before the first commit</summary>
+    public Task<ModelAtCommit?> OpenBeforeCommit(Commit commit) => OpenBeforeCommit(commit.Id);
+
+    /// <inheritdoc cref="OpenBeforeCommit(Commit)"/>
+    public Task<ModelAtCommit?> OpenBeforeCommit(Guid commitId)
+    {
+        return Open(async repo => await repo.FindPreviousCommit(await repo.CurrentCommits().AsNoTracking().SingleAsync(c => c.Id == commitId)));
+    }
+
+    private async Task<ModelAtCommit?> Open(Func<CrdtRepository, Task<Commit?>> findCommit)
+    {
+        var repo = await _crdtRepositoryFactory.CreateRepository();
+        try
+        {
+            using var locked = await repo.Lock();
+            var commit = await findCommit(repo);
+            if (commit is null)
+            {
+                await repo.DisposeAsync();
+                return null;
+            }
+
+            return new ModelAtCommit(repo, await ReplayToCommit(commit, repo), commit, _crdtConfig.Value);
+        }
+        catch
+        {
+            await repo.DisposeAsync();
+            throw;
+        }
+    }
+
+    private async Task<ISnapshotView> ReplayToCommit(Commit commit, CrdtRepository repo)
+    {
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         await SnapshotReplay.PreloadTouched(baseline, commitsToReplay, _crdtConfig.Value);
-        return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
+        return await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value);
     }
 
     /// <summary>

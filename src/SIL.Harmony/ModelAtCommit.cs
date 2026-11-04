@@ -21,7 +21,6 @@ public sealed class ModelAtCommit : IAsyncDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             return field;
         }
-        init;
     }
 
     internal ModelAtCommit(CrdtRepository repo, ISnapshotView view, Commit commit, HarmonyConfig config)

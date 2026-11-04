@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Microsoft.Extensions.Logging;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
@@ -17,6 +18,7 @@ internal class SnapshotWorker : ISnapshotView
     private readonly SortedSet<Commit> _batchCommits;
     private readonly ReplayPolicy _replayPolicy;
     private readonly SnapshotCheckpointPolicy _checkpointPolicy;
+    private readonly ILogger _logger;
     /// <summary>each entity's newest snapshot so far in this replay</summary>
     private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
     /// <summary>superseded snapshots the policy says must still be persisted</summary>
@@ -25,8 +27,9 @@ internal class SnapshotWorker : ISnapshotView
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
     /// <param name="policy">which commits throw <see cref="CommitValidationException"/> when a change targets an
     /// entity id another type owns, instead of applying the replay rules</param>
-    private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig, ReplayPolicy policy)
+    private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig, ILogger logger, ReplayPolicy policy)
     {
+        _logger = logger;
         _batchCommits = commits;
         _replayPolicy = policy;
         _checkpointPolicy = new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
@@ -38,10 +41,10 @@ internal class SnapshotWorker : ISnapshotView
     /// The snapshots as of the last of <paramref name="commits"/>, applied on top of <paramref name="baseline"/>
     /// without persisting anything.
     /// </summary>
-    internal static async Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
+    internal static async Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig, ILogger logger)
     {
         if (commits.Count == 0) return baseline;
-        var worker = new SnapshotWorker(baseline, commits, crdtConfig, ReplayPolicy.Lenient);
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig, logger, ReplayPolicy.Lenient);
         await worker.ApplyCommitChanges();
         return worker;
     }
@@ -51,9 +54,9 @@ internal class SnapshotWorker : ISnapshotView
     /// Persisting both is the caller's job.
     /// </summary>
     internal static async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeNewSnapshotsAndCheckpoints(
-        ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig, ReplayPolicy policy = default)
+        ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig, ILogger logger, ReplayPolicy policy = default)
     {
-        var worker = new SnapshotWorker(baseline, commits, crdtConfig, policy);
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig, logger, policy);
         await worker.ApplyCommitChanges();
         IReadOnlyList<ObjectSnapshot> snapshots = [.. worker._keptSupersededSnapshots, .. worker._latestSnapshots.Values];
         return (snapshots, worker._checkpointPolicy.CheckpointFlags());
@@ -65,7 +68,6 @@ internal class SnapshotWorker : ISnapshotView
         {
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
-                IObjectBase entity;
                 var prevSnapshot = await GetAsync(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, this, _crdtConfig);
                 if (prevSnapshot is not null && !DeclaredTypeMatches(commitChange.Change, prevSnapshot))
@@ -74,51 +76,79 @@ internal class SnapshotWorker : ISnapshotView
                     continue; // an id belongs to one type, so replay ignores a change of another type on it
                 }
 
-                if (prevSnapshot is null)
+                IObjectBase? entity;
+                try
                 {
-                    if (commitChange.Change is OpaqueChange)
-                    {
-                        // Keep unknown changes in history until this client understands how to apply them.
-                        continue;
-                    }
-
-                    // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
-                    entity = await commitChange.Change.NewEntity(commit, changeContext);
+                    entity = await ApplyChange(commitChange.Change, prevSnapshot, changeContext);
                 }
-                else if (prevSnapshot.EntityIsDeleted && commitChange.Change.SupportsNewEntity())
+                catch (Exception e) when (commitChange.AuthoredModelVersion > _crdtConfig.CurrentModelVersion)
                 {
-                    // revive deleted entity
-                    entity = await commitChange.Change.NewEntity(commit, changeContext);
-                }
-                else if (commitChange.Change.SupportsApplyChange())
-                {
-                    // update existing entity
-                    entity = prevSnapshot.Entity.Copy();
-                    var wasDeleted = prevSnapshot.EntityIsDeleted;
-                    await commitChange.Change.ApplyChange(entity, changeContext);
-                    var deletedByChange = !wasDeleted && entity.DeletedAt.HasValue;
-                    if (deletedByChange)
-                    {
-                        await MarkDeleted(entity.Id, changeContext);
-                    }
-                }
-                else
-                {
-                    // Entity already exists (and is not deleted)
-                    // and change does not support updating existing entities,
-                    // so do nothing.
+                    LogSkippedFutureChange(commitChange, commit, e);
                     continue;
                 }
 
+                if (entity is null) continue;
                 if (prevSnapshot is not null && !ProducedTypeMatches(entity, prevSnapshot))
                 {
                     if (_replayPolicy.IsStrict(commit.Id)) ThrowEntityTypeMismatch(commitChange.Change, prevSnapshot, entity, commit);
                     continue;
                 }
 
+                if (prevSnapshot is { EntityIsDeleted: false } && entity.DeletedAt.HasValue)
+                {
+                    await MarkDeleted(entity.Id, changeContext);
+                }
+
                 await RecordEntitySnapshot(entity, prevSnapshot, changeContext);
             }
         }
+    }
+
+    /// <returns>the entity's new state, or null when the change doesn't apply to it</returns>
+    private static async ValueTask<IObjectBase?> ApplyChange(IChange change, ObjectSnapshot? prevSnapshot, ChangeContext changeContext)
+    {
+        if (prevSnapshot is null)
+        {
+            if (change is OpaqueChange)
+            {
+                // Keep unknown changes in history until this client understands how to apply them.
+                return null;
+            }
+
+            // create brand new entity - this will (and should) throw if the change doesn't support NewEntity
+            return await change.NewEntity(changeContext.Commit, changeContext);
+        }
+
+        if (prevSnapshot.EntityIsDeleted && change.SupportsNewEntity())
+        {
+            // revive deleted entity
+            return await change.NewEntity(changeContext.Commit, changeContext);
+        }
+
+        if (change.SupportsApplyChange())
+        {
+            var entity = prevSnapshot.Entity.Copy();
+            await change.ApplyChange(entity, changeContext);
+            return entity;
+        }
+
+        // Entity already exists (and is not deleted)
+        // and change does not support updating existing entities,
+        // so do nothing.
+        return null;
+    }
+
+    /// <summary>
+    /// A newer app authored the change, so this app's code may not be able to apply it, e.g. a patch of a property
+    /// this model doesn't have. Skipped like an <see cref="OpaqueChange"/>: listing the type in the model version
+    /// that changed it replays the change after an upgrade, and a throw then is a bug and isn't caught.
+    /// </summary>
+    private void LogSkippedFutureChange(ChangeEntity<IChange> commitChange, Commit commit, Exception exception)
+    {
+        var changeType = _crdtConfig.ChangeTypeName(commitChange.Change);
+        _logger.LogWarning(exception,
+            "Skipped change {ChangeType} at index {Index} of commit {CommitId}: authored with model version {AuthoredModelVersion}, this app is on {CurrentModelVersion} and failed to apply it",
+            changeType, commitChange.Index, commit.Id, commitChange.AuthoredModelVersion, _crdtConfig.CurrentModelVersion);
     }
 
     /// <summary>

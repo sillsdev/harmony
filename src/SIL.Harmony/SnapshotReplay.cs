@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
@@ -27,14 +28,14 @@ internal readonly record struct ReplayPolicy(IReadOnlySet<Guid>? StrictCommitIds
 /// Replays commits into snapshots, creating a <see cref="SnapshotWorker"/> per replay.
 /// Callers of the persisting methods hold the repository lock and a transaction.
 /// </summary>
-internal class SnapshotReplay(IOptions<HarmonyConfig> config)
+internal class SnapshotReplay(IOptions<HarmonyConfig> config, ILogger<SnapshotWorker> logger)
 {
     private HarmonyConfig Config => config.Value;
 
     /// <inheritdoc cref="SnapshotWorker.ReplayCommits"/>
     public Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits)
     {
-        return SnapshotWorker.ReplayCommits(baseline, commits, Config);
+        return SnapshotWorker.ReplayCommits(baseline, commits, Config, logger);
     }
 
     /// <summary>
@@ -63,7 +64,7 @@ internal class SnapshotReplay(IOptions<HarmonyConfig> config)
         }
 
         await PreloadTouched(baseline, commitsToApply);
-        var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, Config, policy);
+        var (newSnapshots, checkpoints) = await SnapshotWorker.ComputeNewSnapshotsAndCheckpoints(baseline, commitsToApply, Config, logger, policy);
         await repo.AddSnapshots(newSnapshots, checkpoints);
     }
 

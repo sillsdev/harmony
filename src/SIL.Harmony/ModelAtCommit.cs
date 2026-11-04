@@ -13,6 +13,17 @@ public sealed class ModelAtCommit : IAsyncDisposable
     private readonly HarmonyConfig _config;
     private bool _disposed;
 
+    private ISnapshotView View
+    {
+        get
+        {
+            //the replayed part lives in memory and would keep answering after the connection is gone
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return field;
+        }
+        init;
+    }
+
     internal ModelAtCommit(CrdtRepository repo, ISnapshotView view, Commit commit, HarmonyConfig config)
     {
         _repo = repo;
@@ -46,17 +57,6 @@ public sealed class ModelAtCommit : IAsyncDisposable
         {
             yield return snapshot;
         }
-    }
-
-    private ISnapshotView View
-    {
-        get
-        {
-            //the replayed part lives in memory and would keep answering after the connection is gone
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return field;
-        }
-        init;
     }
 
     public async ValueTask DisposeAsync()

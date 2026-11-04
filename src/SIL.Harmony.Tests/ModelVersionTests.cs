@@ -6,6 +6,7 @@ using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
 using SIL.Harmony.Db;
 using SIL.Harmony.Entities;
+using SIL.Harmony.Resource;
 using SIL.Harmony.Sample;
 using SIL.Harmony.Sample.Changes;
 using SIL.Harmony.Sample.Models;
@@ -26,29 +27,41 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         services.Configure<HarmonyConfig>(config => config.UnknownChangeHandling = UnknownChangeHandling.Fallback);
     }
 
-    /// <summary>replaces the sample's versions with a version 0 that lists every registered change type except <paramref name="newTypes"/></summary>
-    private static void VersionZeroWithout(HarmonyConfig config, params string[] newTypes)
+    /// <summary>
+    /// replaces the sample's versions with a version 0 that runs <paramref name="remoteResources"/> (by default the sample's
+    /// remote resource changes), then lists the other sample change types except <paramref name="without"/>
+    /// </summary>
+    private static void VersionZero(HarmonyConfig config, string? without = null, Action<ModelVersionChanges>? remoteResources = null)
     {
+        remoteResources ??= v => v.RemoteResourceChanges<MediaMetadata>();
         config.ModelVersionBuilder.Clear();
         config.ModelVersionBuilder.Add(0, "Before model versions", v =>
         {
-            v.RemoteResourceChanges<MediaMetadata>();
-            var others = config.ChangeTypes.Select(ct => ct.Discriminator)
-                .Except(v.Changes.Keys) // exclude the resource change types added above
-                .Except(newTypes);
-            foreach (var discriminator in others) v.Change(discriminator);
+            remoteResources(v);
+            var others = SampleConfig.ChangeTypes.Where(ct =>
+                !v.Changes.ContainsKey(ct.Discriminator) // skip what remoteResources listed
+                && ct.Discriminator != without);
+            foreach (var changeType in others) v.Change(changeType);
         });
+    }
+
+    private static OptionsValidationException ValidationFailureOf(Action<HarmonyConfig> configure)
+    {
+        using var services = new ServiceCollection()
+            .AddCrdtDataSample(":memory:")
+            .Configure(configure)
+            .BuildServiceProvider();
+
+        var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
+
+        return act.Should().Throw<OptionsValidationException>().Which;
     }
 
     /// <summary>an old app that doesn't know <typeparamref name="T"/> at all</summary>
     private static void WithoutChangeType<T>(IServiceCollection services) where T : IChange, IPolyType
     {
         OldApp(services);
-        services.Configure<HarmonyConfig>(config =>
-        {
-            config.ChangeTypeListBuilder.Remove<T>();
-            VersionZeroWithout(config);
-        });
+        services.Configure<HarmonyConfig>(config => VersionZero(config, without: T.TypeName));
     }
 
     /// <summary>the app that adds <typeparamref name="T"/> in version 1</summary>
@@ -57,7 +70,7 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         OldApp(services);
         services.Configure<HarmonyConfig>(config =>
         {
-            VersionZeroWithout(config, T.TypeName);
+            VersionZero(config, without: T.TypeName);
             config.ModelVersionBuilder.Add(1, "Added " + T.TypeName, v => v.Change<T>());
         });
     }
@@ -453,47 +466,10 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     [Fact]
-    public void ModelVersionWithAnUnregisteredChangeTypeFailsValidation()
-    {
-        using var services = new ServiceCollection()
-            .AddCrdtDataSample(":memory:")
-            .Configure<HarmonyConfig>(config =>
-            {
-                config.ChangeTypeListBuilder.Remove<SetWordNoteChange>();
-                config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<SetWordNoteChange>());
-            })
-            .BuildServiceProvider();
-
-        var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
-
-        act.Should().Throw<OptionsValidationException>();
-    }
-
-    [Fact]
     public void NoModelVersionsFailsValidation()
     {
-        using var services = new ServiceCollection()
-            .AddCrdtDataSample(":memory:")
-            .Configure<HarmonyConfig>(config => config.ModelVersionBuilder.Clear())
-            .BuildServiceProvider();
-
-        var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
-
-        act.Should().Throw<OptionsValidationException>().WithMessage("Declare model versions*");
-    }
-
-    [Fact]
-    public void ChangeTypeNotListedByAModelVersionFailsValidation()
-    {
-        using var services = new ServiceCollection()
-            .AddCrdtDataSample(":memory:")
-            .Configure<HarmonyConfig>(config => VersionZeroWithout(config, NoteChangeType, nameof(SetTagChange)))
-            .BuildServiceProvider();
-
-        var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
-
-        act.Should().Throw<OptionsValidationException>()
-            .WithMessage($"*aren't listed by a model version: {nameof(SetTagChange)}, {NoteChangeType}.*");
+        ValidationFailureOf(config => config.ModelVersionBuilder.Clear())
+            .Message.Should().StartWith("Declare model versions");
     }
 
     [Fact]
@@ -569,22 +545,28 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     [Fact]
     public void RemoteResourceChangesMustBeListed()
     {
+        ValidationFailureOf(config => VersionZero(config, remoteResources: _ => { }))
+            .Message.Should().EndWith("got MediaMetadata and not called");
+    }
+
+    [Fact]
+    public void RemoteResourceChangesMustUseTheRemoteResourceMetadataType()
+    {
+        ValidationFailureOf(config => VersionZero(config, remoteResources: v => v.RemoteResourceChanges<NoMetadata>()))
+            .Message.Should().EndWith("got MediaMetadata and NoMetadata");
+    }
+
+    [Fact]
+    public void RemoteResourceChangesWithoutRemoteResourcesFailsValidation()
+    {
         using var services = new ServiceCollection()
-            .AddCrdtDataSample(":memory:")
-            .Configure<HarmonyConfig>(config =>
-            {
-                config.ModelVersionBuilder.Clear();
-                config.ModelVersionBuilder.Add(0, "Before model versions", v =>
-                {
-                    foreach (var changeType in config.ChangeTypes) v.Change(changeType.Discriminator);
-                });
-            })
+            .AddCrdtData<SampleDbContext>(CrdtSampleKernel.ConfigureSample)
             .BuildServiceProvider();
 
         var act = () => services.GetRequiredService<IOptions<HarmonyConfig>>().Value;
 
         act.Should().Throw<OptionsValidationException>()
-            .WithMessage("Call RemoteResourceChanges<MediaMetadata> in a model version*");
+            .WithMessage("*got not called and MediaMetadata");
     }
 
     [Fact]

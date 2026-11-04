@@ -55,7 +55,7 @@ Once you have created your CRDT objects, you need to tell Harmony about them. Up
 services.AddCrdtData<SampleDbContext>(config =>
 {
 // add the following lines
-    config.ObjectTypeListBuilder
+    config.ObjectTypeListBuilder.DefaultAdapter()
         .Add<Word>()
         .Add<Definition>()
         .Add<Example>();
@@ -98,15 +98,13 @@ This is a fairly simple change, it can either create a new Word entry, or if the
 > [!TIP]
 > The [Sample](src/Crdt.Sample/Changes) project contain a number of reference changes which are good examples for a couple different change types. There are also a built in [`DeleteChange<T>`](https://github.com/hahn-kev/harmony/blob/external-db-context/src/Crdt/Changes/DeleteChange.cs)
 
-Once you have created your change types, you need to tell Harmony about them. Again update the config callback passed into `AddCrdtData`
+Once you have created your change types, you need to tell Harmony about them by listing them in a model version, see [Model versions](#model-versions). Again update the config callback passed into `AddCrdtData`
 ```C#
 services.AddCrdtData<SampleDbContext>(config =>
 {
 // add the following lines
-    config.ChangeTypeListBuilder.Add<SetWordTextChange>();
-    //every change type must be listed by a model version, see Model versions below
     config.ModelVersionBuilder.Add(0, "Before model versions", v => v.Change<SetWordTextChange>());
-    config.ObjectTypeListBuilder
+    config.ObjectTypeListBuilder.DefaultAdapter()
         .Add<Word>()
         .Add<Definition>()
         .Add<Example>();
@@ -183,20 +181,16 @@ It's that easy. All the heavy lifting is done by the interface which is fairly s
 ### Model versions
 Clients on different app versions sync with each other, so an older app receives changes a newer app authored. It skips the ones whose type it doesn't know (stored as `OpaqueChange` with `UnknownChangeHandling.Fallback`) and applies the rest with its old code. When the older app upgrades, those changes must be replayed.
 
-Model versions make that possible. Declare them in order, numbered from 0, each listing the change types it added or changed. Version 0 lists every change type that existed before model versions. Every change is stored with the number of the authoring app's latest version, whether or not that version lists the change's type, so a change authored by a newer app carries a number the older app doesn't have yet. Startup fails if no versions are declared, a registered change type isn't listed, or remote resources are enabled without `RemoteResourceChanges`. Only add versions at the end, never modify a released one:
+Model versions make that possible, and they are how change types are registered. Declare them in order, numbered from 0, each listing the change types it added or changed. Version 0 lists every change type that existed before model versions. Every change is stored with the number of the authoring app's latest version, whether or not that version lists the change's type, so a change authored by a newer app carries a number the older app doesn't have yet. Startup fails if no versions are declared, or if a version calls `RemoteResourceChanges<TMetadata>` without a matching `AddCrdtRemoteResources<TMetadata>`, or the other way around. Only add versions at the end, never modify a released one:
 ```C#
 services.AddCrdtRemoteResources<MediaMetadata>();
 services.AddCrdtData<AppDbContext>(config =>
 {
-    config.ChangeTypeListBuilder
-        .Add<NewWordChange>()
-        .Add<SetWordTextChange>()
-        .Add<SetWordNoteChange>();
     config.ModelVersionBuilder
         .Add(0, "Before model versions", v => v
             .Change<NewWordChange>()
             .Change<SetWordTextChange>()
-            //the change types AddCrdtRemoteResources registers
+            //the change types AddCrdtRemoteResources needs
             .RemoteResourceChanges<MediaMetadata>())
         .Add(1, "Word notes", v => v.Change<SetWordNoteChange>())
         //a major version regenerates all snapshots on upgrade

@@ -64,10 +64,7 @@ public static class CrdtKernel
             {
                 crdtConfig.ObjectTypeListBuilder.Freeze();
                 crdtConfig.ModelVersionBuilder.Freeze();
-            })
-            .Validate(
-                config => config.ModelVersionBuilder.ChangeTypes.All(t => config.ChangeTypes.Any(ct => ct.Type == t)),
-                "Every change type in a model version must be registered in the ChangeTypeListBuilder");
+            });
         services.AddSingleton<IValidateOptions<HarmonyConfig>, ModelVersionsValidator>();
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<HarmonyConfig>>().Value.JsonSerializerOptions);
         services.AddSingleton(TimeProvider.System);

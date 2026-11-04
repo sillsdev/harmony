@@ -15,17 +15,21 @@ internal class SnapshotWorker : ISnapshotView
     private readonly ISnapshotView _baseline;
     private readonly HarmonyConfig _crdtConfig;
     private readonly SortedSet<Commit> _batchCommits;
-    private readonly SnapshotCheckpointPolicy _policy;
+    private readonly ReplayPolicy _replayPolicy;
+    private readonly SnapshotCheckpointPolicy _checkpointPolicy;
     /// <summary>each entity's newest snapshot so far in this replay</summary>
     private readonly Dictionary<Guid, ObjectSnapshot> _latestSnapshots = [];
     /// <summary>superseded snapshots the policy says must still be persisted</summary>
     private readonly List<ObjectSnapshot> _keptSupersededSnapshots = [];
 
     /// <param name="baseline">the snapshots the commits are applied on top of</param>
-    private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
+    /// <param name="policy">which commits throw <see cref="CommitValidationException"/> when a change targets an
+    /// entity id another type owns, instead of applying the replay rules</param>
+    private SnapshotWorker(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig, ReplayPolicy policy)
     {
         _batchCommits = commits;
-        _policy = new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
+        _replayPolicy = policy;
+        _checkpointPolicy = new SnapshotCheckpointPolicy(commits, crdtConfig.MaxChangesBetweenSnapshotCheckpoints);
         _baseline = baseline;
         _crdtConfig = crdtConfig;
     }
@@ -37,7 +41,7 @@ internal class SnapshotWorker : ISnapshotView
     internal static async Task<ISnapshotView> ReplayCommits(ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
     {
         if (commits.Count == 0) return baseline;
-        var worker = new SnapshotWorker(baseline, commits, crdtConfig);
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig, ReplayPolicy.Lenient);
         await worker.ApplyCommitChanges();
         return worker;
     }
@@ -47,12 +51,12 @@ internal class SnapshotWorker : ISnapshotView
     /// Persisting both is the caller's job.
     /// </summary>
     internal static async Task<(IReadOnlyList<ObjectSnapshot> Snapshots, CheckpointFlag[] CheckpointFlags)> ComputeNewSnapshotsAndCheckpoints(
-        ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig)
+        ISnapshotView baseline, SortedSet<Commit> commits, HarmonyConfig crdtConfig, ReplayPolicy policy = default)
     {
-        var worker = new SnapshotWorker(baseline, commits, crdtConfig);
+        var worker = new SnapshotWorker(baseline, commits, crdtConfig, policy);
         await worker.ApplyCommitChanges();
         IReadOnlyList<ObjectSnapshot> snapshots = [.. worker._keptSupersededSnapshots, .. worker._latestSnapshots.Values];
-        return (snapshots, worker._policy.CheckpointFlags());
+        return (snapshots, worker._checkpointPolicy.CheckpointFlags());
     }
 
     private async ValueTask ApplyCommitChanges()
@@ -64,6 +68,11 @@ internal class SnapshotWorker : ISnapshotView
                 IObjectBase entity;
                 var prevSnapshot = await GetAsync(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, this, _crdtConfig);
+                if (prevSnapshot is not null && !DeclaredTypeMatches(commitChange.Change, prevSnapshot))
+                {
+                    if (_replayPolicy.IsStrict(commit.Id)) ThrowEntityTypeMismatch(commitChange.Change, prevSnapshot, commit);
+                    continue; // an id belongs to one type, so replay ignores a change of another type on it
+                }
 
                 if (prevSnapshot is null)
                 {
@@ -101,9 +110,53 @@ internal class SnapshotWorker : ISnapshotView
                     continue;
                 }
 
+                if (prevSnapshot is not null && !ProducedTypeMatches(entity, prevSnapshot))
+                {
+                    if (_replayPolicy.IsStrict(commit.Id)) ThrowEntityTypeMismatch(commitChange.Change, prevSnapshot, entity, commit);
+                    continue;
+                }
+
                 await RecordEntitySnapshot(entity, prevSnapshot, changeContext);
             }
         }
+    }
+
+    /// <summary>
+    /// An entity id belongs to one type for its whole life, deleted or not: snapshots chain by entity id, so a change of
+    /// another type on that id would corrupt the chain, and later changes referencing the id would find the wrong type.
+    /// Replay skips such a change, because the commit is already in shared history and every client must replay it the
+    /// same way. A strict commit is being authored on this client, where the caller can still fix the bug and the
+    /// transaction rolls back, so it throws instead. Checked from the type the change declares, before it runs.
+    /// </summary>
+    private static bool DeclaredTypeMatches(IChange change, ObjectSnapshot prevSnapshot)
+    {
+        if (change.EntityType is not { } changeEntityType) return true; // declares no type: checked on the entity it produces instead
+        return prevSnapshot.Entity.DbObject.GetType().IsAssignableTo(changeEntityType);
+    }
+
+    /// <summary>
+    /// The same rule as <see cref="DeclaredTypeMatches"/>, applied to the entity the change produced, which is the only
+    /// type a change that declares no <see cref="IChange.EntityType"/> has.
+    /// </summary>
+    private static bool ProducedTypeMatches(IObjectBase entity, ObjectSnapshot prevSnapshot)
+    {
+        var existingType = prevSnapshot.Entity.DbObject.GetType();
+        var producedType = entity.DbObject.GetType();
+        return existingType.IsAssignableTo(producedType);
+    }
+
+    private static void ThrowEntityTypeMismatch(IChange change, ObjectSnapshot prevSnapshot, Commit commit)
+    {
+        throw new CommitValidationException(
+            $"Entity {change.EntityId} is a {prevSnapshot.Entity.DbObject.GetType().Name}, but {change.GetType().Name} targets a {change.EntityType?.Name}. " +
+            $"An entity id belongs to one type. CommitId: {commit.Id}");
+    }
+
+    private static void ThrowEntityTypeMismatch(IChange change, ObjectSnapshot prevSnapshot, IObjectBase entity, Commit commit)
+    {
+        throw new CommitValidationException(
+            $"Entity {change.EntityId} is a {prevSnapshot.Entity.DbObject.GetType().Name}, but {change.GetType().Name} produced a {entity.DbObject.GetType().Name}. " +
+            $"An entity id belongs to one type. CommitId: {commit.Id}");
     }
 
     /// <summary>
@@ -143,7 +196,7 @@ internal class SnapshotWorker : ISnapshotView
 
         await _crdtConfig.BeforeSaveObject.Invoke(entity.DbObject, newSnapshot);
 
-        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _policy.Supersede(superseded, by: newSnapshot))
+        if (_latestSnapshots.TryGetValue(newSnapshot.EntityId, out var superseded) && _checkpointPolicy.Supersede(superseded, by: newSnapshot))
         {
             _keptSupersededSnapshots.Add(superseded);
         }

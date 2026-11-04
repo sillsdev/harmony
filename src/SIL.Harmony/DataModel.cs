@@ -83,7 +83,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         await using var transaction = await repo.BeginTransactionAsync();
         var replayWindow = await repo.AddCommits(commits);
-        await UpdateSnapshots(repo, replayWindow);
+        await UpdateSnapshots(repo, replayWindow, ReplayPolicy.StrictFor(commits));
         if (AlwaysValidate) await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
@@ -120,7 +120,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
         var replayWindow = await repo.AddCommit(commit);
-        await UpdateSnapshots(repo, replayWindow);
+        await UpdateSnapshots(repo, replayWindow, ReplayPolicy.StrictFor([commit]));
 
         if (AlwaysValidate) await ValidateCommits(repo);
 
@@ -156,7 +156,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             await using (var transaction = await repo.BeginTransactionAsync())
             {
                 replayWindow = await repo.AddCommits(newCommits);
-                await UpdateSnapshots(repo, replayWindow);
+                await UpdateSnapshots(repo, replayWindow, ReplayPolicy.Lenient);
                 if (AlwaysValidate) await ValidateCommits(repo);
                 await transaction.CommitAsync();
             }
@@ -197,9 +197,9 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
+    private Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window, ReplayPolicy policy)
     {
-        return _snapshotReplay.UpdateSnapshots(repo, window);
+        return _snapshotReplay.UpdateSnapshots(repo, window, policy);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)

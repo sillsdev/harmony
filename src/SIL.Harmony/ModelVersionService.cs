@@ -56,7 +56,7 @@ internal class ModelVersionService(
             oldestInvalidated = await repo.FindOldestCommitWithModelVersions(ModelVersionsToInvalidate(storedVersion, current));
             if (oldestInvalidated is not null)
             {
-                await snapshotReplay.UpdateSnapshots(repo, await repo.ReplayWindowFrom(oldestInvalidated));
+                await snapshotReplay.UpdateSnapshots(repo, await repo.ReplayWindowFrom(oldestInvalidated), ReplayPolicy.Lenient);
             }
         }
 

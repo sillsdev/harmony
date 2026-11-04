@@ -10,14 +10,13 @@ namespace SIL.Harmony;
 public sealed class ModelAtCommit : IAsyncDisposable
 {
     private readonly CrdtRepository _repo;
-    private readonly ISnapshotView _view;
     private readonly HarmonyConfig _config;
     private bool _disposed;
 
     internal ModelAtCommit(CrdtRepository repo, ISnapshotView view, Commit commit, HarmonyConfig config)
     {
         _repo = repo;
-        _view = view;
+        View = view;
         _config = config;
         Commit = commit;
     }
@@ -55,8 +54,9 @@ public sealed class ModelAtCommit : IAsyncDisposable
         {
             //the replayed part lives in memory and would keep answering after the connection is gone
             ObjectDisposedException.ThrowIf(_disposed, this);
-            return _view;
+            return field;
         }
+        init;
     }
 
     public async ValueTask DisposeAsync()

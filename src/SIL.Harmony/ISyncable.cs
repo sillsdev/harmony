@@ -5,7 +5,10 @@ public interface ISyncable
     Task AddRangeFromSync(IEnumerable<Commit> commits);
     Task<SyncState> GetSyncState();
     Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads);
+    /// <exception cref="SyncException">applying commits failed in at least one direction, including a connection lost while pushing; errors reading sync state or changes propagate as is, with nothing applied</exception>
     Task<SyncResults> SyncWith(ISyncable remoteModel);
+    /// <exception cref="SyncException">applying commits failed for one remote</exception>
+    /// <exception cref="AggregateException">applying commits failed for several remotes; each inner exception is a <see cref="SyncException"/></exception>
     Task SyncMany(ISyncable[] remotes);
     ValueTask<bool> ShouldSync();
 }

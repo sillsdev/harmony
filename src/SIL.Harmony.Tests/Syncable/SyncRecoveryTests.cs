@@ -164,7 +164,7 @@ public class SyncRecoveryTests
         for (var i = 1; i < times; i++)
         {
             try { await local.Syncable.SyncWith(remote.Syncable); }
-            catch (Exception e) when (e is NotSupportedException or AggregateException) { }
+            catch (SyncException) { }
         }
         await local.Syncable.SyncWith(remote.Syncable);
     }
@@ -185,7 +185,8 @@ public class SyncRecoveryTests
         var commits = await SetUpEditOnWithheldCreate(behind: remote, ahead: local);
         var sync = () => local.Syncable.SyncWith(remote.Syncable);
 
-        await sync.Should().ThrowExactlyAsync<NotSupportedException>();
+        await sync.Should().ThrowExactlyAsync<SyncException>()
+            .Where(e => e.PullError is NotSupportedException && e.PushError == null && e.Applied.MissingFromRemote.Length == 2);
         await sync.Should().NotThrowAsync();
 
         await ShouldHaveCommits(local, commits);
@@ -200,7 +201,8 @@ public class SyncRecoveryTests
         var commits = await SetUpEditOnWithheldCreate(behind: remote, ahead: local);
         var sync = () => local.Syncable.SyncMany([remote.Syncable]);
 
-        await sync.Should().ThrowExactlyAsync<NotSupportedException>();
+        await sync.Should().ThrowExactlyAsync<SyncException>()
+            .Where(e => e.PullError is NotSupportedException && e.PushError == null);
         await sync.Should().NotThrowAsync();
 
         await ShouldHaveCommits(local, commits);
@@ -217,8 +219,8 @@ public class SyncRecoveryTests
 
         var sync = () => local.Syncable.SyncWith(remote.Syncable);
 
-        (await sync.Should().ThrowExactlyAsync<AggregateException>())
-            .Which.InnerExceptions.Should().HaveCount(2).And.AllBeOfType<NotSupportedException>();
+        await sync.Should().ThrowExactlyAsync<SyncException>()
+            .Where(e => e.PullError is NotSupportedException && e.PushError is NotSupportedException);
     }
 
     [Fact(Skip = "Known sync blocker: each side withholds a create the other needs, so both directions throw on every sync. Revisit when we know more about missing commits.")]

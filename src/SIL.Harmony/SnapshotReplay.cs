@@ -7,7 +7,8 @@ namespace SIL.Harmony;
 /// How strictly a replay treats a change whose entity id already belongs to another type.
 /// Only commits authored on this client are strict: the author can still fix the bug, and the surrounding
 /// transaction rolls back. Commits arriving by sync, or replayed from history, are already shared,
-/// so they are applied leniently (a create on a taken id is skipped) rather than poisoning every client's replay.
+/// so they are applied leniently (a create on a live id is skipped, a create on a deleted id revives it as the new
+/// type) rather than poisoning every client's replay.
 /// A replay window usually contains older commits beside the new ones, which is why policy is per commit.
 /// The default value is lenient.
 /// </summary>

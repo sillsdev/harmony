@@ -205,6 +205,20 @@ public class SnapshotTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task AuthoringManyChangesWithAnIdReusedAcrossTypesThrowsAndPersistsNothing()
+    {
+        //AddManyChanges picks its own replay policy, so it is covered apart from AddChanges
+        var shared = Guid.NewGuid();
+        var act = async () => await DataModel.AddManyChanges(_localClientId,
+            [new NewWordChange(shared, "in"), NewDefinition(shared, "in", "preposition", definitionId: shared)],
+            () => null);
+
+        await act.Should().ThrowAsync<CommitValidationException>();
+        (await DbContext.Commits.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+        (await DbContext.Snapshots.CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task AuthoringADuplicateCreateOfTheSameTypeIsStillAccepted()
     {
         var shared = Guid.NewGuid();
@@ -239,6 +253,23 @@ public class SnapshotTests : DataModelTestBase
         var after = await DataModel.QueryLatest<Word>().ToArrayAsync(TestContext.Current.CancellationToken);
         after.Should().BeEquivalentTo(before);
         (await DataModel.QueryLatest<Definition>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ASyncedCreateForADeletedIdOfAnotherTypeRevivesItAsTheNewType()
+    {
+        //characterizes lenient replay: shared history already depends on a deleted id being revivable,
+        //and replay does not look at the type, so the id comes back as the new type
+        var shared = Guid.NewGuid();
+        await WriteNextChange(new NewWordChange(shared, "in"));
+        await WriteNextChange(new DeleteChange<Word>(shared));
+
+        await AddCommitsViaSync([NextCommit(SetTag(shared, "tag-1"))]);
+
+        var tag = await DataModel.GetLatest<Tag>(shared);
+        tag.Should().NotBeNull();
+        tag.Text.Should().Be("tag-1");
+        (await DataModel.QueryLatest<Word>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
     }
 
     [Fact]

@@ -109,6 +109,11 @@ internal class SnapshotWorker : ISnapshotView
                     continue;
                 }
 
+                if (prevSnapshot is not null && _replayPolicy.IsStrict(commit.Id))
+                {
+                    ThrowIfEntityTypeMismatch(commitChange.Change, prevSnapshot, entity, commit);
+                }
+
                 await RecordEntitySnapshot(entity, prevSnapshot, changeContext);
             }
         }
@@ -116,17 +121,33 @@ internal class SnapshotWorker : ISnapshotView
 
     /// <summary>
     /// An entity id belongs to one type for its whole life, deleted or not: snapshots chain by entity id, so a change of
-    /// another type on that id would corrupt the chain. Replay tolerates it (a create is skipped, see
-    /// <see cref="ApplyCommitChanges"/>) because the commit is already in shared history; a strict commit is being
-    /// authored on this client, where the caller can still fix the bug and the transaction rolls back.
+    /// another type on that id would corrupt the chain. Replay tolerates it (a create on a live id is skipped, a create
+    /// on a deleted id revives it as the new type, see <see cref="ApplyCommitChanges"/>) because the commit is already
+    /// in shared history; a strict commit is being authored on this client, where the caller can still fix the bug and
+    /// the transaction rolls back. Checked before the change runs, from the type it declares, so a create on a live id
+    /// is caught before replay skips it.
     /// </summary>
     private static void ThrowIfEntityTypeMismatch(IChange change, ObjectSnapshot prevSnapshot, Commit commit)
     {
-        if (change.EntityType is not { } changeEntityType) return; // OpaqueChange carries no type
+        if (change.EntityType is not { } changeEntityType) return; // declares no type: checked on the entity it produces instead
         var existingType = prevSnapshot.Entity.DbObject.GetType();
         if (existingType.IsAssignableTo(changeEntityType)) return;
         throw new CommitValidationException(
             $"Entity {change.EntityId} is a {existingType.Name}, but {change.GetType().Name} targets a {changeEntityType.Name}. " +
+            $"An entity id belongs to one type. CommitId: {commit.Id}");
+    }
+
+    /// <summary>
+    /// The same rule as above, applied to the entity the change produced, which is the only type a change that declares
+    /// no <see cref="IChange.EntityType"/> has.
+    /// </summary>
+    private static void ThrowIfEntityTypeMismatch(IChange change, ObjectSnapshot prevSnapshot, IObjectBase entity, Commit commit)
+    {
+        var existingType = prevSnapshot.Entity.DbObject.GetType();
+        var producedType = entity.DbObject.GetType();
+        if (existingType.IsAssignableTo(producedType) || producedType.IsAssignableTo(existingType)) return;
+        throw new CommitValidationException(
+            $"Entity {change.EntityId} is a {existingType.Name}, but {change.GetType().Name} produced a {producedType.Name}. " +
             $"An entity id belongs to one type. CommitId: {commit.Id}");
     }
 

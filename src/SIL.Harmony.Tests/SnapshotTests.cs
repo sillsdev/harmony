@@ -256,20 +256,35 @@ public class SnapshotTests : DataModelTestBase
     }
 
     [Fact]
-    public async Task ASyncedCreateForADeletedIdOfAnotherTypeRevivesItAsTheNewType()
+    public async Task ASyncedCreateForADeletedIdOfAnotherTypeIsSkippedNotRevived()
     {
-        //characterizes lenient replay: shared history already depends on a deleted id being revivable,
-        //and replay does not look at the type, so the id comes back as the new type
+        //a deleted Word's id must not come back as a Tag: later changes referencing the Word would find a Tag,
+        //and history would have one id pointing at two types
         var shared = Guid.NewGuid();
         await WriteNextChange(new NewWordChange(shared, "in"));
         await WriteNextChange(new DeleteChange<Word>(shared));
 
         await AddCommitsViaSync([NextCommit(SetTag(shared, "tag-1"))]);
 
-        var tag = await DataModel.GetLatest<Tag>(shared);
-        tag.Should().NotBeNull();
-        tag.Text.Should().Be("tag-1");
-        (await DataModel.QueryLatest<Word>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
+        var snapshot = await DataModel.GetLatestSnapshotByObjectId(shared);
+        snapshot.Should().NotBeNull();
+        snapshot.Entity.DbObject.Should().BeOfType<Word>();
+        snapshot.EntityIsDeleted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ASyncedEditForALiveIdOfAnotherTypeIsSkippedNotThrown()
+    {
+        //an edit on the wrong type used to throw NotSupportedException from inside replay, which would fail every sync
+        var shared = Guid.NewGuid();
+        await WriteNextChange(new NewWordChange(shared, "in"));
+
+        await AddCommitsViaSync([NextCommit(new SetDefinitionPartOfSpeechChange(shared, "noun"))]);
+
+        var word = await DataModel.GetLatest<Word>(shared);
+        word.Should().NotBeNull();
+        word.Text.Should().Be("in");
+        (await DataModel.QueryLatest<Definition>().CountAsync(TestContext.Current.CancellationToken)).Should().Be(0);
     }
 
     [Fact]

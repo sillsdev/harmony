@@ -142,7 +142,7 @@ internal class SnapshotWorker : ISnapshotView
     {
         var existingType = prevSnapshot.Entity.DbObject.GetType();
         var producedType = entity.DbObject.GetType();
-        return existingType.IsAssignableTo(producedType) || producedType.IsAssignableTo(existingType);
+        return existingType.IsAssignableTo(producedType);
     }
 
     private static void ThrowEntityTypeMismatch(IChange change, ObjectSnapshot prevSnapshot, Commit commit)

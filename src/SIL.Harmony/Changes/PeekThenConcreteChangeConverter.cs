@@ -10,8 +10,8 @@ namespace SIL.Harmony.Changes;
 /// Owns <see cref="IChange"/> discrimination. Requires <c>$type</c> as the first JSON property
 /// (matching synthetic write order from <see cref="Config.HarmonyConfig"/>).
 /// Known discriminators deserialize via cached concrete <see cref="JsonTypeInfo"/>;
-/// an unknown discriminator either throws or falls back to <see cref="OpaqueChange"/>
-/// (preserving the raw payload), depending on <see cref="UnknownChangeHandling"/>.
+/// an unknown discriminator, or a known one this client can't read, either throws or falls back to
+/// <see cref="OpaqueChange"/> (preserving the raw payload), depending on <see cref="UnknownChangeHandling"/>.
 /// </summary>
 internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
 {
@@ -59,8 +59,17 @@ internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
 
         // Real change types use parameterized constructors / get-only props — let STJ materialize.
         reader = checkpoint;
-        return (IChange)(JsonSerializer.Deserialize(ref reader, typeInfo)
-            ?? throw new JsonException($"null {known.ClrType.Name}"));
+        try
+        {
+            return (IChange)(JsonSerializer.Deserialize(ref reader, typeInfo)
+                ?? throw new JsonException($"null {known.ClrType.Name}"));
+        }
+        // e.g. an enum member added by a newer client
+        catch (JsonException e) when (_unknownChangeHandling == UnknownChangeHandling.Fallback)
+        {
+            reader = checkpoint;
+            return ReadOpaque(ref reader, Encoding.UTF8.GetString(known.Utf8Discriminator), e);
+        }
     }
 
     public override void Write(Utf8JsonWriter writer, IChange value, JsonSerializerOptions options)
@@ -75,7 +84,7 @@ internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
         JsonSerializer.Serialize(writer, value, value.GetType(), options);
     }
 
-    private static OpaqueChange ReadOpaque(ref Utf8JsonReader reader, string typeName)
+    private static OpaqueChange ReadOpaque(ref Utf8JsonReader reader, string typeName, JsonException? readError = null)
     {
         using var doc = JsonDocument.ParseValue(ref reader);
         var element = doc.RootElement.Clone();
@@ -89,7 +98,8 @@ internal sealed class PeekThenConcreteChangeConverter : JsonConverter<IChange>
                        && id.TryGetGuid(out var entityId)
                 ? entityId
                 : default,
-            RawJson = element
+            RawJson = element,
+            ReadError = readError
         };
     }
 

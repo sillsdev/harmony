@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Config;
@@ -68,6 +69,12 @@ internal class SnapshotWorker : ISnapshotView
         {
             foreach (var commitChange in commit.ChangeEntities.OrderBy(c => c.Index))
             {
+                if (commitChange.Change is OpaqueChange { ReadError: { } readError } opaque
+                    && commitChange.AuthoredModelVersion <= _crdtConfig.CurrentModelVersion)
+                {
+                    ThrowUnreadableChange(opaque, readError, commitChange, commit);
+                }
+
                 var prevSnapshot = await GetAsync(commitChange.EntityId);
                 var changeContext = new ChangeContext(commit, this, _crdtConfig);
                 if (prevSnapshot is not null && !DeclaredTypeMatches(commitChange.Change, prevSnapshot))
@@ -149,6 +156,17 @@ internal class SnapshotWorker : ISnapshotView
         _logger.LogWarning(exception,
             "Skipped change {ChangeType} at index {Index} of commit {CommitId}: authored with model version {AuthoredModelVersion}, this app is on {CurrentModelVersion} and failed to apply it",
             changeType, commitChange.Index, commit.Id, commitChange.AuthoredModelVersion, _crdtConfig.CurrentModelVersion);
+    }
+
+    /// <summary>
+    /// The change's type is registered and it was authored at this model version or an older one, so failing to
+    /// read it is a bug or corrupt data, not a newer client's change. Skipping it would hide that, so it throws.
+    /// </summary>
+    private void ThrowUnreadableChange(OpaqueChange opaque, JsonException readError, ChangeEntity<IChange> commitChange, Commit commit)
+    {
+        throw new InvalidOperationException(
+            $"Can't read change {opaque.TypeName} at index {commitChange.Index} of commit {commit.Id}: authored with model version {commitChange.AuthoredModelVersion}, this app is on {_crdtConfig.CurrentModelVersion}",
+            readError);
     }
 
     /// <summary>

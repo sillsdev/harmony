@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace SIL.Harmony.Changes;
 
 /// <summary>
-/// An <see cref="IChange"/> whose <c>$type</c> was not registered on this client.
+/// An <see cref="IChange"/> whose <c>$type</c> was not registered on this client, or whose JSON this client can't read.
 /// Preserves the original JSON so it can round-trip and be applied once the type is known.
 /// </summary>
 public sealed class OpaqueChange : IChange
@@ -12,6 +12,9 @@ public sealed class OpaqueChange : IChange
     public required JsonElement RawJson { get; init; }
 
     public Guid EntityId { get; set; }
+
+    /// <summary>why a registered type fell back to opaque; null for an unregistered type</summary>
+    internal JsonException? ReadError { get; init; }
 
     public Type? EntityType => null;
 

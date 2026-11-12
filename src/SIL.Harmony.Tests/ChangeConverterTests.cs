@@ -68,6 +68,32 @@ public class ChangeConverterTests
     }
 
     [Fact]
+    public void Unreadable_known_type_deserializes_to_OpaqueChange()
+    {
+        var options = SampleOptions();
+        var json = """{"$type":"SetWordNoteChange","EntityId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","Note":7}""";
+
+        var change = JsonSerializer.Deserialize<IChange>(json, options);
+
+        var opaque = change.Should().BeOfType<OpaqueChange>().Subject;
+        opaque.TypeName.Should().Be(nameof(SetWordNoteChange));
+        opaque.EntityId.Should().Be(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"));
+        opaque.ReadError.Should().NotBeNull();
+        JsonSerializer.Serialize(change, options).Should().Be(json);
+    }
+
+    [Fact]
+    public void Unreadable_known_type_throws_when_fallback_disabled()
+    {
+        var options = SampleOptions(UnknownChangeHandling.Throw);
+        var json = """{"$type":"SetWordNoteChange","EntityId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","Note":7}""";
+
+        var act = () => JsonSerializer.Deserialize<IChange>(json, options);
+
+        act.Should().Throw<JsonException>();
+    }
+
+    [Fact]
     public void OpaqueChange_round_trips_original_discriminator()
     {
         var options = SampleOptions();

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -188,6 +189,70 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
         result.Should().Be(new ModelVersionReconcileResult(0, 1, false, result.OldestInvalidatedCommit));
         result.OldestInvalidatedCommit!.Id.Should().Be(noteCommit.Id);
         (await NoteOf(newApp, wordId)).Should().Be("a note");
+    }
+
+    /// <summary>like an old enum converter that doesn't have a member a newer app added</summary>
+    private sealed class RejectsVerifiedConverter : JsonConverter<string>
+    {
+        public override string Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            var value = reader.GetString()!;
+            return value == "verified" ? throw new JsonException($"Unknown value '{value}'") : value;
+        }
+
+        public override void Write(Utf8JsonWriter writer, string value, JsonSerializerOptions options) =>
+            writer.WriteStringValue(value);
+    }
+
+    /// <summary>knows <see cref="SetWordNoteChange"/>, but can't read a note of "verified"</summary>
+    private static void OldAppThatCantReadVerified(IServiceCollection services)
+    {
+        OldApp(services);
+        services.Configure<HarmonyConfig>(config =>
+            config.ConfigureJsonOptions(options => options.Converters.Add(new RejectsVerifiedConverter())));
+    }
+
+    private static IChange UnreadableNote(DataModelTestBase oldApp, Guid wordId)
+    {
+        var json = JsonSerializer.Serialize<IChange>(new SetWordNoteChange(wordId, "verified"), NewAppJsonOptions);
+        var change = JsonSerializer.Deserialize<IChange>(json, oldApp.CrdtConfig.JsonSerializerOptions);
+        return change.Should().BeOfType<OpaqueChange>().Subject;
+    }
+
+    [Fact]
+    public async Task UnreadableKnownTypeIsAppliedAfterUpgrade()
+    {
+        await using var oldApp = ForkDatabase(OldAppThatCantReadVerified);
+        await oldApp.ModelVersionService.ReconcileModelVersions();
+        var wordId = Guid.NewGuid();
+        await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
+        var noteCommit = await SyncFromOtherClient(oldApp, UnreadableNote(oldApp, wordId), version: 1);
+        (await NoteOf(oldApp, wordId)).Should().BeNull("the old app can't read the note change");
+        await using (var reopened = oldApp.ForkDatabase())
+        {
+            //reads the stored change back from the database
+            await reopened.DataModel.RegenerateSnapshots();
+            (await NoteOf(reopened, wordId)).Should().BeNull();
+        }
+
+        await using var newApp = oldApp.ForkDatabase(NewApp);
+        var result = await newApp.ModelVersionService.ReconcileModelVersions();
+
+        result.OldestInvalidatedCommit!.Id.Should().Be(noteCommit.Id);
+        (await NoteOf(newApp, wordId)).Should().Be("verified");
+    }
+
+    [Fact]
+    public async Task UnreadableKnownTypeFromThisModelVersionThrows()
+    {
+        await using var oldApp = ForkDatabase(OldAppThatCantReadVerified);
+        await oldApp.ModelVersionService.ReconcileModelVersions();
+        var wordId = Guid.NewGuid();
+        await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
+
+        var act = () => SyncFromOtherClient(oldApp, UnreadableNote(oldApp, wordId), version: 0);
+
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithInnerException<JsonException>();
     }
 
     [Fact]

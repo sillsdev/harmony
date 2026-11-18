@@ -186,13 +186,14 @@ public class SyncableTests
     {
         await using var context = await backend.CreateAsync();
         var commit = SetWordCommit("entity1", context.ClientId);
-        await context.Syncable.AddRangeFromSync([commit]);
+        var firstAdd = await context.Syncable.AddRangeFromSync([commit]);
         var stateBefore = await context.Syncable.GetSyncState();
 
-        var added = await context.Syncable.AddRangeFromSync([commit]);
+        var secondAdd = await context.Syncable.AddRangeFromSync([commit]);
         var stateAfter = await context.Syncable.GetSyncState();
 
-        added.Should().BeEmpty();
+        firstAdd.Should().ContainSingle().Which.Id.Should().Be(commit.Id);
+        secondAdd.Should().BeEmpty();
         stateAfter.Should().BeEquivalentTo(stateBefore);
         var changes = await context.Syncable.GetChanges(new SyncState([], []));
         changes.MissingFromClient.Should().HaveCount(1);

@@ -27,12 +27,8 @@ internal class JsonSyncable : ISyncable
         _syncService = syncService;
     }
 
-    public Task AddRangeFromSync(IEnumerable<Commit> commits) => AddRangeFromSyncReturningNew(commits.ToArray());
-
-    public async Task<Commit[]> AddRangeFromSyncReturningNew(Commit[] commits)
+    public async Task<Commit[]> AddRangeFromSync(IEnumerable<Commit> commits)
     {
-        if (commits.Length == 0) return [];
-
         var added = new ConcurrentBag<Commit>();
         var groups = commits.GroupBy(c => c.ClientId).ToArray();
         await Parallel.ForEachAsync(groups, async (group, ct) =>

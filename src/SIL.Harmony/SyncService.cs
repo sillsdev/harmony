@@ -75,7 +75,7 @@ internal class SyncService(JsonSerializerOptions serializerOptions)
         if (commits.Length == 0) return ([], null);
         try
         {
-            return (await model.AddRangeFromSyncReturningNew(commits), null);
+            return (await model.AddRangeFromSync(commits), null);
         }
         catch (Exception e)
         {

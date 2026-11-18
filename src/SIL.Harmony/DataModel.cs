@@ -140,11 +140,9 @@ public class DataModel : ISyncable, IAsyncDisposable
         };
     }
 
-    Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits) =>
-        ((ISyncable)this).AddRangeFromSyncReturningNew(commits.ToArray());
-
-    async Task<Commit[]> ISyncable.AddRangeFromSyncReturningNew(Commit[] commits)
+    async Task<Commit[]> ISyncable.AddRangeFromSync(IEnumerable<Commit> commitsEnumerable)
     {
+        var commits = commitsEnumerable.ToArray();
         try
         {
             await using var repo = await _crdtRepositoryFactory.CreateRepository();

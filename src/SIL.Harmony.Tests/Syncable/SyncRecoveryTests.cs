@@ -143,28 +143,6 @@ public class SyncRecoveryTests
         await ShouldHaveCommit(remote, commit0.Id);
     }
 
-    [Theory]
-    [MemberData(nameof(SyncableTestHelpers.BackendPairData), MemberType = typeof(SyncableTestHelpers))]
-    public async Task Sync_RecoveryResend_ReportsOnlyCommitsNewToEachSide(ISyncableTestBackend localBackend, ISyncableTestBackend remoteBackend)
-    {
-        await using var local = await localBackend.CreateAsync();
-        await using var remote = await remoteBackend.CreateAsync();
-        var shared = SetWordCommit("shared", local.ClientId, Date);
-        await local.Syncable.AddRangeFromSync([shared]);
-        await local.Syncable.SyncWith(remote.Syncable);
-
-        //same head and count for the client but different commits, so each side resends its whole history for it
-        var onlyLocal = SetWordCommit("local", local.ClientId, Date.AddDays(-1));
-        await local.Syncable.AddRangeFromSync([onlyLocal]);
-        var onlyRemote = SetWordCommit("remote", local.ClientId, Date.AddDays(-2));
-        await remote.Syncable.AddRangeFromSync([onlyRemote]);
-
-        var results = await local.Syncable.SyncWith(remote.Syncable);
-
-        results.MissingFromLocal.Should().ContainSingle().Which.Id.Should().Be(onlyRemote.Id);
-        results.MissingFromRemote.Should().ContainSingle().Which.Id.Should().Be(onlyLocal.Id);
-    }
-
     private static readonly DateTimeOffset Date = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
     //behind has fewer and older commits from the shared client, so PlanFor withholds the create but still sends a third client's edit to it

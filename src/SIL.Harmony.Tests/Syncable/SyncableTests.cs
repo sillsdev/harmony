@@ -189,9 +189,10 @@ public class SyncableTests
         await context.Syncable.AddRangeFromSync([commit]);
         var stateBefore = await context.Syncable.GetSyncState();
 
-        await context.Syncable.AddRangeFromSync([commit]);
+        var added = await context.Syncable.AddRangeFromSync([commit]);
         var stateAfter = await context.Syncable.GetSyncState();
 
+        added.Should().BeEmpty();
         stateAfter.Should().BeEquivalentTo(stateBefore);
         var changes = await context.Syncable.GetChanges(new SyncState([], []));
         changes.MissingFromClient.Should().HaveCount(1);
@@ -208,6 +209,29 @@ public class SyncableTests
 
         var syncResults = await local.Syncable.SyncWith(remote.Syncable);
         syncResults.MissingFromRemote.Should().ContainSingle(c => c.Id == commit.Id);
+    }
+
+    [Theory]
+    [MemberData(nameof(SyncableTestHelpers.BackendPairData), MemberType = typeof(SyncableTestHelpers))]
+    public async Task SyncWith_ReturnsOnlyCommitsTheReceiverDidNotHave(ISyncableTestBackend localBackend, ISyncableTestBackend remoteBackend)
+    {
+        await using var local = await localBackend.CreateAsync();
+        await using var remote = await remoteBackend.CreateAsync();
+        var date = new DateTimeOffset(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var shared = SetWordCommit("shared", local.ClientId, date);
+        await local.Syncable.AddRangeFromSync([shared]);
+        await local.Syncable.SyncWith(remote.Syncable);
+
+        //same head and count for the client but different commits, so each side resends its whole history for it
+        var onlyLocal = SetWordCommit("local", local.ClientId, date.AddDays(-1));
+        await local.Syncable.AddRangeFromSync([onlyLocal]);
+        var onlyRemote = SetWordCommit("remote", local.ClientId, date.AddDays(-2));
+        await remote.Syncable.AddRangeFromSync([onlyRemote]);
+
+        var results = await local.Syncable.SyncWith(remote.Syncable);
+
+        results.MissingFromLocal.Should().ContainSingle().Which.Id.Should().Be(onlyRemote.Id);
+        results.MissingFromRemote.Should().ContainSingle().Which.Id.Should().Be(onlyLocal.Id);
     }
 
     [Theory]

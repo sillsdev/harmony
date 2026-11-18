@@ -31,8 +31,10 @@ internal class SyncService(JsonSerializerOptions serializerOptions)
         }
         var pullTask = TryAddRange(localModel, missingFromLocal);
         var pushTask = TryAddRange(remoteModel, missingFromRemote);
-        ThrowIfAnyErrors([await pullTask, await pushTask]);
-        return new SyncResults(missingFromLocal, missingFromRemote, true);
+        var (pulled, pullError) = await pullTask;
+        var (pushed, pushError) = await pushTask;
+        ThrowIfAnyErrors([pullError, pushError]);
+        return new SyncResults(pulled, pushed, true);
     }
     public async Task SyncMany(ISyncable localModel, ISyncable[] remotes)
     {
@@ -49,7 +51,7 @@ internal class SyncService(JsonSerializerOptions serializerOptions)
                 missingFromLocal = Clone(missingFromLocal);
             }
             remoteSyncStates[i] = remoteSyncState;
-            errors.Add(await TryAddRange(localModel, missingFromLocal));
+            errors.Add((await TryAddRange(localModel, missingFromLocal)).Error);
         }
         // Now the localModel has the changes it could apply from all remotes, so all remotes will get the changes from the localModel as well as all other remotes
         for (var i = 0; i < remotes.Length; i++)
@@ -62,23 +64,22 @@ internal class SyncService(JsonSerializerOptions serializerOptions)
                 //cloning just to simulate the objects going over the wire
                 missingFromRemote = Clone(missingFromRemote);
             }
-            errors.Add(await TryAddRange(remote, missingFromRemote));
+            errors.Add((await TryAddRange(remote, missingFromRemote)).Error);
         }
         ThrowIfAnyErrors(errors);
     }
 
     //don't fail fast: if neither direction lands, the next sync sends the same commits and fails the same way
-    private static async Task<Exception?> TryAddRange(ISyncable model, Commit[] commits)
+    private static async Task<(Commit[] Added, Exception? Error)> TryAddRange(ISyncable model, Commit[] commits)
     {
-        if (commits.Length == 0) return null;
+        if (commits.Length == 0) return ([], null);
         try
         {
-            await model.AddRangeFromSync(commits);
-            return null;
+            return (await model.AddRangeFromSyncReturningNew(commits), null);
         }
         catch (Exception e)
         {
-            return e;
+            return ([], e);
         }
     }
 

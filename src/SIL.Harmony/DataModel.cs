@@ -140,18 +140,19 @@ public class DataModel : ISyncable, IAsyncDisposable
         };
     }
 
-    async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits)
+    Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits) =>
+        ((ISyncable)this).AddRangeFromSyncReturningNew(commits.ToArray());
+
+    async Task<Commit[]> ISyncable.AddRangeFromSyncReturningNew(Commit[] commits)
     {
-        commits = commits.ToArray();
         try
         {
             await using var repo = await _crdtRepositoryFactory.CreateRepository();
             using var locked = await repo.Lock();
             repo.ClearChangeTracker();
             _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
-            var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
-            //no changes added
-            if (oldestChange is null || newCommits is []) return;
+            var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits);
+            if (oldestChange is null || newCommits is []) return [];
             CrdtRepository.ReplayWindow replayWindow;
             await using (var transaction = await repo.BeginTransactionAsync())
             {
@@ -163,6 +164,7 @@ public class DataModel : ISyncable, IAsyncDisposable
             //a window resuming from nothing rebuilt every snapshot, the first sync into an empty database is the
             //big one, since it pulls the whole project. Any later full rebuild is small, so compacting after it is cheap
             if (replayWindow.ResumeFrom is null) await repo.CompactDatabase();
+            return newCommits;
         }
         catch (DbUpdateException e)
         {

@@ -27,12 +27,12 @@ internal class JsonSyncable : ISyncable
         _syncService = syncService;
     }
 
-    public async Task AddRangeFromSync(IEnumerable<Commit> commits)
+    public async Task<Commit[]> AddRangeFromSync(IEnumerable<Commit> commits)
     {
-        var commitArray = commits.ToArray();
-        if (commitArray.Length == 0) return;
+        var groups = commits.GroupBy(c => c.ClientId).ToArray();
+        if (groups.Length == 0) return [];
 
-        var groups = commitArray.GroupBy(c => c.ClientId).ToArray();
+        var added = new ConcurrentBag<Commit>();
         await Parallel.ForEachAsync(groups, async (group, ct) =>
         {
             using (await ClientLocks.GetOrAdd(group.Key, _ => new AsyncLock()).LockAsync())
@@ -45,9 +45,13 @@ internal class JsonSyncable : ISyncable
 
                 await using var stream = new StreamWriter(file.FullName, append: true);
                 foreach (var commit in newCommits)
+                {
                     WriteCommit(stream, commit);
+                    added.Add(commit);
+                }
             }
         });
+        return [.. added.DefaultOrder()];
     }
 
     public async Task<SyncState> GetSyncState()

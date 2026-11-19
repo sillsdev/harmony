@@ -2,7 +2,8 @@ namespace SIL.Harmony;
 
 public interface ISyncable
 {
-    Task AddRangeFromSync(IEnumerable<Commit> commits);
+    /// <returns>The commits this syncable didn't already have. One that can't tell returns all it was given.</returns>
+    Task<Commit[]> AddRangeFromSync(IEnumerable<Commit> commits);
     Task<SyncState> GetSyncState();
     Task<ChangesResult<Commit>> GetChanges(SyncState otherHeads);
     Task<SyncResults> SyncWith(ISyncable remoteModel);
@@ -14,9 +15,9 @@ public class NullSyncable : ISyncable
 {
     public static readonly ISyncable Instance = new NullSyncable();
 
-    public Task AddRangeFromSync(IEnumerable<Commit> commits)
+    public Task<Commit[]> AddRangeFromSync(IEnumerable<Commit> commits)
     {
-        return Task.CompletedTask;
+        return Task.FromResult<Commit[]>([]);
     }
 
     public Task<SyncState> GetSyncState()

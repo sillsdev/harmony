@@ -29,8 +29,10 @@ internal class JsonSyncable : ISyncable
 
     public async Task<Commit[]> AddRangeFromSync(IEnumerable<Commit> commits)
     {
-        var added = new ConcurrentBag<Commit>();
         var groups = commits.GroupBy(c => c.ClientId).ToArray();
+        if (groups.Length == 0) return [];
+
+        var added = new ConcurrentBag<Commit>();
         await Parallel.ForEachAsync(groups, async (group, ct) =>
         {
             using (await ClientLocks.GetOrAdd(group.Key, _ => new AsyncLock()).LockAsync())

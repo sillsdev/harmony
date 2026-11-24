@@ -339,7 +339,9 @@ internal class CrdtRepository : IDisposable, IAsyncDisposable
         IQueryable<Commit> commits = Commits.Include(c => c.ChangeEntities);
         if (afterExclusive is not null) commits = commits.WhereAfter(afterExclusive);
         if (upToInclusive is not null) commits = commits.WhereBefore(upToInclusive, inclusive: true);
-        return await commits.ToSortedSetAsync();
+        //the result is sorted in memory anyway, the order is for the query plan: without it the Include orders by Id alone,
+        //and SQLite walks every commit by primary key to get that order
+        return await commits.DefaultOrder().ToSortedSetAsync();
     }
 
     public async Task<ObjectSnapshot?> GetCurrentSnapshotByObjectId(Guid objectId)

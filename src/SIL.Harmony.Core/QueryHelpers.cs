@@ -213,35 +213,37 @@ public static class QueryHelpers
             .ThenByDescending(c => c.Id);
     }
 
+    //the leading DateTime bound in WhereAfter and WhereBefore is implied by the terms after it. It's there because a database
+    //can seek the (DateTime, Counter, Id) index on a plain range, but often scans every commit for the OR alone
     public static IQueryable<T> WhereAfter<T>(this IQueryable<T> queryable, T after, bool inclusive = false) where T : CommitBase
     {
         if (inclusive)
         {
-            return queryable.Where(c => after.HybridDateTime.DateTime < c.HybridDateTime.DateTime
-            || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter < c.HybridDateTime.Counter)
-            || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter == c.HybridDateTime.Counter && after.Id < c.Id)
+            return queryable.Where(c => (after.HybridDateTime.DateTime <= c.HybridDateTime.DateTime
+                && (after.HybridDateTime.DateTime < c.HybridDateTime.DateTime
+                || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter < c.HybridDateTime.Counter)
+                || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter == c.HybridDateTime.Counter && after.Id < c.Id)))
             || c.Id == after.Id);
         }
-        return queryable.Where(c => after.HybridDateTime.DateTime < c.HybridDateTime.DateTime
+        return queryable.Where(c => after.HybridDateTime.DateTime <= c.HybridDateTime.DateTime
+        && (after.HybridDateTime.DateTime < c.HybridDateTime.DateTime
         || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter < c.HybridDateTime.Counter)
-        || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter == c.HybridDateTime.Counter && after.Id < c.Id));
+        || (after.HybridDateTime.DateTime == c.HybridDateTime.DateTime && after.HybridDateTime.Counter == c.HybridDateTime.Counter && after.Id < c.Id)));
     }
 
     public static IQueryable<T> WhereBefore<T>(this IQueryable<T> queryable, T before, bool inclusive = false) where T : CommitBase
     {
         if (inclusive)
         {
-
-            return queryable.Where(c => c.HybridDateTime.DateTime < before.HybridDateTime.DateTime
-                                        || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
-                                            c.HybridDateTime.Counter < before.HybridDateTime.Counter)
-                                        || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime &&
-                                            c.HybridDateTime.Counter == before.HybridDateTime.Counter &&
-                                            c.Id < before.Id)
-                                        || c.Id == before.Id);
+            return queryable.Where(c => (c.HybridDateTime.DateTime <= before.HybridDateTime.DateTime
+                && (c.HybridDateTime.DateTime < before.HybridDateTime.DateTime
+                || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime && c.HybridDateTime.Counter < before.HybridDateTime.Counter)
+                || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime && c.HybridDateTime.Counter == before.HybridDateTime.Counter && c.Id < before.Id)))
+            || c.Id == before.Id);
         }
-        return queryable.Where(c => c.HybridDateTime.DateTime < before.HybridDateTime.DateTime
+        return queryable.Where(c => c.HybridDateTime.DateTime <= before.HybridDateTime.DateTime
+        && (c.HybridDateTime.DateTime < before.HybridDateTime.DateTime
         || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime && c.HybridDateTime.Counter < before.HybridDateTime.Counter)
-        || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime && c.HybridDateTime.Counter == before.HybridDateTime.Counter && c.Id < before.Id));
+        || (c.HybridDateTime.DateTime == before.HybridDateTime.DateTime && c.HybridDateTime.Counter == before.HybridDateTime.Counter && c.Id < before.Id)));
     }
 }

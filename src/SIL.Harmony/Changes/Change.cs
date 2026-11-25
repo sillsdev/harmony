@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace SIL.Harmony.Changes;
@@ -8,6 +9,8 @@ namespace SIL.Harmony.Changes;
 /// <c>PeekThenConcreteChangeConverter</c> (via <see cref="Config.HarmonyConfig"/>), not
 /// <see cref="JsonPolymorphicAttribute"/>. Unknown <c>$type</c> values become
 /// <see cref="OpaqueChange"/>.
+/// Implementers must keep JSON properties they don't know (added by a newer client, or removed from the type),
+/// or those are lost when the change is stored again. Prefer <see cref="Change{T}"/>, which keeps them.
 /// </summary>
 public interface IChange
 {
@@ -44,6 +47,9 @@ public abstract class Change<T> : IChange where T : class
     }
 
     public Guid EntityId { get; set; }
+
+    [JsonExtensionData, JsonInclude]
+    protected Dictionary<string, JsonElement>? ExtensionData { get; set; }
 
     async ValueTask<IObjectBase> IChange.NewEntity(Commit commit, IChangeContext context)
     {

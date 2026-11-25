@@ -179,9 +179,9 @@ await dataModel.SyncWith(remoteModel);
 It's that easy. All the heavy lifting is done by the interface which is fairly simple to implement.
 
 ### Model versions
-Clients on different app versions sync with each other, so an older app receives changes a newer app authored. It skips the ones whose type it doesn't know (stored as `OpaqueChange` with `UnknownChangeHandling.Fallback`) and applies the rest with its old code. When the older app upgrades, those changes must be replayed.
+Clients on different app versions sync with each other, so an older app receives changes a newer app authored. It skips the ones whose type it doesn't know (stored as `OpaqueChange` with `UnknownChangeHandling.Fallback`) and applies the rest with its old code. A change from a newer version that throws when applied (say, a patch of a property the old model doesn't have) is skipped and logged as a warning, so it doesn't fail the sync; a change from the app's own version or older that throws still fails it. When the older app upgrades, those changes must be replayed.
 
-Model versions make that possible, and they are how change types are registered. Declare them in order, numbered from 0, each listing the change types it added or changed. Version 0 lists every change type that existed before model versions. Every change is stored with the number of the authoring app's latest version, whether or not that version lists the change's type, so a change authored by a newer app carries a number the older app doesn't have yet. Startup fails if no versions are declared, or remote resources are enabled without `RemoteResourceChanges()`. Only add versions at the end, never modify a released one:
+Model versions make that possible, and they are how change types are registered. Declare them in order, numbered from 0, each listing the change types it added or changed. Version 0 lists every change type that existed before model versions. Every change is stored with the number of the authoring app's latest version, whether or not that version lists the change's type, so a change authored by a newer app carries a number the older app doesn't have yet. Startup fails if no versions are declared, or if a version calls `RemoteResourceChanges<TMetadata>` without a matching `AddCrdtRemoteResources<TMetadata>`, or the other way around. Only add versions at the end, never modify a released one:
 ```C#
 services.AddCrdtRemoteResources<MediaMetadata>();
 services.AddCrdtData<AppDbContext>(config =>
@@ -190,14 +190,14 @@ services.AddCrdtData<AppDbContext>(config =>
         .Add(0, "Before model versions", v => v
             .Change<NewWordChange>()
             .Change<SetWordTextChange>()
-            //the change types AddCrdtRemoteResources registers
-            .RemoteResourceChanges())
+            //the change types AddCrdtRemoteResources needs
+            .RemoteResourceChanges<MediaMetadata>())
         .Add(1, "Word notes", v => v.Change<SetWordNoteChange>())
         //a major version regenerates all snapshots on upgrade
         .AddMajor(2, "Reference rewrite", v => v.Change<SetWordTextChange>());
 });
 ```
-Call `ReconcileModelVersions` when you open a database, before you use it. A database with nothing stored is at version 0. For each type listed by a version newer than the stored one, it invalidates the changes authored with that version or later, and rebuilds the snapshots from the checkpoint before the oldest of them. A major version, or a downgrade, regenerates all snapshots. It throws if an applied version was modified. Querying changes by type is supported on SQLite only.
+Call `ReconcileModelVersions` when you open a database, before you use it. A database with nothing stored is at version 0. For each type listed by a version newer than the stored one, it invalidates the changes authored with that version or later, and rebuilds the snapshots from the checkpoint before the oldest of them. A replayed change that throws now fails the reconcile, since it's no longer from a newer version. A major version, or a downgrade, regenerates all snapshots. It throws if an applied version was modified. Querying changes by type is supported on SQLite only.
 ```C#
 await dataModel.ReconcileModelVersions();
 ```

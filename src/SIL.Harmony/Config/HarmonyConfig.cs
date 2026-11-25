@@ -49,8 +49,7 @@ public class HarmonyConfig
     /// The ordered list of model versions, which also registers the change types, see <see cref="ModelVersionBuilder"/>.
     /// </summary>
     public ModelVersionBuilder ModelVersionBuilder { get; } = new();
-    public IReadOnlyList<RegisteredChangeType> ChangeTypes => [.. ModelVersionBuilder.ChangeTypes.Union(_remoteResourceChangeTypes)];
-    private RegisteredChangeType[] _remoteResourceChangeTypes = [];
+    public IReadOnlyList<RegisteredChangeType> ChangeTypes => ModelVersionBuilder.ChangeTypes;
     public IReadOnlyList<ModelVersion> ModelVersions => ModelVersionBuilder.Versions;
     /// <summary>the number of the last model version, which every change this app authors is stored with</summary>
     public int CurrentModelVersion => ModelVersions.Count == 0
@@ -112,6 +111,15 @@ public class HarmonyConfig
 
     internal bool IsRegisteredChangeType(Type type) => _lazyChangeDiscriminatorMaps.Value.ByType.ContainsKey(type);
 
+    /// <summary>the change's <c>$type</c> discriminator</summary>
+    internal string ChangeTypeName(IChange change)
+    {
+        if (change is OpaqueChange opaque) return opaque.TypeName;
+        return _lazyChangeDiscriminatorMaps.Value.ByType.TryGetValue(change.GetType(), out var name)
+            ? name
+            : change.GetType().Name;
+    }
+
     private ChangeDiscriminatorMaps BuildChangeDiscriminatorMaps()
     {
         ModelVersionBuilder.Freeze();
@@ -120,9 +128,7 @@ public class HarmonyConfig
         var discriminators = new Dictionary<Type, string>(ChangeTypes.Count);
         foreach (var changeType in ChangeTypes)
         {
-            if (!knownChanges.TryAdd(changeType.Discriminator, changeType.Type))
-                throw new InvalidOperationException(
-                    $"{changeType.Type} and {knownChanges[changeType.Discriminator]} both use the discriminator {changeType.Discriminator}");
+            knownChanges.Add(changeType.Discriminator, changeType.Type);
             discriminators.Add(changeType.Type, changeType.Discriminator);
         }
 
@@ -218,11 +224,8 @@ public class HarmonyConfig
     public void AddRemoteResourceEntity<TMetadata>(string? cachePath = null)
         where TMetadata : class
     {
-        // the change discriminator maps are built (and this builder frozen) together with the JSON options
-        ModelVersionBuilder.CheckFrozen();
         RemoteResourcesEnabled = true;
         RemoteResourceMetadataType = typeof(TMetadata);
-        _remoteResourceChangeTypes = RemoteResourceChangeTypes<TMetadata>();
         LocalResourceCachePath = cachePath ?? LocalResourceCachePath;
         ObjectTypeListBuilder.DefaultAdapter().Add<RemoteResource<TMetadata>>(builder =>
         {
@@ -243,13 +246,4 @@ public class HarmonyConfig
             entity.Property(lr => lr.LocalPath);
         });
     }
-
-    internal static RegisteredChangeType[] RemoteResourceChangeTypes<TMetadata>() where TMetadata : class =>
-    [
-        RegisteredChangeType.Of<RemoteResourceUploadedChange<TMetadata>>(),
-        RegisteredChangeType.Of<CreateRemoteResourceChange<TMetadata>>(),
-        RegisteredChangeType.Of<CreateRemoteResourcePendingUploadChange<TMetadata>>(),
-        RegisteredChangeType.Of<SetRemoteResourceMetadataChange<TMetadata>>(),
-        RegisteredChangeType.Of<DeleteRemoteResourceChange<TMetadata>>()
-    ];
 }

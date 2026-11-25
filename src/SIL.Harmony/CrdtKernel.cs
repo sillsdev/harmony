@@ -71,7 +71,10 @@ public static class CrdtKernel
         services.AddScoped<IHybridDateTimeProvider>(NewTimeProvider);
         services.AddSingleton<FastProjection>();
         services.AddScoped<CrdtRepositoryFactory>();
+        services.AddSingleton<SnapshotReplay>();
         services.AddScoped<ModelVersionService>();
+        services.AddSingleton<SyncService>();
+        services.AddSingleton<IJsonSyncableFactory, JsonSyncableFactory>();
         //must use factory method because DataModel constructor is internal
         services.AddScoped<DataModel>(provider => new DataModel(
             provider.GetRequiredService<CrdtRepositoryFactory>(),
@@ -79,7 +82,9 @@ public static class CrdtKernel
             provider.GetRequiredService<IHybridDateTimeProvider>(),
             provider.GetRequiredService<IOptions<HarmonyConfig>>(),
             provider.GetRequiredService<ILogger<DataModel>>(),
-            provider.GetRequiredService<ModelVersionService>()
+            provider.GetRequiredService<ModelVersionService>(),
+            provider.GetRequiredService<SyncService>(),
+            provider.GetRequiredService<SnapshotReplay>()
         ));
         return services;
     }

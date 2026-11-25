@@ -142,4 +142,133 @@ public class SyncRecoveryTests
         await local.Syncable.SyncWith(remote.Syncable);
         await ShouldHaveCommit(remote, commit0.Id);
     }
+
+    private static readonly DateTimeOffset Date = new(2000, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
+    //behind has fewer and older commits from the shared client, so PlanFor withholds the create but still sends a third client's edit to it
+    private static async Task<Commit[]> SetUpEditOnWithheldCreate(SyncableTestContext behind, SyncableTestContext ahead)
+    {
+        var sharedClient = Guid.NewGuid();
+        var wordId = Guid.NewGuid();
+        var create = CreateCommit(sharedClient, Date.AddDays(-1), SetWord("word", wordId));
+        var edit = CreateCommit(Guid.NewGuid(), Date, new SetWordNoteChange(wordId, "note"));
+        Commit[] newer = [SetWordCommit("newer1", sharedClient, Date.AddDays(1)), SetWordCommit("newer2", sharedClient, Date.AddDays(2))];
+        await behind.Syncable.AddRangeFromSync([create, edit]);
+        await ahead.Syncable.AddRangeFromSync(newer);
+        return [create, edit, .. newer];
+    }
+
+    private static async Task Sync(SyncableTestContext local, SyncableTestContext remote, int times)
+    {
+        //only the end state is guaranteed; syncs before the last may throw
+        for (var i = 1; i < times; i++)
+        {
+            try { await local.Syncable.SyncWith(remote.Syncable); }
+            catch (Exception e) when (e is NotSupportedException or AggregateException) { }
+        }
+        await local.Syncable.SyncWith(remote.Syncable);
+    }
+
+    private static async Task ShouldHaveCommits(SyncableTestContext context, Commit[] commits,
+        [CallerArgumentExpression(nameof(context))] string side = "")
+    {
+        var changes = await context.Syncable.GetChanges(new([], []));
+        changes.MissingFromClient.Select(c => c.Id).Should().Contain(commits.Select(c => c.Id), $"{side} should have every commit");
+    }
+
+    [Theory]
+    [MemberData(nameof(SyncableTestHelpers.BackendData), MemberType = typeof(SyncableTestHelpers))]
+    public async Task Sync_RecoversWithinTwoSyncs_WhenRemoteWithholdsCreateForAnotherClientsEdit(ISyncableTestBackend remoteBackend)
+    {
+        await using var local = await new DataModelSyncBackend().CreateAsync();
+        await using var remote = await remoteBackend.CreateAsync();
+        var commits = await SetUpEditOnWithheldCreate(behind: remote, ahead: local);
+        var sync = () => local.Syncable.SyncWith(remote.Syncable);
+
+        await sync.Should().ThrowExactlyAsync<NotSupportedException>();
+        await sync.Should().NotThrowAsync();
+
+        await ShouldHaveCommits(local, commits);
+        await ShouldHaveCommits(remote, commits);
+    }
+
+    [Fact]
+    public async Task SyncMany_RecoversWithinTwoSyncs_WhenRemoteWithholdsCreateForAnotherClientsEdit()
+    {
+        await using var local = await new DataModelSyncBackend().CreateAsync();
+        await using var remote = await new DataModelSyncBackend().CreateAsync();
+        var commits = await SetUpEditOnWithheldCreate(behind: remote, ahead: local);
+        var sync = () => local.Syncable.SyncMany([remote.Syncable]);
+
+        await sync.Should().ThrowExactlyAsync<NotSupportedException>();
+        await sync.Should().NotThrowAsync();
+
+        await ShouldHaveCommits(local, commits);
+        await ShouldHaveCommits(remote, commits);
+    }
+
+    [Fact]
+    public async Task Sync_ReportsBothErrors_WhenBothDirectionsFail()
+    {
+        await using var local = await new DataModelSyncBackend().CreateAsync();
+        await using var remote = await new DataModelSyncBackend().CreateAsync();
+        await SetUpEditOnWithheldCreate(behind: remote, ahead: local);
+        await SetUpEditOnWithheldCreate(behind: local, ahead: remote);
+
+        var sync = () => local.Syncable.SyncWith(remote.Syncable);
+
+        (await sync.Should().ThrowExactlyAsync<AggregateException>())
+            .Which.InnerExceptions.Should().HaveCount(2).And.AllBeOfType<NotSupportedException>();
+    }
+
+    [Fact(Skip = "Known sync blocker: each side withholds a create the other needs, so both directions throw on every sync. Revisit when we know more about missing commits.")]
+    public async Task Sync_RecoversWithinTwoSyncs_WhenBothWithholdCreatesForOtherClientsEdits()
+    {
+        await using var local = await new DataModelSyncBackend().CreateAsync();
+        await using var remote = await new DataModelSyncBackend().CreateAsync();
+        Commit[] commits =
+        [
+            .. await SetUpEditOnWithheldCreate(behind: remote, ahead: local),
+            .. await SetUpEditOnWithheldCreate(behind: local, ahead: remote)
+        ];
+
+        await Sync(local, remote, times: 2);
+
+        await ShouldHaveCommits(local, commits);
+        await ShouldHaveCommits(remote, commits);
+    }
+
+    [Fact(Skip = "Known sync blocker: the side withholding the create is ahead on the shared client, so it only sends newer commits and the other side's push never changes that. Revisit when we know more about missing commits.")]
+    public async Task Sync_RecoversWithinThreeSyncs_WhenTheSideWithholdingTheCreateIsAhead()
+    {
+        await using var local = await new DataModelSyncBackend().CreateAsync();
+        await using var remote = await new DataModelSyncBackend().CreateAsync();
+        var sharedClient = Guid.NewGuid();
+        var wordId = Guid.NewGuid();
+        var create = CreateCommit(sharedClient, Date.AddDays(-1), SetWord("word", wordId));
+        var edit = CreateCommit(Guid.NewGuid(), Date, new SetWordNoteChange(wordId, "note"));
+        var remoteNewer = SetWordCommit("remote", sharedClient, Date.AddDays(5));
+        var localCommit = SetWordCommit("local", sharedClient, Date.AddDays(2));
+        await remote.Syncable.AddRangeFromSync([create, edit, remoteNewer]);
+        await local.Syncable.AddRangeFromSync([localCommit]);
+
+        await Sync(local, remote, times: 3);
+
+        await ShouldHaveCommits(local, [create, edit, remoteNewer, localCommit]);
+        await ShouldHaveCommits(remote, [create, edit, remoteNewer, localCommit]);
+    }
+
+    [Fact(Skip = "Known sync blocker: no reachable client has the create for this edit. Revisit when we know more about missing commits.")]
+    public async Task Sync_Completes_WhenNeitherSideHasTheCreateForAnEdit()
+    {
+        await using var device = await new DataModelSyncBackend().CreateAsync();
+        await using var hub = await new JsonSyncableSyncBackend().CreateAsync();
+        //the create only exists on some third client, so no sync between these two can deliver it
+        var edit = CreateCommit(Guid.NewGuid(), Date, new SetWordNoteChange(Guid.NewGuid(), "note"));
+        await hub.Syncable.AddRangeFromSync([edit]);
+
+        await device.Syncable.SyncWith(hub.Syncable);
+
+        await ShouldHaveCommits(device, [edit]);
+    }
 }

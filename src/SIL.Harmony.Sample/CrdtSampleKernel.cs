@@ -62,7 +62,7 @@ public static class CrdtSampleKernel
                 .Change<DeleteChange<Definition>>()
                 .Change<DeleteChange<Example>>()
                 .Change<DeleteChange<Tag>>()
-                .RemoteResourceChanges());
+                .RemoteResourceChanges<MediaMetadata>());
         config.ObjectTypeListBuilder.DefaultAdapter()
             .Add<Word>(builder =>
             {

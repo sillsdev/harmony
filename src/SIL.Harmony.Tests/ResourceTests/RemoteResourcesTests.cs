@@ -457,6 +457,39 @@ public class RemoteResourcesTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task UploadPendingResources_WritesNoCommit_WhenTheFirstUploadThrows()
+    {
+        await SetupLocalFile("firstFails1", "firstFails1");
+        await SetupLocalFile("firstFails2", "firstFails2");
+        var commitsBefore = DbContext.Commits.Count();
+        _remoteServiceMock.ThrowOnUploadCall(1);
+
+        await FluentActions.Awaiting(() => _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock))
+            .Should().ThrowAsync<Exception>();
+
+        DbContext.Commits.Count().Should().Be(commitsBefore, "a failed first upload has nothing to record, so no empty commit");
+        (await _resourceService.ListResourcesPendingUpload()).Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task UploadPendingResources_WritesOneCommitWithOneChange_WhenTheSecondUploadThrows()
+    {
+        await SetupLocalFile("secondFails1", "secondFails1");
+        await SetupLocalFile("secondFails2", "secondFails2");
+        var commitsBefore = await DbContext.Commits.Select(c => c.Id).ToArrayAsync(TestContext.Current.CancellationToken);
+        _remoteServiceMock.ThrowOnUploadCall(2);
+
+        await FluentActions.Awaiting(() => _resourceService.UploadPendingResources(_localClientId, _remoteServiceMock))
+            .Should().ThrowAsync<Exception>();
+
+        var newCommits = await DbContext.Commits.Include(c => c.ChangeEntities)
+            .Where(c => !commitsBefore.Contains(c.Id))
+            .ToArrayAsync(TestContext.Current.CancellationToken);
+        newCommits.Should().ContainSingle().Which.ChangeEntities.Should().ContainSingle()
+            .Which.Change.Should().BeOfType<RemoteResourceUploadedChange<MediaMetadata>>();
+    }
+
+    [Fact]
     public async Task DeleteResource_SetsDeletedAtToCommitTime()
     {
         var (resourceId, _) = await SetupRemoteResource("to-delete");

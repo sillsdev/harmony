@@ -39,6 +39,26 @@ public class ModelSnapshotTests : DataModelTestBase
     }
 
     [Fact]
+    public async Task ReadsAtACommitWaitForTheRepositoryLock()
+    {
+        //on disk so the lock isn't the one every in-memory test shares
+        await using var model = new DataModelTestBase(saveToDisk: true);
+        var entityId = Guid.NewGuid();
+        var commit = await model.WriteNextChange(SetWord(entityId, "first"));
+
+        Task<Word> read;
+        await using (var repo = model.CreateRepository())
+        using (await repo.Lock())
+        {
+            read = model.DataModel.GetAtCommit<Word>(commit.Id, entityId);
+            await Task.Delay(200, TestContext.Current.CancellationToken);
+            read.IsCompleted.Should().BeFalse();
+        }
+
+        (await read).Text.Should().Be("first");
+    }
+
+    [Fact]
     public async Task CanGetWordForASpecificCommit()
     {
         var entityId = Guid.NewGuid();

@@ -25,6 +25,8 @@ public class DataModel : ISyncable, IAsyncDisposable
     private readonly IOptions<HarmonyConfig> _crdtConfig;
     private readonly ILogger<DataModel> _logger;
     private readonly ModelVersionService _modelVersionService;
+    private readonly SyncService _syncService;
+    private readonly SnapshotReplay _snapshotReplay;
 
     //constructor must be internal because CrdtRepository is internal
     internal DataModel(CrdtRepositoryFactory crdtRepositoryFactory,
@@ -32,14 +34,18 @@ public class DataModel : ISyncable, IAsyncDisposable
         IHybridDateTimeProvider timeProvider,
         IOptions<HarmonyConfig> crdtConfig,
         ILogger<DataModel> logger,
-        ModelVersionService modelVersionService)
+        ModelVersionService modelVersionService,
+        SyncService syncService,
+        SnapshotReplay snapshotReplay)
     {
+        _snapshotReplay = snapshotReplay;
         _crdtRepositoryFactory = crdtRepositoryFactory;
         _serializerOptions = serializerOptions;
         _timeProvider = timeProvider;
         _crdtConfig = crdtConfig;
         _logger = logger;
         _modelVersionService = modelVersionService;
+        _syncService = syncService;
     }
 
 
@@ -77,7 +83,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         await using var transaction = await repo.BeginTransactionAsync();
         var replayWindow = await repo.AddCommits(commits);
-        await UpdateSnapshots(repo, replayWindow);
+        await UpdateSnapshots(repo, replayWindow, ReplayPolicy.StrictFor(commits));
         if (AlwaysValidate) await ValidateCommits(repo);
         await transaction.CommitAsync();
     }
@@ -114,7 +120,7 @@ public class DataModel : ISyncable, IAsyncDisposable
 
         await using var transaction = repo.IsInTransaction ? null : await repo.BeginTransactionAsync();
         var replayWindow = await repo.AddCommit(commit);
-        await UpdateSnapshots(repo, replayWindow);
+        await UpdateSnapshots(repo, replayWindow, ReplayPolicy.StrictFor([commit]));
 
         if (AlwaysValidate) await ValidateCommits(repo);
 
@@ -134,24 +140,29 @@ public class DataModel : ISyncable, IAsyncDisposable
         };
     }
 
-    async Task ISyncable.AddRangeFromSync(IEnumerable<Commit> commits)
+    async Task<Commit[]> ISyncable.AddRangeFromSync(IEnumerable<Commit> commitsEnumerable)
     {
-        commits = commits.ToArray();
+        var commits = commitsEnumerable.ToArray();
         try
         {
             await using var repo = await _crdtRepositoryFactory.CreateRepository();
             using var locked = await repo.Lock();
             repo.ClearChangeTracker();
             _timeProvider.TakeLatestTime(commits.Select(c => c.HybridDateTime));
-            var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits.ToArray());
-            //no changes added
-            if (oldestChange is null || newCommits is []) return;
-
-            await using var transaction = await repo.BeginTransactionAsync();
-            var replayWindow = await repo.AddCommits(newCommits);
-            await UpdateSnapshots(repo, replayWindow);
-            if (AlwaysValidate) await ValidateCommits(repo);
-            await transaction.CommitAsync();
+            var (oldestChange, newCommits) = await repo.FilterExistingCommits(commits);
+            if (oldestChange is null || newCommits is []) return [];
+            CrdtRepository.ReplayWindow replayWindow;
+            await using (var transaction = await repo.BeginTransactionAsync())
+            {
+                replayWindow = await repo.AddCommits(newCommits);
+                await UpdateSnapshots(repo, replayWindow, ReplayPolicy.Lenient);
+                if (AlwaysValidate) await ValidateCommits(repo);
+                await transaction.CommitAsync();
+            }
+            //a window resuming from nothing rebuilt every snapshot, the first sync into an empty database is the
+            //big one, since it pulls the whole project. Any later full rebuild is small, so compacting after it is cheap
+            if (replayWindow.ResumeFrom is null) await repo.CompactDatabase();
+            return newCommits;
         }
         catch (DbUpdateException e)
         {
@@ -186,9 +197,9 @@ public class DataModel : ISyncable, IAsyncDisposable
         return ValueTask.FromResult(true);
     }
 
-    private Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window)
+    private Task UpdateSnapshots(CrdtRepository repo, CrdtRepository.ReplayWindow window, ReplayPolicy policy)
     {
-        return SnapshotReplay.UpdateSnapshots(repo, window, _crdtConfig.Value);
+        return _snapshotReplay.UpdateSnapshots(repo, window, policy);
     }
 
     private async Task ValidateCommits(CrdtRepository repo)
@@ -216,9 +227,27 @@ public class DataModel : ISyncable, IAsyncDisposable
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
         using var locked = await repo.Lock();
         repo.ClearChangeTracker();
-        await using var transaction = await repo.BeginTransactionAsync();
-        await SnapshotReplay.RegenerateAll(repo, _crdtConfig.Value);
-        await transaction.CommitAsync();
+        await using (var transaction = await repo.BeginTransactionAsync())
+        {
+            await _snapshotReplay.RegenerateAll(repo);
+            await transaction.CommitAsync();
+        }
+        //every snapshot and projected row was just deleted and rewritten, so the file is mostly free pages now.
+        //Still under the lock so nothing writes between the rebuild and the cleanup
+        await repo.CompactDatabase();
+    }
+
+    /// <summary>
+    /// Reclaims the space a mass delete left behind and refreshes the query planner statistics, SQLite only.
+    /// Runs on its own after <see cref="RegenerateSnapshots"/> and after the first sync into an empty database;
+    /// call it after any other bulk delete the application does. Expensive: it rewrites the whole file and
+    /// holds the write lock while it does, so not something to run after every sync
+    /// </summary>
+    public async Task CompactDatabase()
+    {
+        await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
+        await repo.CompactDatabase();
     }
 
     /// <inheritdoc cref="ModelVersionService.ReconcileModelVersions"/>
@@ -318,10 +347,12 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<Dictionary<Guid, ObjectSnapshot>> GetSnapshotsAtCommit(Commit commit)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        //held so a sync can't rewrite snapshots part way through the read and hand it a mix of two histories
+        using var locked = await repo.Lock();
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
         //loading everything up front makes every lookup during the replay a cache hit
         await baseline.PreloadAllAsync();
-        var updatedSnapshotView = await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value);
+        var updatedSnapshotView = await _snapshotReplay.ReplayCommits(baseline, commitsToReplay);
         return await updatedSnapshotView.All()
             .ToDictionaryAsync(s => s.EntityId);
     }
@@ -337,6 +368,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<T> GetAtCommit<T>(Guid commitId, Guid entityId)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
         var commit = await repo.CurrentCommits().SingleAsync(c => c.Id == commitId);
         return await GetAtCommit<T>(commit, entityId, repo);
     }
@@ -344,6 +376,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<T> GetAtCommit<T>(Commit commit, Guid entityId)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
         return await GetAtCommit<T>(commit, entityId, repo);
     }
 
@@ -357,6 +390,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<T?> GetBeforeCommit<T>(Guid commitId, Guid entityId)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
         var commit = await repo.CurrentCommits().SingleAsync(c => c.Id == commitId);
         return await GetBeforeCommit<T>(commit, entityId, repo);
     }
@@ -364,6 +398,7 @@ public class DataModel : ISyncable, IAsyncDisposable
     public async Task<T?> GetBeforeCommit<T>(Commit commit, Guid entityId)
     {
         await using var repo = await _crdtRepositoryFactory.CreateRepository();
+        using var locked = await repo.Lock();
         return await GetBeforeCommit<T>(commit, entityId, repo);
     }
 
@@ -392,9 +427,58 @@ public class DataModel : ISyncable, IAsyncDisposable
         }
 
         //we don't have a persisted snapshot in the correct state, so rebuild it
+        return await (await ReplayToCommit(commit, repo)).GetAsync(entityId);
+    }
+
+    /// <summary>
+    /// Replays history up to the commit once, for reading several entities as of it. A single entity is cheaper through
+    /// <see cref="GetAtCommit{T}(Guid, Guid)"/>, which can skip the replay. The replay holds the repository lock so a sync
+    /// can't land part way through it; later reads of entities the replay didn't touch go to the database and aren't protected.
+    /// </summary>
+    public Task<ModelAtCommit> OpenAtCommit(Commit commit) => OpenAtCommit(commit.Id);
+
+    /// <inheritdoc cref="OpenAtCommit(Commit)"/>
+    public async Task<ModelAtCommit> OpenAtCommit(Guid commitId)
+    {
+        return (await Open(async repo => await repo.CurrentCommits().AsNoTracking().SingleAsync(c => c.Id == commitId)))!;
+    }
+
+    /// <summary><see cref="OpenAtCommit(Commit)"/> at the commit before this one; null before the first commit</summary>
+    public Task<ModelAtCommit?> OpenBeforeCommit(Commit commit) => OpenBeforeCommit(commit.Id);
+
+    /// <inheritdoc cref="OpenBeforeCommit(Commit)"/>
+    public Task<ModelAtCommit?> OpenBeforeCommit(Guid commitId)
+    {
+        return Open(async repo => await repo.FindPreviousCommit(await repo.CurrentCommits().AsNoTracking().SingleAsync(c => c.Id == commitId)));
+    }
+
+    private async Task<ModelAtCommit?> Open(Func<CrdtRepository, Task<Commit?>> findCommit)
+    {
+        var repo = await _crdtRepositoryFactory.CreateRepository();
+        try
+        {
+            using var locked = await repo.Lock();
+            var commit = await findCommit(repo);
+            if (commit is null)
+            {
+                await repo.DisposeAsync();
+                return null;
+            }
+
+            return new ModelAtCommit(repo, await ReplayToCommit(commit, repo), commit, _crdtConfig.Value);
+        }
+        catch
+        {
+            await repo.DisposeAsync();
+            throw;
+        }
+    }
+
+    private async Task<ISnapshotView> ReplayToCommit(Commit commit, CrdtRepository repo)
+    {
         var (baseline, commitsToReplay) = await ResumeFromCheckpoint(commit, repo);
-        await SnapshotReplay.PreloadTouched(baseline, commitsToReplay, _crdtConfig.Value);
-        return await (await SnapshotWorker.ReplayCommits(baseline, commitsToReplay, _crdtConfig.Value)).GetAsync(entityId);
+        await _snapshotReplay.PreloadTouched(baseline, commitsToReplay);
+        return await _snapshotReplay.ReplayCommits(baseline, commitsToReplay);
     }
 
     /// <summary>
@@ -424,12 +508,12 @@ public class DataModel : ISyncable, IAsyncDisposable
 
     public async Task<SyncResults> SyncWith(ISyncable remoteModel)
     {
-        return await SyncHelper.SyncWith(this, remoteModel, _serializerOptions);
+        return await _syncService.SyncWith(this, remoteModel);
     }
 
     public async Task SyncMany(ISyncable[] remotes)
     {
-        await SyncHelper.SyncMany(this, remotes, _serializerOptions);
+        await _syncService.SyncMany(this, remotes);
     }
 
     public ValueTask DisposeAsync()

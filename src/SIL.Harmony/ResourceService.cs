@@ -138,7 +138,8 @@ public class ResourceService<TMetadata> where TMetadata : class
         finally
         {
             //if upload throws at any point we will at least save the changes that did get made.
-            await _dataModel.AddChanges(clientId, changes, commitMetadata);
+            //when the first upload throws there is nothing to save, and AddChanges would write an empty commit
+            if (changes.Count > 0) await _dataModel.AddChanges(clientId, changes, commitMetadata);
         }
     }
 

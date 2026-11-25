@@ -28,18 +28,18 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     /// <summary>
-    /// replaces the sample's versions with a version 0 that runs <paramref name="remoteResources"/> (by default the sample's
+    /// replaces the sample's versions with a version 0 that runs <paramref name="first"/> (by default the sample's
     /// remote resource changes), then lists the other sample change types except <paramref name="without"/>
     /// </summary>
-    private static void VersionZero(HarmonyConfig config, string? without = null, Action<ModelVersionChanges>? remoteResources = null)
+    private static void VersionZero(HarmonyConfig config, string? without = null, Action<ModelVersionChanges>? first = null)
     {
-        remoteResources ??= v => v.RemoteResourceChanges<MediaMetadata>();
+        first ??= v => v.RemoteResourceChanges<MediaMetadata>();
         config.ModelVersionBuilder.Clear();
         config.ModelVersionBuilder.Add(0, "Before model versions", v =>
         {
-            remoteResources(v);
+            first(v);
             var others = SampleConfig.ChangeTypes.Where(ct =>
-                !v.Changes.ContainsKey(ct.Discriminator) // skip what remoteResources listed
+                !v.Changes.ContainsKey(ct.Discriminator) // skip what first listed
                 && ct.Discriminator != without);
             foreach (var changeType in others) v.Change(changeType);
         });
@@ -116,10 +116,13 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     }
 
     /// <summary>a commit authored by another client, with the model version that client's app authored it with</summary>
-    private static async Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange change, int version)
+    private static Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange change, int version) =>
+        SyncFromOtherClient(app, [change], version);
+
+    private static async Task<Commit> SyncFromOtherClient(DataModelTestBase app, IChange[] changes, int version)
     {
-        var commit = BuildCommit(Guid.NewGuid(), app.NextDate(), [change]);
-        commit.ChangeEntities.Single().AuthoredModelVersion = version;
+        var commit = BuildCommit(Guid.NewGuid(), app.NextDate(), changes);
+        foreach (var changeEntity in commit.ChangeEntities) changeEntity.AuthoredModelVersion = version;
         await app.AddCommitsViaSync([commit]);
         return commit;
     }
@@ -265,6 +268,103 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
             "the old app authored the old note and applied it the old way, so only notes from the app that forgot are replayed");
         result.FullRegeneration.Should().BeFalse();
         (await NoteOf(fixedApp, wordId)).Should().Be("a note");
+    }
+
+    /// <summary><see cref="SetWordNoteChange"/> code that can't apply it, like a patch of a property the model doesn't have</summary>
+    public class NoteChangeThatThrows(Guid entityId, string note) : EditChange<Word>(entityId), IPolyType
+    {
+        public static string TypeName => nameof(SetWordNoteChange);
+        public string Note { get; } = note;
+
+        public override ValueTask ApplyChange(Word entity, IChangeContext context) =>
+            throw new InvalidOperationException("Word has no note");
+    }
+
+    private static void OldAppThatCantApplyNotes(IServiceCollection services)
+    {
+        OldApp(services);
+        services.Configure<HarmonyConfig>(config => VersionZero(config,
+            first: v => v.RemoteResourceChanges<MediaMetadata>().Change<NoteChangeThatThrows>()));
+    }
+
+    private static void AppWithNotesThatApply(IServiceCollection services)
+    {
+        OldApp(services);
+        services.Configure<HarmonyConfig>(config =>
+        {
+            VersionZero(config);
+            config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<SetWordNoteChange>());
+        });
+    }
+
+    private static void AppWithNotesThatStillThrow(IServiceCollection services)
+    {
+        OldAppThatCantApplyNotes(services);
+        services.Configure<HarmonyConfig>(config =>
+            config.ModelVersionBuilder.Add(1, "Notes", v => v.Change<NoteChangeThatThrows>()));
+    }
+
+    private async Task<(DataModelTestBase oldApp, Guid wordId)> OldAppWithAWord()
+    {
+        var oldApp = ForkDatabase(OldAppThatCantApplyNotes);
+        await oldApp.ModelVersionService.ReconcileModelVersions();
+        var wordId = Guid.NewGuid();
+        await oldApp.WriteNextChange(new NewWordChange(wordId, "hello"));
+        return (oldApp, wordId);
+    }
+
+    [Fact]
+    public async Task ChangeFromANewerVersionThatThrowsIsSkipped()
+    {
+        var (oldApp, wordId) = await OldAppWithAWord();
+        await using var _ = oldApp;
+
+        await SyncFromOtherClient(oldApp,
+            [new NoteChangeThatThrows(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
+
+        var word = await oldApp.DataModel.GetLatest<Word>(wordId);
+        word!.Note.Should().BeNull();
+        word.Text.Should().Be("renamed", "the rest of the commit still applies");
+    }
+
+    [Fact]
+    public async Task ChangeFromTheCurrentVersionThatThrowsFailsTheSync()
+    {
+        var (oldApp, wordId) = await OldAppWithAWord();
+        await using var _ = oldApp;
+
+        var sync = () => SyncFromOtherClient(oldApp, new NoteChangeThatThrows(wordId, "a note"), version: 0);
+
+        await sync.Should().ThrowAsync<InvalidOperationException>().WithMessage("Word has no note");
+    }
+
+    [Fact]
+    public async Task SkippedChangeIsAppliedAfterUpgrade()
+    {
+        var (oldApp, wordId) = await OldAppWithAWord();
+        await using var _ = oldApp;
+        await SyncFromOtherClient(oldApp, new NoteChangeThatThrows(wordId, "a note"), version: 1);
+        (await NoteOf(oldApp, wordId)).Should().BeNull();
+
+        await using var newApp = oldApp.ForkDatabase(AppWithNotesThatApply);
+        await newApp.ModelVersionService.ReconcileModelVersions();
+
+        (await NoteOf(newApp, wordId)).Should().Be("a note");
+    }
+
+    [Fact]
+    public async Task SkippedChangeThatStillThrowsAfterUpgradeFailsTheReconcile()
+    {
+        var (oldApp, wordId) = await OldAppWithAWord();
+        await using var _ = oldApp;
+        await SyncFromOtherClient(oldApp,
+            [new NoteChangeThatThrows(wordId, "a note"), new SetWordTextChange(wordId, "renamed")], version: 1);
+
+        await using var newApp = oldApp.ForkDatabase(AppWithNotesThatStillThrow);
+        var reconcile = () => newApp.ModelVersionService.ReconcileModelVersions();
+
+        await reconcile.Should().ThrowAsync<InvalidOperationException>().WithMessage("Word has no note");
+        (await newApp.DataModel.GetLatest<Word>(wordId))!.Text.Should().Be("renamed", "the failed reconcile rolls back");
     }
 
     [Fact]
@@ -545,14 +645,14 @@ public class ModelVersionTests() : DataModelTestBase(configure: OldApp)
     [Fact]
     public void RemoteResourceChangesMustBeListed()
     {
-        ValidationFailureOf(config => VersionZero(config, remoteResources: _ => { }))
+        ValidationFailureOf(config => VersionZero(config, first: _ => { }))
             .Message.Should().EndWith("got MediaMetadata and not called");
     }
 
     [Fact]
     public void RemoteResourceChangesMustUseTheRemoteResourceMetadataType()
     {
-        ValidationFailureOf(config => VersionZero(config, remoteResources: v => v.RemoteResourceChanges<NoMetadata>()))
+        ValidationFailureOf(config => VersionZero(config, first: v => v.RemoteResourceChanges<NoMetadata>()))
             .Message.Should().EndWith("got MediaMetadata and NoMetadata");
     }
 

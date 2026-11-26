@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using System.Runtime.CompilerServices;
 using Microsoft.EntityFrameworkCore;
 
 namespace SIL.Harmony.Db;
@@ -16,7 +17,16 @@ internal interface ISnapshotView
 
     /// <summary>snapshots whose entity holds a reference to <paramref name="entityId"/></summary>
     IAsyncEnumerable<ObjectSnapshot> WhereReferences(Guid entityId, bool includeDeleted) =>
-        Where(s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId));
+        Where(ReferencesPredicate(entityId, includeDeleted));
+
+    IAsyncEnumerable<ObjectSnapshot> WhereTypeName(string typeName, bool includeDeleted) =>
+        Where(TypeNamePredicate(typeName, includeDeleted));
+
+    static Expression<Func<ObjectSnapshot, bool>> ReferencesPredicate(Guid entityId, bool includeDeleted) =>
+        s => (includeDeleted || !s.EntityIsDeleted) && s.References.Contains(entityId);
+
+    static Expression<Func<ObjectSnapshot, bool>> TypeNamePredicate(string typeName, bool includeDeleted) =>
+        s => (includeDeleted || !s.EntityIsDeleted) && s.TypeName == typeName;
 }
 
 /// <summary>the view before the first commit</summary>
@@ -64,7 +74,20 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
         return snapshot;
     }
 
-    public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate)
+    public IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicate) =>
+        Where(_currentSnapshots, predicate);
+
+    public IAsyncEnumerable<ObjectSnapshot> WhereReferences(Guid entityId, bool includeDeleted) =>
+        Where(CurrentSnapshotsQuery(dbContext, upToInclusive, CandidateFilter.References(entityId)),
+            ISnapshotView.ReferencesPredicate(entityId, includeDeleted));
+
+    public IAsyncEnumerable<ObjectSnapshot> WhereTypeName(string typeName, bool includeDeleted) =>
+        Where(CurrentSnapshotsQuery(dbContext, upToInclusive, CandidateFilter.TypeName(typeName)),
+            ISnapshotView.TypeNamePredicate(typeName, includeDeleted));
+
+    /// <param name="currentSnapshots">the current snapshots, or a narrower query that still returns every match</param>
+    private async IAsyncEnumerable<ObjectSnapshot> Where(IQueryable<ObjectSnapshot> currentSnapshots,
+        Expression<Func<ObjectSnapshot, bool>> predicate)
     {
         if (_complete)
         {
@@ -77,7 +100,7 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
             yield break;
         }
 
-        await foreach (var snapshot in _currentSnapshots.Where(predicate)
+        await foreach (var snapshot in currentSnapshots.Where(predicate)
             .Include(s => s.Commit).AsAsyncEnumerable())
         {
             yield return snapshot;
@@ -107,10 +130,8 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
     public async Task PreloadAsync(IReadOnlyCollection<Guid> entityIds)
     {
         if (_complete) return;
-        //EF.Parameter forces a single JSON parameter; without it EF 10+ emits one parameter per id and overflows SQLite's parameter limit
-        var found = await _currentSnapshots
+        var found = await CurrentSnapshotsQuery(dbContext, upToInclusive, CandidateFilter.EntityIds(entityIds))
             .Include(s => s.Commit)
-            .Where(s => EF.Parameter(entityIds).Contains(s.EntityId))
             .ToDictionaryAsync(s => s.EntityId);
         foreach (var entityId in entityIds)
         {
@@ -118,7 +139,34 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
         }
     }
 
-    internal static IQueryable<ObjectSnapshot> CurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? upToInclusive)
+    /// <summary>
+    /// Narrows <see cref="CurrentSnapshotsQuery(ICrdtDbContext, Commit?, CandidateFilter?)"/> before it picks each
+    /// entity's newest snapshot. That grouping is the expensive part, and SQLite won't push an outer filter into it.
+    /// </summary>
+    /// <param name="Sql">a condition on the snapshot row "s", with {8} for <see cref="Arg"/></param>
+    internal sealed record CandidateFilter(string Sql, object Arg)
+    {
+        /// <summary>
+        /// Entities with any snapshot whose references contain the id, a superset of those whose newest one does,
+        /// so callers still filter the newest. The JSON array holds each id as EF writes a Guid, which is how EF binds
+        /// the parameter, so the raw text match finds every snapshot json_each would.
+        /// </summary>
+        public static CandidateFilter References(Guid entityId) => AnySnapshot(
+            "instr(\"References\", {8}) > 0", entityId);
+
+        /// <summary>an entity id belongs to one type, but callers still filter the newest snapshot</summary>
+        public static CandidateFilter TypeName(string typeName) => AnySnapshot("\"TypeName\" = {8}", typeName);
+
+        //bound as one JSON parameter; EF 10+ would otherwise emit one parameter per id and overflow SQLite's limit
+        public static CandidateFilter EntityIds(IReadOnlyCollection<Guid> entityIds) =>
+            new("\"s\".\"EntityId\" IN (SELECT \"value\" FROM json_each({8}))", entityIds.ToArray());
+
+        private static CandidateFilter AnySnapshot(string snapshotCondition, object arg) =>
+            new($"\"s\".\"EntityId\" IN (SELECT \"EntityId\" FROM \"Snapshots\" WHERE {snapshotCondition})", arg);
+    }
+
+    internal static IQueryable<ObjectSnapshot> CurrentSnapshotsQuery(ICrdtDbContext dbContext, Commit? upToInclusive,
+        CandidateFilter? candidates = null)
     {
         var ignoreAfterDate = upToInclusive?.HybridDateTime.DateTime.UtcDateTime;
         var ignoreAfterCounter = upToInclusive?.HybridDateTime.Counter;
@@ -131,16 +179,25 @@ internal sealed class DbSnapshotView(ICrdtDbContext dbContext, Commit? upToInclu
         // max(...) column is unmapped and ignored by EF.
         // The separator '!' (0x21) has to sort below '.' and every digit: SQLite trims trailing zeros off the datetime, so
         // "00:00:00" vs "00:00:00.5" is decided by the separator.
-        return dbContext.Set<ObjectSnapshot>().FromSql(
-            $"""
+        var candidateSql = candidates is null
+            ? ""
+            : $"AND {candidates.Sql}";
+        var sql = $$"""
              SELECT "s".*,
                     max("c"."DateTime" || '!' || printf('%020d', "c"."Counter") || '!' || "c"."Id")
              FROM "Snapshots" AS "s"
                       INNER JOIN "Commits" AS "c" ON "s"."CommitId" = "c"."Id"
-             WHERE {ignoreAfterDate} IS NULL
-                OR ("c"."DateTime" < {ignoreAfterDate} OR ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" < {ignoreAfterCounter}) OR
-                    ("c"."DateTime" = {ignoreAfterDate} AND "c"."Counter" = {ignoreAfterCounter} AND "c"."Id" < {ignoreAfterCommitId}) OR "c"."Id" = {ignoreAfterCommitId})
+             WHERE ({0} IS NULL
+                OR ("c"."DateTime" < {1} OR ("c"."DateTime" = {2} AND "c"."Counter" < {3}) OR
+                    ("c"."DateTime" = {4} AND "c"."Counter" = {5} AND "c"."Id" < {6}) OR "c"."Id" = {7}))
+               {{candidateSql}}
              GROUP BY "s"."EntityId"
-             """).AsNoTracking();
+             """;
+        object?[] args =
+        [
+            ignoreAfterDate, ignoreAfterDate, ignoreAfterDate, ignoreAfterCounter, ignoreAfterDate, ignoreAfterCounter,
+            ignoreAfterCommitId, ignoreAfterCommitId, .. candidates is null ? Array.Empty<object>() : [candidates.Arg]
+        ];
+        return dbContext.Set<ObjectSnapshot>().FromSql(FormattableStringFactory.Create(sql, args)).AsNoTracking();
     }
 }

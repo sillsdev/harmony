@@ -25,7 +25,7 @@ internal class ChangeContext : IChangeContext
 
     public IAsyncEnumerable<T> GetObjectsOfType<T>(string jsonTypeName, bool includeDeleted = false) where T : class
     {
-        return _snapshots.Where(s => (includeDeleted || !s.EntityIsDeleted) && s.TypeName == jsonTypeName)
+        return _snapshots.WhereTypeName(jsonTypeName, includeDeleted)
             .Select(s => s.Entity.DbObject)
             .OfType<T>();
     }

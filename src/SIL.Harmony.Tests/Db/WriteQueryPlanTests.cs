@@ -31,6 +31,54 @@ public class WriteQueryPlanTests
             .Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task WritingABatchThatPrefetches_DoesNotScanTheHistory()
+    {
+        var plans = new QueryPlanRecorder();
+        await using var dataModelTest = new DataModelTestBase(alwaysValidate: false, configure: services =>
+            services.ConfigureDbContext<SampleDbContext>(builder => builder.AddInterceptors(plans)));
+        var wordIds = Enumerable.Range(0, dataModelTest.CrdtConfig.PrefetchSnapshotsBreakpoint + 1).Select(_ => Guid.NewGuid()).ToArray();
+        await dataModelTest.WriteNextChange(wordIds.Select(id => dataModelTest.SetWord(id, "first")));
+        plans.Steps.Clear();
+
+        await dataModelTest.WriteNextChange(wordIds.Select(id => dataModelTest.SetWord(id, "second")));
+
+        plans.Steps.Should().Contain(step => step.Sql.Contains("json_each"), "the batch should be prefetched");
+        plans.Steps.Where(step => step.Plan.StartsWith("SCAN", StringComparison.Ordinal))
+            .Select(step => step.Plan).Distinct()
+            .Should().BeSubsetOf([
+                //the prefetched rows, and the json_each over the id list
+                "SCAN s",
+                "SCAN json_each VIRTUAL TABLE INDEX 1:",
+                "SCAN CONSTANT ROW",
+            ]);
+    }
+
+    [Fact]
+    public async Task DeletingAReferencedEntity_DoesNotGroupTheWholeHistory()
+    {
+        var plans = new QueryPlanRecorder();
+        await using var dataModelTest = new DataModelTestBase(alwaysValidate: false, configure: services =>
+            services.ConfigureDbContext<SampleDbContext>(builder => builder.AddInterceptors(plans)));
+        var wordId = Guid.NewGuid();
+        await dataModelTest.WriteNextChange(dataModelTest.SetWord(wordId, "word"));
+        await dataModelTest.WriteNextChange(dataModelTest.NewDefinition(wordId, "definition", "noun"));
+        plans.Steps.Clear();
+
+        await dataModelTest.WriteNextChange(dataModelTest.DeleteWord(wordId));
+
+        plans.Steps.Should().Contain(step => step.Sql.Contains("instr(\"References\""), "the delete should look up what references the word");
+        //scanning the snapshots for the id is the point; grouping every entity's history is what this guards against
+        plans.Steps.Where(step => step.Plan.StartsWith("SCAN", StringComparison.Ordinal))
+            .Select(step => step.Plan).Distinct()
+            .Should().BeSubsetOf([
+                "SCAN Snapshots",
+                "SCAN s",
+                "SCAN r VIRTUAL TABLE INDEX 1:",
+                "SCAN CONSTANT ROW",
+            ]);
+    }
+
     private sealed record PlanStep(string Plan, string Sql);
 
     private sealed class QueryPlanRecorder : DbCommandInterceptor

@@ -196,7 +196,7 @@ internal class SnapshotWorker : ISnapshotView
     {
         // Including deleted shouldn't be necessary, because change objects are responsible for not adding references to deleted entities.
         // But maybe it's a good fallback.
-        var toRemoveRefFrom = await WhereReferences(deletedEntityId, includeDeleted: true)
+        var toRemoveRefFrom = await ((ISnapshotView)this).WhereReferences(deletedEntityId, includeDeleted: true)
             .ToArrayAsync();
 
         var commit = context.Commit;
@@ -244,18 +244,8 @@ internal class SnapshotWorker : ISnapshotView
         return await _baseline.GetAsync(entityId);
     }
 
-    public IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression) =>
-        Where(predicateExpression, _baseline.Where(predicateExpression));
-
-    public IAsyncEnumerable<ObjectSnapshot> WhereReferences(Guid entityId, bool includeDeleted) =>
-        Where(ISnapshotView.ReferencesPredicate(entityId, includeDeleted), _baseline.WhereReferences(entityId, includeDeleted));
-
-    public IAsyncEnumerable<ObjectSnapshot> WhereTypeName(string typeName, bool includeDeleted) =>
-        Where(ISnapshotView.TypeNamePredicate(typeName, includeDeleted), _baseline.WhereTypeName(typeName, includeDeleted));
-
-    /// <param name="baselineMatches">the baseline's matches for <paramref name="predicateExpression"/></param>
-    private async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression,
-        IAsyncEnumerable<ObjectSnapshot> baselineMatches)
+    public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression,
+        CandidateFilter? candidates = null)
     {
         var predicate = predicateExpression.Compile();
 
@@ -265,7 +255,7 @@ internal class SnapshotWorker : ISnapshotView
             yield return snapshot;
         }
 
-        await foreach (var snapshot in baselineMatches)
+        await foreach (var snapshot in _baseline.Where(predicateExpression, candidates))
         {
             if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
             yield return snapshot;

@@ -244,7 +244,8 @@ internal class SnapshotWorker : ISnapshotView
         return await _baseline.GetAsync(entityId);
     }
 
-    public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression)
+    public async IAsyncEnumerable<ObjectSnapshot> Where(Expression<Func<ObjectSnapshot, bool>> predicateExpression,
+        CandidateFilter? candidates = null)
     {
         var predicate = predicateExpression.Compile();
 
@@ -254,7 +255,7 @@ internal class SnapshotWorker : ISnapshotView
             yield return snapshot;
         }
 
-        await foreach (var snapshot in _baseline.Where(predicateExpression))
+        await foreach (var snapshot in _baseline.Where(predicateExpression, candidates))
         {
             if (_latestSnapshots.ContainsKey(snapshot.EntityId)) continue;
             yield return snapshot;

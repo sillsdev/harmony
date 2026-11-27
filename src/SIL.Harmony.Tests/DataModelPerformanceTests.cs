@@ -135,18 +135,13 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
     }
 
     /// <summary>
-    /// Asserts that <see cref="HarmonyConfig.PrefetchSnapshotsBreakpoint"/> (currently 220) is a good crossover value:
-    /// the point where bulk-prefetching current snapshots in one query starts beating fetching them one per entity.
+    /// Asserts that <see cref="HarmonyConfig.PrefetchSnapshotsBreakpoint"/> (currently 5) is not too high: bulk-prefetching
+    /// current snapshots in one query should beat fetching them one per entity for any batch clearly above it.
     /// <para>
-    /// The batches edit <em>existing</em> entities, because that is what the breakpoint is tuned for — a batch of
-    /// brand-new entities has no current snapshot to fetch, so prefetching only adds a query that returns nothing and
-    /// never wins. For edits of existing entities the crossover sits right around the configured 220:
+    /// The batches edit <em>existing</em> entities, so each has a current snapshot to fetch. Below about 5 entities both
+    /// paths cost the same, so there is nothing to assert there. Measured at 10,000 snapshots: 25 edits ~1.3x and
+    /// 50 edits ~1.5x slower without prefetch.
     /// </para>
-    /// <list type="bullet">
-    /// <item>Below the breakpoint (50 edits) forcing prefetch (breakpoint = 0) is ~1.6x slower than the default.</item>
-    /// <item>Above the breakpoint (500 edits) forcing no prefetch (breakpoint = int.MaxValue) is ~1.3x slower.</item>
-    /// </list>
-    /// If either assertion fails the breakpoint has drifted from where the bulk query starts paying off.
     /// </summary>
     [Fact(
 #if DEBUG
@@ -155,19 +150,12 @@ public class DataModelPerformanceTests(ITestOutputHelper output)
         )]
     public async Task PrefetchSnapshotsBreakpointIsAGoodChoice()
     {
-        const int belowBreakpointCount = 50;   // well below default breakpoint (220)
-        const int aboveBreakpointCount = 1000; // well above default breakpoint (220), clear of the noisy crossover
+        const int aboveBreakpointCount = 50;
 
         // Take the best (min) of a few runs per config: a single GC/scheduling pause in the faster config could
         // otherwise flip the comparison, and the min rejects those transient stalls while keeping the assertion strict.
-        var belowDefault = await BestBatchWrite(belowBreakpointCount, breakpoint: null); // default 220 -> no prefetch
-        var belowPrefetch = await BestBatchWrite(belowBreakpointCount, breakpoint: 0);   // force prefetch
-        output.WriteLine($"Below breakpoint ({belowBreakpointCount}): default {belowDefault.TotalMilliseconds:N}ms vs forced prefetch {belowPrefetch.TotalMilliseconds:N}ms");
-        belowPrefetch.Should().BeGreaterThan(belowDefault,
-            "below the breakpoint, fetching each snapshot with a query per entity should beat one bulk query");
-
-        var aboveDefault = await BestBatchWrite(aboveBreakpointCount, breakpoint: null);        // default 220 -> prefetch
-        var aboveNoPrefetch = await BestBatchWrite(aboveBreakpointCount, breakpoint: int.MaxValue); // force no prefetch
+        var aboveDefault = await BestBatchWrite(aboveBreakpointCount, breakpoint: null);
+        var aboveNoPrefetch = await BestBatchWrite(aboveBreakpointCount, breakpoint: int.MaxValue);
         output.WriteLine($"Above breakpoint ({aboveBreakpointCount}): default {aboveDefault.TotalMilliseconds:N}ms vs forced no-prefetch {aboveNoPrefetch.TotalMilliseconds:N}ms");
         aboveNoPrefetch.Should().BeGreaterThan(aboveDefault,
             "above the breakpoint, one bulk query should beat many queries per entity");

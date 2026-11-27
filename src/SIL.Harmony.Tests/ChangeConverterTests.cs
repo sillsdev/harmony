@@ -37,6 +37,22 @@ public class ChangeConverterTests
     }
 
     [Fact]
+    public void Unknown_property_on_known_type_round_trips()
+    {
+        var options = SampleOptions();
+        var json = """
+            {"$type":"SetWordTextChange","EntityId":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee","Text":"hello","Priority":7,"Data":{"nested":[1,2]}}
+            """;
+
+        var change = JsonSerializer.Deserialize<IChange>(json, options);
+        change.Should().BeOfType<SetWordTextChange>().Which.Text.Should().Be("hello");
+
+        var rewritten = JsonSerializer.Serialize(change, options);
+        rewritten.Should().Contain("\"Priority\":7");
+        rewritten.Should().Contain("\"Data\":{\"nested\":[1,2]}");
+    }
+
+    [Fact]
     public void Unknown_type_deserializes_to_OpaqueChange()
     {
         var options = SampleOptions();

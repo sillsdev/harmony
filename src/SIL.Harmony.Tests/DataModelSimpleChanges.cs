@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using SIL.Harmony.Changes;
 using SIL.Harmony.Db;
 using SIL.Harmony.Sample.Changes;
@@ -19,6 +21,22 @@ public class DataModelSimpleChanges : DataModelTestBase
         snapshot.Entity.Is<Word>().Text.Should().Be("test-value");
 
         await Verify(AllData());
+    }
+
+    [Fact]
+    public async Task KeepsAChangePropertyThisClientDoesNotKnow()
+    {
+        var options = _services.GetRequiredService<JsonSerializerOptions>();
+        var json = JsonSerializer.Serialize(NextCommit(new NewWordChange(_entity1Id, "hello")), options);
+        var newerClientJson = json.Replace("\"$type\":\"NewWordChange\",", "\"$type\":\"NewWordChange\",\"Priority\":7,");
+        newerClientJson.Should().NotBe(json);
+
+        await AddCommitsViaSync([JsonSerializer.Deserialize<Commit>(newerClientJson, options)!]);
+
+        DbContext.ChangeTracker.Clear();
+        var stored = DbContext.Set<ChangeEntity<IChange>>().Should().ContainSingle().Subject;
+        JsonSerializer.Serialize(stored.Change, options).Should().Contain("\"Priority\":7");
+        (await DataModel.GetLatest<Word>(_entity1Id))!.Text.Should().Be("hello");
     }
 
     [Fact]
